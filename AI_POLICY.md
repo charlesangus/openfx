@@ -17,7 +17,8 @@ Summary of our core values:
   to explain, defend, and modify it in response to review comments).
 - Interact with the project and community yourself, not by agent.
 - Disclose what tools you used and how. At a minimum, we require an
-  "Assisted-by: TOOL/MODEL" line in the commit comments and PR description.
+  "Assisted-by: TOOL/MODEL" line in the commit messages and PR
+  description.
 - Don't waste maintainers' time with low quality PRs.
 
 The long version:
@@ -79,9 +80,9 @@ describe it to others.
 
 **Disclosure is required.** Patches that were written with the aid of AI
 coding assistants must have, at a minimum, the following line in the commit
-comment and PR description body:
+message and PR description body:
 
-    Assisted-by: TOOL / MODEL
+    Assisted-by: TOOL/MODEL
 
 Ideally, to the extent practical, the PR description should also have a brief
 description of how the tool was used, including the gist of key prompts or

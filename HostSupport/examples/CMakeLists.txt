@@ -44,6 +44,11 @@ if(OFX_SUPPORTS_METADATA)
 	target_compile_definitions(metadataHost
 		PRIVATE METADATA_PLUGIN_DIR="${METADATA_PLUGIN_DIR}")
 	add_dependencies(metadataHost metadataPlugin)
+	if(APPLE)
+		# expat is single-arch here, so this executable can't be linked universal
+		set_target_properties(metadataHost PROPERTIES
+			OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+	endif()
 endif()
 
 add_executable(hostDemo
@@ -53,3 +58,8 @@ add_executable(hostDemo
 	hostDemoHostDescriptor.cpp
 	hostDemoParamInstance.cpp)
 target_link_libraries(hostDemo PRIVATE OfxHost)
+if(APPLE)
+	# expat is single-arch here, so this executable can't be linked universal
+	set_target_properties(hostDemo PROPERTIES
+		OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+endif()

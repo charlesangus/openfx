@@ -726,6 +726,10 @@ namespace OFX {
         if(isClipPreferencesSlaveParam(paramName))
           _clipPrefsDirty = true;
 
+#       ifdef OFX_SUPPORTS_METADATA
+        invalidateMetadata();
+#       endif
+
         if (!param) {
           return kOfxStatFailed;
         }
@@ -762,6 +766,11 @@ namespace OFX {
                                                     OfxPointD   renderScale)
       {
         _clipPrefsDirty = true;
+
+#       ifdef OFX_SUPPORTS_METADATA
+        invalidateMetadata();
+#       endif
+
         std::map<std::string,ClipInstance*>::iterator it=_clips.find(clipName);
         if(it!=_clips.end())
           return (it->second)->instanceChangedAction(why,time,renderScale);
@@ -1748,6 +1757,197 @@ namespace OFX {
         return true;
       }
 
+#     ifdef OFX_SUPPORTS_METADATA
+      const std::string &Instance::metadataRetainedKeysPropName(const std::string &clipName)
+      {
+        std::string &propName = _clipMetadataRetainedKeysPropNames[clipName];
+
+        if(propName.empty())
+          propName = std::string("OfxImageClipPropMetadataRetainedKeys_") + clipName;
+
+        return propName;
+      }
+
+      void Instance::invalidateMetadata()
+      {
+        for(std::map<std::string, ClipInstance*>::iterator it = _clips.begin();
+            it != _clips.end();
+            ++it)
+          it->second->invalidateMetadata();
+      }
+
+      /// copy every key of one metadata set into another
+      static void copyMetadata(Property::Set &to, const Property::Set &from)
+      {
+        const Property::PropertyMap &props = from.getProperties();
+
+        for(Property::PropertyMap::const_iterator it = props.begin(); it != props.end(); ++it)
+          to.addProperty(it->second->deepCopy());
+      }
+
+      /// copy one key of a metadata set into another, if it has that key at all
+      static void copyMetadataKey(Property::Set &to, const Property::Set &from, const std::string &key)
+      {
+        Property::Property *prop = from.fetchProperty(key);
+
+        if(prop)
+          to.addProperty(prop->deepCopy());
+      }
+
+      /// is the named property one of the ones the host put in the out args to describe
+      /// inheritance, rather than a metadata key the effect contributed
+      static bool isInheritanceProp(const std::string &name, const std::vector<std::string> &retainedKeysPropNames)
+      {
+        if(name == kOfxImageEffectPropMetadataSourceClip)
+          return true;
+
+        for(size_t i = 0; i < retainedKeysPropNames.size(); ++i) {
+          if(name == retainedKeysPropNames[i])
+            return true;
+        }
+
+        return false;
+      }
+
+      /// the index in 'inputs' of the clip with the given name, -1 if there is no such input
+      static int findInputClip(const std::vector<ClipInstance *> &inputs, const std::string &name)
+      {
+        if(name.empty())
+          return -1;
+
+        for(size_t i = 0; i < inputs.size(); ++i) {
+          if(inputs[i]->getName() == name)
+            return int(i);
+        }
+
+        return -1;
+      }
+
+      void Instance::getOutputMetadata(OfxTime time, Property::Set &metadata)
+      {
+        /// the input clips, in the order the effect described them
+        std::vector<ClipInstance *> inputs;
+        const std::vector<ClipDescriptor*> &clipsByOrder = _descriptor->getClipsByOrder();
+
+        for(size_t i = 0; i < clipsByOrder.size(); ++i) {
+          std::map<std::string, ClipInstance*>::const_iterator it = _clips.find(clipsByOrder[i]->getName());
+
+          if(it != _clips.end() && !it->second->isOutput())
+            inputs.push_back(it->second);
+        }
+
+        static const Property::PropSpec outStuff[] = {
+          { kOfxImageEffectPropMetadataSourceClip, Property::eString, 1, false, "" },
+          Property::propSpecEnd
+        };
+
+        Property::Set outArgs(outStuff);
+
+        std::vector<std::string> retainedKeysPropNames;
+
+        for(size_t i = 0; i < inputs.size(); ++i) {
+          const std::string &propName = metadataRetainedKeysPropName(inputs[i]->getName());
+          retainedKeysPropNames.push_back(propName);
+
+          Property::PropSpec keysSpec = { propName.c_str(), Property::eString, 0, false, "" };
+          outArgs.createProperty(keysSpec);
+        }
+
+        /// the output inherits from the first input clip the effect described, if it has one
+        const int defaultSource = inputs.empty() ? -1 : 0;
+
+        if(defaultSource >= 0)
+          outArgs.setStringProperty(kOfxImageEffectPropMetadataSourceClip, inputs[defaultSource]->getName());
+
+        MetadataSet *sourceMetadata = NULL;
+
+        try {
+          if(defaultSource >= 0) {
+            sourceMetadata = inputs[defaultSource]->getMetadata(time);
+
+            /// the source clip's list starts as the whole of its key set, every other clip's empty
+            const Property::PropertyMap &props = sourceMetadata->getProperties();
+            int n = 0;
+
+            for(Property::PropertyMap::const_iterator k = props.begin(); k != props.end(); ++k)
+              outArgs.setStringProperty(retainedKeysPropNames[defaultSource], k->first, n++);
+          }
+
+          static const Property::PropSpec inStuff[] = {
+            { kOfxPropTime, Property::eDouble, 1, true, "0" },
+            Property::propSpecEnd
+          };
+
+          Property::Set inArgs(inStuff);
+          inArgs.setDoubleProperty(kOfxPropTime, time);
+
+#         ifdef OFX_DEBUG_ACTIONS
+            std::cout << "OFX: "<<(void*)this<<"->"<<kOfxImageEffectActionGetMetadata<<"("<<time<<")"<<std::endl;
+#         endif
+          OfxStatus st = mainEntry(kOfxImageEffectActionGetMetadata,
+                                   this->getHandle(),
+                                   &inArgs,
+                                   &outArgs);
+#         ifdef OFX_DEBUG_ACTIONS
+            std::cout << "OFX: "<<(void*)this<<"->"<<kOfxImageEffectActionGetMetadata<<"("<<time<<")->"<<StatStr(st)<<std::endl;
+#         endif
+
+          if(st != kOfxStatOK && st != kOfxStatReplyDefault)
+            throw Property::Exception(st);
+
+          /// the effect may have nominated another clip, or none at all
+          const int source = findInputClip(inputs, outArgs.getStringProperty(kOfxImageEffectPropMetadataSourceClip));
+
+          if(source != defaultSource) {
+            if(sourceMetadata) {
+              sourceMetadata->releaseReference();
+              sourceMetadata = NULL;
+            }
+
+            if(source >= 0)
+              sourceMetadata = inputs[source]->getMetadata(time);
+          }
+
+          if(sourceMetadata) {
+            const std::string &propName = retainedKeysPropNames[source];
+            const int nKeys = outArgs.getDimension(propName);
+
+            /// the host handed the effect an empty list for every clip but the one it
+            /// nominated by default, so an empty list on a clip the effect nominated
+            /// instead is the whole of that clip rather than none of it
+            if(nKeys == 0) {
+              if(source != defaultSource)
+                copyMetadata(metadata, *sourceMetadata);
+            }
+            else {
+              for(int k = 0; k < nKeys; ++k)
+                copyMetadataKey(metadata, *sourceMetadata, outArgs.getStringProperty(propName, k));
+            }
+          }
+
+          if(st == kOfxStatOK) {
+            /// what the effect contributed goes in over what was inherited
+            const Property::PropertyMap &props = outArgs.getProperties();
+
+            for(Property::PropertyMap::const_iterator it = props.begin(); it != props.end(); ++it) {
+              if(isInheritanceProp(it->first, retainedKeysPropNames))
+                continue;
+
+              metadata.addProperty(it->second->deepCopy());
+            }
+          }
+        }
+        catch (...) {
+          if(sourceMetadata)
+            sourceMetadata->releaseReference();
+          throw;
+        }
+
+        if(sourceMetadata)
+          sourceMetadata->releaseReference();
+      }
+#     endif // OFX_SUPPORTS_METADATA
+
       /// find the most chromatic components out of the two. Override this if you define
       /// more chromatic components
       const std::string &Instance::findMostChromaticComponents(const std::string &a, const std::string &b) const
@@ -2308,6 +2508,10 @@ namespace OFX {
         *metadata = set->getPropHandle();
 
         return kOfxStatOK;
+        } catch (const Property::Exception& e) {
+          *metadata = NULL;
+
+          return e.getStatus();
         } catch (std::bad_alloc&) {
           *metadata = NULL;
 

@@ -333,8 +333,10 @@ namespace OFX {
 #     ifdef OFX_SUPPORTS_METADATA
       protected :
         /// Override this to populate 'metadata' with the metadata this clip's effect
-        /// contributes for the image at 'time'. The default implementation adds nothing,
-        /// so a host that does not override it vends empty metadata sets.
+        /// contributes for the image at 'time'. The default implementation derives the
+        /// metadata of an output clip from the effect's inputs, and adds nothing for an
+        /// input clip, so a host must override this to supply the metadata an input clip
+        /// carries, typically that of whatever it is connected to.
         virtual void fetchMetadata(OfxTime time, Property::Set &metadata);
 #     endif // OFX_SUPPORTS_METADATA
 

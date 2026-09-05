@@ -524,8 +524,10 @@ namespace OFX {
         _metadataCache.clear();
       }
 
-      void ClipInstance::fetchMetadata(OfxTime /*time*/, Property::Set &/*metadata*/)
+      void ClipInstance::fetchMetadata(OfxTime time, Property::Set &metadata)
       {
+        if(_isOutput && _effectInstance)
+          _effectInstance->getOutputMetadata(time, metadata);
       }
 #     endif // OFX_SUPPORTS_METADATA
 

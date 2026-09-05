@@ -1776,15 +1776,6 @@ namespace OFX {
           it->second->invalidateMetadata();
       }
 
-      /// copy every key of one metadata set into another
-      static void copyMetadata(Property::Set &to, const Property::Set &from)
-      {
-        const Property::PropertyMap &props = from.getProperties();
-
-        for(Property::PropertyMap::const_iterator it = props.begin(); it != props.end(); ++it)
-          to.addProperty(it->second->deepCopy());
-      }
-
       /// copy one key of a metadata set into another, if it has that key at all
       static void copyMetadataKey(Property::Set &to, const Property::Set &from, const std::string &key)
       {
@@ -1823,6 +1814,17 @@ namespace OFX {
         return -1;
       }
 
+      /// drop the reference held on each metadata set fetched from an input clip
+      static void releaseInputMetadata(std::vector<MetadataSet *> &inputMetadata)
+      {
+        for(size_t i = 0; i < inputMetadata.size(); ++i) {
+          if(inputMetadata[i]) {
+            inputMetadata[i]->releaseReference();
+            inputMetadata[i] = NULL;
+          }
+        }
+      }
+
       void Instance::getOutputMetadata(OfxTime time, Property::Set &metadata)
       {
         /// the input clips, in the order the effect described them
@@ -1837,7 +1839,7 @@ namespace OFX {
         }
 
         static const Property::PropSpec outStuff[] = {
-          { kOfxImageEffectPropMetadataSourceClip, Property::eString, 1, false, "" },
+          { kOfxImageEffectPropMetadataSourceClip, Property::eString, 0, false, "" },
           Property::propSpecEnd
         };
 
@@ -1853,24 +1855,22 @@ namespace OFX {
           outArgs.createProperty(keysSpec);
         }
 
-        /// the output inherits from the first input clip the effect described, if it has one
-        const int defaultSource = inputs.empty() ? -1 : 0;
-
-        if(defaultSource >= 0)
-          outArgs.setStringProperty(kOfxImageEffectPropMetadataSourceClip, inputs[defaultSource]->getName());
-
-        MetadataSet *sourceMetadata = NULL;
+        /// the metadata of each input clip, fetched at most once and only when needed
+        std::vector<MetadataSet *> inputMetadata(inputs.size(), (MetadataSet *) NULL);
 
         try {
-          if(defaultSource >= 0) {
-            sourceMetadata = inputs[defaultSource]->getMetadata(time);
+          /// the list starts as the first input clip the effect described, if it has one,
+          /// with the whole of that clip's key set retained and every other clip's empty
+          if(!inputs.empty()) {
+            outArgs.setStringProperty(kOfxImageEffectPropMetadataSourceClip, inputs[0]->getName());
 
-            /// the source clip's list starts as the whole of its key set, every other clip's empty
-            const Property::PropertyMap &props = sourceMetadata->getProperties();
+            inputMetadata[0] = inputs[0]->getMetadata(time);
+
+            const Property::PropertyMap &props = inputMetadata[0]->getProperties();
             int n = 0;
 
             for(Property::PropertyMap::const_iterator k = props.begin(); k != props.end(); ++k)
-              outArgs.setStringProperty(retainedKeysPropNames[defaultSource], k->first, n++);
+              outArgs.setStringProperty(retainedKeysPropNames[0], k->first, n++);
           }
 
           static const Property::PropSpec inStuff[] = {
@@ -1895,34 +1895,24 @@ namespace OFX {
           if(st != kOfxStatOK && st != kOfxStatReplyDefault)
             throw Property::Exception(st);
 
-          /// the effect may have nominated another clip, or none at all
-          const int source = findInputClip(inputs, outArgs.getStringProperty(kOfxImageEffectPropMetadataSourceClip));
+          /// the list is read in increasing precedence, so a key carried by a clip later in
+          /// it replaces the same key contributed by an earlier one
+          const int nSources = outArgs.getDimension(kOfxImageEffectPropMetadataSourceClip);
 
-          if(source != defaultSource) {
-            if(sourceMetadata) {
-              sourceMetadata->releaseReference();
-              sourceMetadata = NULL;
-            }
+          for(int s = 0; s < nSources; ++s) {
+            const int source = findInputClip(inputs, outArgs.getStringProperty(kOfxImageEffectPropMetadataSourceClip, s));
 
-            if(source >= 0)
-              sourceMetadata = inputs[source]->getMetadata(time);
-          }
+            if(source < 0)
+              continue;
 
-          if(sourceMetadata) {
+            if(!inputMetadata[source])
+              inputMetadata[source] = inputs[source]->getMetadata(time);
+
             const std::string &propName = retainedKeysPropNames[source];
             const int nKeys = outArgs.getDimension(propName);
 
-            /// the host handed the effect an empty list for every clip but the one it
-            /// nominated by default, so an empty list on a clip the effect nominated
-            /// instead is the whole of that clip rather than none of it
-            if(nKeys == 0) {
-              if(source != defaultSource)
-                copyMetadata(metadata, *sourceMetadata);
-            }
-            else {
-              for(int k = 0; k < nKeys; ++k)
-                copyMetadataKey(metadata, *sourceMetadata, outArgs.getStringProperty(propName, k));
-            }
+            for(int k = 0; k < nKeys; ++k)
+              copyMetadataKey(metadata, *inputMetadata[source], outArgs.getStringProperty(propName, k));
           }
 
           if(st == kOfxStatOK) {
@@ -1938,13 +1928,11 @@ namespace OFX {
           }
         }
         catch (...) {
-          if(sourceMetadata)
-            sourceMetadata->releaseReference();
+          releaseInputMetadata(inputMetadata);
           throw;
         }
 
-        if(sourceMetadata)
-          sourceMetadata->releaseReference();
+        releaseInputMetadata(inputMetadata);
       }
 #     endif // OFX_SUPPORTS_METADATA
 

@@ -654,9 +654,11 @@ namespace OFX {
 #       ifdef OFX_SUPPORTS_METADATA
         /// Derive the metadata the effect's output clip carries at the given time.
         ///
-        /// This calls the get metadata action, inherits from the input clip named by
-        /// kOfxImageEffectPropMetadataSourceClip when it returns, filtered by that clip's
-        /// retained keys list, and then folds what the effect contributed in over the top.
+        /// This calls the get metadata action, then walks the list of input clip names in
+        /// kOfxImageEffectPropMetadataSourceClip in order, taking from each the keys that
+        /// clip's retained keys list selects, so that a clip later in the list overrides
+        /// an earlier one, and then folds what the effect contributed in over the top. An
+        /// empty list inherits nothing, and a name that is not an input clip is ignored.
         /// The output clip's fetchMetadata() calls this, so the derived set lands in that
         /// clip's per time cache and is dropped along with it.
         ///

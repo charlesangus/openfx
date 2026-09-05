@@ -1997,7 +1997,7 @@ String Properties
 
 - **C #define**: :c:macro:`kOfxImageEffectPropMetadataSourceClip`
 - **Type**: string
-- **Dimension**: 1
+- **Dimension**: Variable (0 or more)
 - **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPropMetadataSourceClip`.
 
 .. _prop_OfxImageEffectPropOCIOConfig:

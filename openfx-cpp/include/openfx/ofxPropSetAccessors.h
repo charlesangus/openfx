@@ -1007,8 +1007,23 @@ class ImageEffectActionGetMetadata_OutArgs : public PropertySetAccessor {
 public:
     using PropertySetAccessor::PropertySetAccessor;
 
-    ImageEffectActionGetMetadata_OutArgs& setMetadataSourceClip(const char* value, bool error_if_missing = true) {
-        props_.set<PropId::OfxImageEffectPropMetadataSourceClip>(value, 0, error_if_missing);
+    ImageEffectActionGetMetadata_OutArgs& setMetadataSourceClip(const char* value, int index = 0, bool error_if_missing = true) {
+        props_.set<PropId::OfxImageEffectPropMetadataSourceClip>(value, index, error_if_missing);
+        return *this;
+    }
+
+    // Set all values from a container (vector, array, span, etc.)
+    // SFINAE: only enabled for container types (not scalars)
+    template<typename Container,
+             typename = std::enable_if_t<!std::is_arithmetic_v<Container> && !std::is_pointer_v<Container>>>
+    ImageEffectActionGetMetadata_OutArgs& setMetadataSourceClip(const Container& values, bool error_if_missing = true) {
+        props_.setAll<PropId::OfxImageEffectPropMetadataSourceClip>(values, error_if_missing);
+        return *this;
+    }
+
+    // Set all values from an initializer list (e.g., {1, 2, 3})
+    ImageEffectActionGetMetadata_OutArgs& setMetadataSourceClip(std::initializer_list<const char*> values, bool error_if_missing = true) {
+        props_.setAll<PropId::OfxImageEffectPropMetadataSourceClip>(values, error_if_missing);
         return *this;
     }
 

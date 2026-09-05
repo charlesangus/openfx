@@ -15,6 +15,7 @@
 #include <ofxDrawSuite.h>
 #include <ofxParametricParam.h>
 #include <ofxKeySyms.h>
+#include <ofxMetadata.h>
 #include "ofxPropsMetadata.h"
 // #include <ofxOld.h>
 
@@ -688,7 +689,7 @@ static inline const std::map<const char *, std::vector<Prop>> prop_sets {
 };
 
 // Actions
-static inline const std::array<const char *, 36> actions {
+static inline const std::array<const char *, 37> actions {
   "CustomParamInterpFunc",
   "OfxActionBeginInstanceChanged",
   "OfxActionBeginInstanceEdit",
@@ -709,6 +710,7 @@ static inline const std::array<const char *, 36> actions {
   "OfxImageEffectActionEndSequenceRender",
   "OfxImageEffectActionGetClipPreferences",
   "OfxImageEffectActionGetFramesNeeded",
+  "OfxImageEffectActionGetMetadata",
   "OfxImageEffectActionGetOutputColourspace",
   "OfxImageEffectActionGetRegionOfDefinition",
   "OfxImageEffectActionGetRegionsOfInterest",
@@ -817,6 +819,12 @@ static inline const std::map<std::array<std::string_view, 2>, std::vector<const 
 { { "OfxImageEffectActionGetFramesNeeded", "inArgs" },
   { "OfxImageEffectPropThumbnailRender",
     "OfxPropTime" } },
+// OfxImageEffectActionGetMetadata.inArgs
+{ { "OfxImageEffectActionGetMetadata", "inArgs" },
+  { "OfxPropTime" } },
+// OfxImageEffectActionGetMetadata.outArgs
+{ { "OfxImageEffectActionGetMetadata", "outArgs" },
+  { "OfxImageEffectPropMetadataSourceClip" } },
 // OfxImageEffectActionGetOutputColourspace.inArgs
 { { "OfxImageEffectActionGetOutputColourspace", "inArgs" },
   { "OfxImageClipPropPreferredColourspaces" } },
@@ -973,6 +981,7 @@ static_assert(std::string_view("OfxImageEffectActionDescribeInContext") == std::
 static_assert(std::string_view("OfxImageEffectActionEndSequenceRender") == std::string_view(kOfxImageEffectActionEndSequenceRender));
 static_assert(std::string_view("OfxImageEffectActionGetClipPreferences") == std::string_view(kOfxImageEffectActionGetClipPreferences));
 static_assert(std::string_view("OfxImageEffectActionGetFramesNeeded") == std::string_view(kOfxImageEffectActionGetFramesNeeded));
+static_assert(std::string_view("OfxImageEffectActionGetMetadata") == std::string_view(kOfxImageEffectActionGetMetadata));
 static_assert(std::string_view("OfxImageEffectActionGetOutputColourspace") == std::string_view(kOfxImageEffectActionGetOutputColourspace));
 static_assert(std::string_view("OfxImageEffectActionGetRegionOfDefinition") == std::string_view(kOfxImageEffectActionGetRegionOfDefinition));
 static_assert(std::string_view("OfxImageEffectActionGetRegionsOfInterest") == std::string_view(kOfxImageEffectActionGetRegionsOfInterest));

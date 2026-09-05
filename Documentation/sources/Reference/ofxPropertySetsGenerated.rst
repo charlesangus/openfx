@@ -911,6 +911,7 @@ For each action, the required input properties (passed from host to plugin) and 
 * :ref:`OfxImageEffectActionEndSequenceRender <action_OfxImageEffectActionEndSequenceRender>`
 * :ref:`OfxImageEffectActionGetClipPreferences <action_OfxImageEffectActionGetClipPreferences>`
 * :ref:`OfxImageEffectActionGetFramesNeeded <action_OfxImageEffectActionGetFramesNeeded>`
+* :ref:`OfxImageEffectActionGetMetadata <action_OfxImageEffectActionGetMetadata>`
 * :ref:`OfxImageEffectActionGetOutputColourspace <action_OfxImageEffectActionGetOutputColourspace>`
 * :ref:`OfxImageEffectActionGetRegionOfDefinition <action_OfxImageEffectActionGetRegionOfDefinition>`
 * :ref:`OfxImageEffectActionGetRegionsOfInterest <action_OfxImageEffectActionGetRegionsOfInterest>`
@@ -1205,6 +1206,19 @@ For each action, the required input properties (passed from host to plugin) and 
 - :ref:`OfxPropTime <prop_OfxPropTime>` - Type: double, Dimension: 1 (:c:macro:`kOfxPropTime`)
 
 - :ref:`OfxImageEffectPropThumbnailRender <prop_OfxImageEffectPropThumbnailRender>` - Type: enum, Dimension: 1 (:c:macro:`kOfxImageEffectPropThumbnailRender`)
+
+.. _action_OfxImageEffectActionGetMetadata:
+
+**OfxImageEffectActionGetMetadata**
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+**Input Arguments**
+
+- :ref:`OfxPropTime <prop_OfxPropTime>` - Type: double, Dimension: 1 (:c:macro:`kOfxPropTime`)
+
+**Output Arguments**
+
+- :ref:`OfxImageEffectPropMetadataSourceClip <prop_OfxImageEffectPropMetadataSourceClip>` - Type: string, Dimension: 1 (doc: :c:macro:`kOfxImageEffectPropMetadataSourceClip`)
 
 .. _action_OfxImageEffectActionGetOutputColourspace:
 

@@ -25,6 +25,7 @@ the API. The changes to the API are listed in an addendum.
     ofxRendering
     ofxInteracts
     ofxClipPreferences
+    ofxMetadata
     ofxImageEffectActions
     ofxInteractActions
     suites/ofxSuiteReference

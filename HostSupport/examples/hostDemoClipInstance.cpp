@@ -190,7 +190,7 @@ namespace MyHost {
 
   MyImage::~MyImage() 
   {
-    delete _data;
+    delete [] _data;
   }
 
   MyClipInstance::MyClipInstance(MyEffectInstance* effect, OFX::Host::ImageEffect::ClipDescriptor *desc)

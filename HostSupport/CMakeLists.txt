@@ -15,9 +15,11 @@ if(NOT MSVC)
 endif()
 
 target_compile_features(OfxHost PUBLIC cxx_std_17)
-target_link_libraries(OfxHost PUBLIC expat::expat)
+target_link_libraries(OfxHost PUBLIC expat::expat ${CMAKE_DL_LIBS})
 
 target_include_directories(OfxHost PUBLIC
 	${OFX_HEADER_DIR}
 	${OFX_HOSTSUPPORT_HEADER_DIR}
 	${expat_INCLUDE_DIR})
+
+add_subdirectory(examples)

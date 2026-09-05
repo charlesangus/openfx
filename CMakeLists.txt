@@ -20,6 +20,8 @@ endif()
 
 option(OFX_SUPPORTS_OPENGLRENDER
        "Build with support for GPU rendering (OpenGL/CUDA/Metal/OpenCL)" ON)
+option(OFX_SUPPORTS_METADATA
+       "Build with support for clip and image metadata" ON)
 option(BUILD_EXAMPLE_PLUGINS "Build example plugins" OFF)
 option(OFX_SUPPORTS_OPENCLRENDER
        "Build examples with support for OpenCL GPU rendering" OFF)
@@ -34,6 +36,9 @@ endif()
 
 if(OFX_SUPPORTS_OPENGLRENDER)
   add_definitions(-DOFX_SUPPORTS_OPENGLRENDER)
+endif()
+if(OFX_SUPPORTS_METADATA)
+  add_definitions(-DOFX_SUPPORTS_METADATA)
 endif()
 if(OFX_SUPPORTS_OPENCLRENDER)
   find_package(OpenCLHeaders REQUIRED)

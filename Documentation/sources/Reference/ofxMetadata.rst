@@ -23,6 +23,49 @@ is no nesting, and there is no binary blob type. Values are read with the
 generic Property Suite once the keys are known, and the keys present on a given
 image can be discovered with ``metadataEnumerate``.
 
+Composing Metadata from Input Clips
+------------------------------------
+
+An effect trapping :c:macro:`kOfxImageEffectActionGetMetadata` does not merely add new keys of its
+own: it also controls which keys reach the output clip from its input clips, and how conflicting
+values between inputs are resolved. This is done with two ``outArgs`` properties.
+
+Every input clip that is currently attached has its own retained-keys list, named
+``OfxImageClipPropMetadataRetainedKeys_`` post pended with the clip's name, for example
+``OfxImageClipPropMetadataRetainedKeys_Source`` or ``OfxImageClipPropMetadataRetainedKeys_Mask``.
+Each list names the metadata keys that are retained from that particular clip; a key absent from
+a clip's list is not carried through from that clip, no matter what
+:c:macro:`kOfxImageEffectPropMetadataSourceClip` says.
+
+:c:macro:`kOfxImageEffectPropMetadataSourceClip` is the ordered list of input clip names that the
+output composes its metadata from. **The list is read in increasing precedence: where two of the
+named clips carry the same key, the value from the clip named later in the list wins.** This is
+what lets an effect express composition in either direction. To compose a clip named ``Mask``
+over a clip named ``Source`` — that is, to let ``Mask``'s metadata override ``Source``'s wherever
+the two disagree — an effect sets the list to::
+
+    ["Source", "Mask"]
+
+A key present on both clips takes ``Mask``'s value, because ``Mask`` comes later in the list. A
+key present on only one of the two clips passes through unchanged, since there is nothing to
+conflict with. Reversing the list to ``["Mask", "Source"]`` composes ``Source`` over ``Mask``
+instead, and reverses the outcome for every key the two clips disagree on. Naming a clip only once
+in the list, for example ``["Source"]``, inherits metadata from that clip alone, exactly as a
+single fixed source clip would.
+
+An **empty list** means the output inherits no metadata at all, from any input clip; this is the
+one case that cannot be confused with any other reading of the list. A clip named in the list that
+is not one of the effect's currently attached input clips is ignored, as though it had been left
+out of the list.
+
+Before the action is called, the host initialises :c:macro:`kOfxImageEffectPropMetadataSourceClip`
+to a single-element list naming the first input clip the effect describes, and initialises that
+clip's retained-keys list to every key present on the clip's images at the time being queried, with
+every other input clip's retained-keys list left empty. An effect that does not touch either
+property therefore inherits all of the first input clip's metadata and nothing from any other
+input, unchanged from a plugin's point of view whether or not it is aware that composition across
+several clips is possible.
+
 The Key Namespaces
 ------------------
 

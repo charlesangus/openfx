@@ -63,15 +63,17 @@ or it may choose not to modify metadata at all.
  @param outArgs is a property set that the effect populates with the metadata it contributes.
  It also carries the following properties, which describe how metadata is inherited from the
  effect's input clips
-     - \ref kOfxImageEffectPropMetadataSourceClip the name of the input clip whose metadata the
-       output inherits, defaulting to the first input clip described by the effect
+     - \ref kOfxImageEffectPropMetadataSourceClip the ordered list of input clip names whose
+       metadata the output composes, read in increasing precedence, defaulting to a
+       single-element list naming the first input clip described by the effect
      - a set of char * X N properties, one for each of the input clips currently attached,
        labelled with ``OfxImageClipPropMetadataRetainedKeys_`` post pended with the clip's name,
        for example ``OfxImageClipPropMetadataRetainedKeys_Source``. Each such property lists the
        metadata keys retained from that input clip. A key absent from the list on a clip is not
-       carried through from that clip. The host initialises each of these to the full set of keys
-       present on the clip named by \ref kOfxImageEffectPropMetadataSourceClip and to the empty
-       list on every other input clip, before the action is called.
+       carried through from that clip. The host initialises the list for the effect's first
+       input clip, the clip named by the default value of \ref kOfxImageEffectPropMetadataSourceClip,
+       to the full set of keys present on that clip, and to the empty list for every other input
+       clip, before the action is called.
 
  @returns
      - \ref kOfxStatOK the action was trapped and the effect has populated outArgs with the metadata it contributes,
@@ -92,25 +94,37 @@ or it may choose not to modify metadata at all.
  */
 #define kOfxImageEffectActionGetMetadata "OfxImageEffectActionGetMetadata"
 
-/** @brief The name of the input clip whose metadata the output clip inherits
+/** @brief The ordered list of input clip names whose metadata the output clip inherits
 
-An effect sets this in the ``outArgs`` of \ref kOfxImageEffectActionGetMetadata to nominate
-the single input clip that the output clip inherits metadata from. Every metadata key present
-on that input's images at the time being rendered is carried through to the output, subject to
-the per-clip ``OfxImageClipPropMetadataRetainedKeys_`` properties described in that action.
+An effect sets this in the ``outArgs`` of \ref kOfxImageEffectActionGetMetadata to nominate the
+input clips that the output clip's metadata is composed from. Each named clip contributes the
+metadata keys selected by its own ``OfxImageClipPropMetadataRetainedKeys_`` property, described
+in that action; a key absent from a clip's retained-keys list is not carried through from that
+clip.
 
-   - Type - string X 1
+The list is read in increasing precedence: where two clips named in the list carry the same key,
+the value from the later entry wins. So to compose a clip named ``Mask`` over one named
+``Source``, an effect sets the list to ``["Source", "Mask"]`` — a key present on both clips takes
+the value from ``Mask``, because it comes later, while a key present on only one of them passes
+through unchanged. Reversing the order to ``["Mask", "Source"]`` composes ``Source`` over
+``Mask`` instead, and gives the opposite result wherever the two clips disagree.
+
+An empty list means the output inherits no metadata at all, from any clip. A name in the list
+that does not match any of the effect's input clips is ignored, exactly as if it were absent from
+the list.
+
+   - Type - string X N
    - Property Set - outArgs property set of the \ref kOfxImageEffectActionGetMetadata action
-   - Valid Values - the name of any of the effect's input clips, or the empty string for an
-                    output that inherits no metadata
-   - Default - the name of the first input clip described by the effect, or the empty string
-               if the effect has no input clips
+   - Valid Values - the name of any of the effect's input clips, each may appear at most once and
+                    in any order; the empty list is valid and means no metadata is inherited
+   - Default - a single-element list naming the first input clip described by the effect, or the
+               empty list if the effect has no input clips
 
  @version Added in OpenFX NEXT
 
    @propdef
    type: string
-   dimension: 1
+   dimension: N
 */
 #define kOfxImageEffectPropMetadataSourceClip "OfxImageEffectPropMetadataSourceClip"
 
@@ -560,20 +574,19 @@ typedef struct OfxMetadataSuiteV1 {
 	 \arg \c time      time to retrieve metadata at
 	 \arg \c metadata  filled with a handle to the retrieved metadata property set
 
-	 The returned handle must be disposed of with metadataRelease once the plugin
-	 is finished with it.
-
 	 \pre
 	 - clip was returned by clipGetHandle
 
 	 \post
-	 - metadata handle to be disposed of by metadataRelease
+	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
+	 - on other status codes, metadata is set to NULL and there is nothing to release
 
 	 @returns
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
 	 - ::kOfxStatReplyDefault - the clip has no metadata associated with it at the given time,
 	 - ::kOfxStatErrBadHandle - the clip handle was invalid,
-	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.
+	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
 	 */
 	OfxStatus (*clipGetMetadata)(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *metadata);
 
@@ -585,20 +598,19 @@ typedef struct OfxMetadataSuiteV1 {
 	 Since an image handle already denotes a clip at a specific time, no time
 	 parameter is required.
 
-	 The returned handle must be disposed of with metadataRelease once the plugin
-	 is finished with it.
-
 	 \pre
 	 - image was returned by OfxImageEffectSuiteV1::clipGetImage
 
 	 \post
-	 - metadata handle to be disposed of by metadataRelease
+	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
+	 - on other status codes, metadata is set to NULL and there is nothing to release
 
 	 @returns
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
 	 - ::kOfxStatReplyDefault - the image has no metadata associated with it,
 	 - ::kOfxStatErrBadHandle - the image handle was invalid,
-	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.
+	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
 	 */
 	OfxStatus (*imageGetMetadata)(OfxPropertySetHandle image, OfxPropertySetHandle *metadata);
 

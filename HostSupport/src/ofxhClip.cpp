@@ -213,6 +213,13 @@ namespace OFX {
         }
       }
 
+      ClipInstance::~ClipInstance()
+      {
+#       ifdef OFX_SUPPORTS_METADATA
+        invalidateMetadata();
+#       endif
+      }
+
       // do nothing
       int ClipInstance::getDimension(const std::string &name) const 
       {
@@ -450,8 +457,90 @@ namespace OFX {
 
         return none;
       }
-      
-      
+
+#     ifdef OFX_SUPPORTS_METADATA
+      ////////////////////////////////////////////////////////////////////////////////
+      // MetadataSet
+      //
+
+      MetadataSet::MetadataSet()
+        : Property::Set()
+        , _referenceCount(1)
+      {
+      }
+
+      MetadataSet::~MetadataSet()
+      {
+      }
+
+      // release the reference
+      void MetadataSet::releaseReference()
+      {
+        _referenceCount -= 1;
+        if(_referenceCount <= 0)
+          delete this;
+      }
+
+      ////////////////////////////////////////////////////////////////////////////////
+      // clip instance metadata
+      //
+
+      /// the maximum number of distinct times a clip instance caches metadata for
+      static const size_t kMaxCachedMetadataEntries = 64;
+
+      MetadataSet *ClipInstance::getMetadata(OfxTime time)
+      {
+        MetadataSet *metadata;
+        std::map<OfxTime, MetadataSet*>::iterator it = _metadataCache.find(time);
+
+        if(it != _metadataCache.end()) {
+          metadata = it->second;
+        }
+        else {
+          if(_metadataCache.size() >= kMaxCachedMetadataEntries)
+            invalidateMetadata();
+
+          metadata = new MetadataSet();
+
+          try {
+            fetchMetadata(time, *metadata);
+          }
+          catch (...) {
+            metadata->releaseReference();
+            throw;
+          }
+
+          _metadataCache[time] = metadata;
+        }
+
+        metadata->addReference();
+        return metadata;
+      }
+
+      void ClipInstance::invalidateMetadata()
+      {
+        for(std::map<OfxTime, MetadataSet*>::iterator it = _metadataCache.begin(); it != _metadataCache.end(); ++it)
+          it->second->releaseReference();
+        _metadataCache.clear();
+
+        // the effect's output clip holds copies of what its inputs carry, so dropping an
+        // input clip's sets has to drop the ones derived from it too. The recursion stops
+        // at the output clip, which is not an input of anything
+        if(!_isOutput && _effectInstance) {
+          ClipInstance *output = _effectInstance->getClip(kOfxImageEffectOutputClipName);
+
+          if(output)
+            output->invalidateMetadata();
+        }
+      }
+
+      void ClipInstance::fetchMetadata(OfxTime time, Property::Set &metadata)
+      {
+        if(_isOutput && _effectInstance)
+          _effectInstance->getOutputMetadata(time, metadata);
+      }
+#     endif // OFX_SUPPORTS_METADATA
+
       ////////////////////////////////////////////////////////////////////////////////
       // Image
       //
@@ -474,6 +563,10 @@ namespace OFX {
       ImageBase::ImageBase()
         : Property::Set(imageBaseStuffs)
         , _referenceCount(1)
+#       ifdef OFX_SUPPORTS_METADATA
+        , _fetchedClip(NULL)
+        , _fetchedTime(0)
+#       endif
       {
       }
 
@@ -501,6 +594,10 @@ namespace OFX {
       ImageBase::ImageBase(ClipInstance& instance)
         : Property::Set(imageBaseStuffs)
         , _referenceCount(1)
+#       ifdef OFX_SUPPORTS_METADATA
+        , _fetchedClip(NULL)
+        , _fetchedTime(0)
+#       endif
       {
         getClipBits(instance);
       }      
@@ -516,6 +613,10 @@ namespace OFX {
                    std::string uniqueIdentifier) 
         : Property::Set(imageBaseStuffs)
         , _referenceCount(1)
+#       ifdef OFX_SUPPORTS_METADATA
+        , _fetchedClip(NULL)
+        , _fetchedTime(0)
+#       endif
       {
         getClipBits(instance);
 
@@ -555,7 +656,15 @@ namespace OFX {
         //assert(_referenceCount <= 0);
       }
 
-      // release the reference 
+#     ifdef OFX_SUPPORTS_METADATA
+      void ImageBase::setFetchedFor(ClipInstance& instance, OfxTime time)
+      {
+        _fetchedClip = &instance;
+        _fetchedTime = time;
+      }
+#     endif // OFX_SUPPORTS_METADATA
+
+      // release the reference
       void ImageBase::releaseReference()
       {
         _referenceCount -= 1;

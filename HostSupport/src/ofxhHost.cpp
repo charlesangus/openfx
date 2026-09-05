@@ -109,7 +109,7 @@ namespace OFX {
 
     const void *Host::fetchSuite(const char *suiteName, int suiteVersion)
     {
-      if (strcmp(suiteName, kOfxPropertySuite)==0  && suiteVersion == 1) {
+      if (strcmp(suiteName, kOfxPropertySuite)==0  && (suiteVersion == 1 || suiteVersion == 2)) {
         return Property::GetSuite(suiteVersion);
       }
       else if (strcmp(suiteName, kOfxMemorySuite)==0 && suiteVersion == 1) {

@@ -560,20 +560,19 @@ typedef struct OfxMetadataSuiteV1 {
 	 \arg \c time      time to retrieve metadata at
 	 \arg \c metadata  filled with a handle to the retrieved metadata property set
 
-	 The returned handle must be disposed of with metadataRelease once the plugin
-	 is finished with it.
-
 	 \pre
 	 - clip was returned by clipGetHandle
 
 	 \post
-	 - metadata handle to be disposed of by metadataRelease
+	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
+	 - on other status codes, metadata is set to NULL and there is nothing to release
 
 	 @returns
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
 	 - ::kOfxStatReplyDefault - the clip has no metadata associated with it at the given time,
 	 - ::kOfxStatErrBadHandle - the clip handle was invalid,
-	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.
+	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
 	 */
 	OfxStatus (*clipGetMetadata)(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *metadata);
 
@@ -585,20 +584,19 @@ typedef struct OfxMetadataSuiteV1 {
 	 Since an image handle already denotes a clip at a specific time, no time
 	 parameter is required.
 
-	 The returned handle must be disposed of with metadataRelease once the plugin
-	 is finished with it.
-
 	 \pre
 	 - image was returned by OfxImageEffectSuiteV1::clipGetImage
 
 	 \post
-	 - metadata handle to be disposed of by metadataRelease
+	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
+	 - on other status codes, metadata is set to NULL and there is nothing to release
 
 	 @returns
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
 	 - ::kOfxStatReplyDefault - the image has no metadata associated with it,
 	 - ::kOfxStatErrBadHandle - the image handle was invalid,
-	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.
+	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
 	 */
 	OfxStatus (*imageGetMetadata)(OfxPropertySetHandle image, OfxPropertySetHandle *metadata);
 

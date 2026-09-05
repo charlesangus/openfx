@@ -22,6 +22,33 @@ for example metadata originating from a file's container or from upstream proces
 /** @brief the string that names the MetadataSuite, passed to OfxHost::fetchSuite */
 #define kOfxMetadataSuite "OfxMetadataSuite"
 
+/** @brief Action called to retrieve the metadata an effect contributes for a clip at a given time.
+
+Metadata is a property of an image — a clip at a specific time — and this action is always time-parameterised.
+The host calls this action whenever the effect's parameter or input state changes, using the same hash it
+already uses for the render cache, so no separate invalidation property is required or defined.
+
+An effect may add or modify metadata properties in the metadata property set returned via the suite,
+or it may choose not to modify metadata at all.
+
+ @param handle handle to the instance, cast to an \ref OfxImageEffectHandle
+
+ @param inArgs has the following properties
+     - \ref kOfxPropTime the time at which the metadata is being requested
+
+ @param outArgs is a property set that the effect populates with the metadata it contributes
+
+ @returns
+     - \ref kOfxStatOK the action was trapped and the effect has populated outArgs with the metadata it contributes,
+     - \ref kOfxStatReplyDefault the action was not trapped and the host should use its default metadata,
+     - \ref kOfxStatErrMemory the host ran out of memory, in which case the action may be called again after a memory purge,
+     - \ref kOfxStatFailed something went wrong but no error code is appropriate, the plugin should post a message,
+     - \ref kOfxStatErrFatal
+
+ @version Added in OpenFX NEXT
+ */
+#define kOfxImageEffectActionGetMetadata "OfxImageEffectActionGetMetadata"
+
 /** @brief Callback used by OfxMetadataSuiteV1::metadataEnumerate to visit each key in a metadata property set
 
  \arg \c key       the name of a metadata key present in the property set being enumerated

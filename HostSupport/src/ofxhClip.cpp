@@ -522,6 +522,16 @@ namespace OFX {
         for(std::map<OfxTime, MetadataSet*>::iterator it = _metadataCache.begin(); it != _metadataCache.end(); ++it)
           it->second->releaseReference();
         _metadataCache.clear();
+
+        // the effect's output clip holds copies of what its inputs carry, so dropping an
+        // input clip's sets has to drop the ones derived from it too. The recursion stops
+        // at the output clip, which is not an input of anything
+        if(!_isOutput && _effectInstance) {
+          ClipInstance *output = _effectInstance->getClip(kOfxImageEffectOutputClipName);
+
+          if(output)
+            output->invalidateMetadata();
+        }
       }
 
       void ClipInstance::fetchMetadata(OfxTime time, Property::Set &metadata)

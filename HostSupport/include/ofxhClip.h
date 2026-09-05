@@ -289,6 +289,9 @@ namespace OFX {
         /// on the effect instance. Outside a render call, the optionalBounds should
         /// be 'appropriate' for the.
         /// If bounds is not null, fetch the indicated section of the canonical image plane.
+        /// ofxImageEffect.h requires a separate image handle per fetch, even for identical
+        /// arguments, so return a distinct object from each call and share the pixel data
+        /// by reference counting the buffer rather than the image object.
         virtual ImageEffect::Image* getImage(OfxTime time, const OfxRectD *optionalBounds) = 0;
 
 #     ifdef OFX_SUPPORTS_METADATA
@@ -310,6 +313,12 @@ namespace OFX {
         /// Drop every cached metadata set, so that the next getMetadata() for a given time
         /// calls fetchMetadata() again. Call this when the state the metadata is derived
         /// from has changed.
+        ///
+        /// This drops this clip's cached sets and, for an input clip, those of its effect's
+        /// output clip as well, which holds copies derived from it. It does not reach the
+        /// effects downstream of this one, whose input clips have cached what this effect
+        /// derived, so a host must call Instance::invalidateMetadata() on those itself, as
+        /// it is the only thing that knows the graph.
         void invalidateMetadata();
 #     endif // OFX_SUPPORTS_METADATA
 
@@ -431,9 +440,15 @@ namespace OFX {
 #       ifdef OFX_SUPPORTS_METADATA
         /// record the clip and time this image was fetched for, so that an image handle
         /// can later be resolved back to the clip and time its metadata belongs to.
-        /// The clip is held as a bare pointer, so it must outlive every image it vends, and
-        /// each fetch overwrites the record, so a clip that vends one image object for
-        /// several times reports the most recent of them.
+        /// The clip is held as a bare pointer, so it must outlive every image it vends.
+        /// Each fetch overwrites the record. ofxImageEffect.h requires clipGetImage() to
+        /// return a separate image handle per fetch even for identical arguments, sharing
+        /// pixel data by reference counting the buffer rather than the image object, so a
+        /// conforming getImage() override returns a distinct object per call and the record
+        /// is never contended. A host that reuses one image object across fetches at
+        /// different times or from different clips breaks that requirement, and this
+        /// record, like the image's own bounds, data pointer and unique identifier, then
+        /// describes only the most recent fetch.
         void setFetchedFor(ClipInstance& instance, OfxTime time);
 
         /// the clip this image was fetched from, NULL if it was not fetched from one

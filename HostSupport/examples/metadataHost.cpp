@@ -47,23 +47,31 @@
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
-// A headless host that publishes the metadata in metadataHostFixture.h and then reads
-// it back through the C api the way a plugin would, checking what comes back. It is
-// meant to be run as a smoke test: every check it makes is printed on one line ending
-// in PASS or FAIL, and it exits non zero if any of them failed.
-//
-// The host, its clips and its effect all come from the hostDemo classes, so the only
-// host code here is the fetchMetadata() override that publishes the fixture, that being
-// the hook a real host fills in with whatever its reader knows about an image, and the
-// integer parameter the demo host does not hold a value for.
-//
-// The checks come in two halves. The first reads the fixture straight back off the
-// input clips, with no effect involved. The second loads metadataPlugin.ofx from the
-// build tree, wires the fixture's clips to it and reads its output clip, so that the
-// get metadata action, the ordered composition of the input clips and the retained
-// keys filter are all exercised through a real plugin binary.
+// A headless smoke test that publishes the metadata in metadataHostFixture.h and reads
+// it back through the plugin facing C api. Every check is printed on one line ending in
+// PASS or FAIL, and it exits non zero if any of them failed.
 
 namespace MyHost {
+
+  /// the clip and key whose published value carries gRevision below
+  const char *const kRevisedClip = MetadataFixture::kInputClips[0];
+  const char kRevisedKey[] = kOfxMetadataKeyTimecode;
+
+  /// bumping this changes what the clips publish for kRevisedKey, so that a clip can be
+  /// made to carry something new without the fixture being edited
+  int gRevision = 0;
+
+  /// revision zero publishes the fixture's own value, so the checks that compare what
+  /// they read against the fixture hold as long as the revision is back at zero
+  std::string revisedValue(const std::string &value, int revision)
+  {
+    if(revision == 0)
+      return value;
+
+    std::ostringstream os;
+    os << value << "/r" << revision;
+    return os.str();
+  }
 
   /// a clip that publishes the metadata the fixture gives for it at the requested time
   class MetadataClipInstance : public MyClipInstance {
@@ -154,8 +162,10 @@ namespace MyHost {
       switch(entry.type) {
       case MetadataFixture::eString : {
         const OFX::Host::Property::PropSpec spec = {entry.key, OFX::Host::Property::eString, 1, true, ""};
+        const bool revised = clip == kRevisedClip && std::strcmp(entry.key, kRevisedKey) == 0;
         metadata.createProperty(spec);
-        metadata.setStringProperty(entry.key, entry.stringValue);
+        metadata.setStringProperty(entry.key, revised ? revisedValue(entry.stringValue, gRevision)
+                                                      : std::string(entry.stringValue));
       } break;
 
       case MetadataFixture::eDouble : {
@@ -243,6 +253,21 @@ namespace {
     if(clip != entry.clip)
       return false;
     return entry.time == MetadataFixture::kAnyTime || entry.time == time;
+  }
+
+  /// the value the fixture gives for one key of a clip at a time, false if it gives none
+  bool fixtureValue(const std::string &clip, const std::string &key, OfxTime time, std::string &value)
+  {
+    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+      const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
+
+      if(key == entry.key && entryAppliesAt(entry, clip, time)) {
+        value = entryValue(entry);
+        return true;
+      }
+    }
+
+    return false;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -469,6 +494,64 @@ namespace {
     }
   }
 
+  /// check that an image handle carries the metadata of the time it was fetched at
+  void checkImageKey(Report &report,
+                     const std::string &clip,
+                     OfxPropertySetHandle image,
+                     const std::string &key,
+                     OfxTime time)
+  {
+    std::ostringstream os;
+    os << "clip=" << clip << " time=" << formatTime(time) << " via=liveimages key=" << key;
+    const std::string where = os.str();
+
+    std::string expected;
+
+    if(!report.check(fixtureValue(clip, key, time, expected), where + " infixture"))
+      return;
+
+    OfxPropertySetHandle metadata = NULL;
+
+    if(!report.check(gMetadataSuite->imageGetMetadata(image, &metadata) == kOfxStatOK && metadata,
+                     where + " metadata"))
+      return;
+
+    std::string type = "none";
+    std::string value = "none";
+    const bool ok = readValue(metadata, key.c_str(), type, value);
+
+    report.check(ok && value == expected, where + " value=" + value + " expected=" + expected);
+
+    gMetadataSuite->metadataRelease(metadata);
+  }
+
+  /// hold two images of the same clip at once and check each still resolves to the
+  /// metadata of its own frame, which it cannot if the clip vends one image object for
+  /// both fetches rather than the separate handle per fetch ofxImageEffect.h requires
+  void checkLiveImages(Report &report, MyHost::MetadataClipInstance &clip, const std::string &key)
+  {
+    OfxPropertySetHandle first = NULL;
+    OfxPropertySetHandle last = NULL;
+
+    const bool fetched =
+      gEffectSuite->clipGetImage(clip.getHandle(), MetadataFixture::kFirstFrame, NULL, &first) == kOfxStatOK
+      && first
+      && gEffectSuite->clipGetImage(clip.getHandle(), MetadataFixture::kLastFrame, NULL, &last) == kOfxStatOK
+      && last;
+
+    if(report.check(fetched, "clip=" + clip.getName() + " liveimages fetched")) {
+      report.check(first != last, "clip=" + clip.getName() + " liveimages distinct");
+
+      checkImageKey(report, clip.getName(), first, key, MetadataFixture::kFirstFrame);
+      checkImageKey(report, clip.getName(), last, key, MetadataFixture::kLastFrame);
+    }
+
+    if(first)
+      gEffectSuite->clipReleaseImage(first);
+    if(last)
+      gEffectSuite->clipReleaseImage(last);
+  }
+
   /// read every frame of a clip through the image fetched at that frame, and check that
   /// the keys the fixture varies per frame do come back varying. A host that attached
   /// metadata to the clip rather than to the image would fail this.
@@ -518,6 +601,9 @@ namespace {
 
       report.check(frames > 1 && int(values[keys[k]].size()) == frames, os.str());
     }
+
+    if(!keys.empty())
+      checkLiveImages(report, clip, keys[0]);
   }
 
   /// the same time must give back the set the clip has cached, a different time must not
@@ -757,6 +843,73 @@ namespace {
     }
   }
 
+  /// read one string key of a clip's metadata at the given time
+  bool readClipKey(OFX::Host::ImageEffect::ClipInstance &clip,
+                   const char *key,
+                   OfxTime time,
+                   std::string &value)
+  {
+    OfxPropertySetHandle metadata = NULL;
+
+    if(gMetadataSuite->clipGetMetadata(clip.getHandle(), time, &metadata) != kOfxStatOK || !metadata)
+      return false;
+
+    std::string type = "none";
+    const bool ok = readValue(metadata, key, type, value) && type == "string";
+
+    gMetadataSuite->metadataRelease(metadata);
+
+    return ok;
+  }
+
+  /// change what an input clip publishes, drop that one clip's cached sets, and check
+  /// the effect's output clip, which holds copies derived from them, gives back the new
+  /// value. A host whose reader reloads one input has only that clip to invalidate
+  void checkInvalidation(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    OFX::Host::ImageEffect::ClipInstance *input = instance.getClip(MyHost::kRevisedClip);
+    OFX::Host::ImageEffect::ClipInstance *output = instance.getClip(kOfxImageEffectOutputClipName);
+
+    if(!report.check(input != NULL && output != NULL,
+                     std::string("invalidation clip=") + MyHost::kRevisedClip))
+      return;
+
+    std::string published;
+
+    if(!report.check(fixtureValue(MyHost::kRevisedClip,
+                                 MyHost::kRevisedKey,
+                                 MetadataFixture::kFirstFrame,
+                                 published),
+                     std::string("invalidation fixture clip=") + MyHost::kRevisedClip
+                     + " key=" + MyHost::kRevisedKey))
+      return;
+
+    const int before = MyHost::gRevision;
+    const int after = before + 1;
+    const std::string expectedBefore = MyHost::revisedValue(published, before);
+    const std::string expectedAfter = MyHost::revisedValue(published, after);
+
+    std::string was = "none";
+    std::string is = "none";
+
+    const bool readBefore = readClipKey(*output, MyHost::kRevisedKey, MetadataFixture::kFirstFrame, was);
+
+    MyHost::gRevision = after;
+    input->invalidateMetadata();
+
+    const bool readAfter = readClipKey(*output, MyHost::kRevisedKey, MetadataFixture::kFirstFrame, is);
+
+    MyHost::gRevision = before;
+    instance.invalidateMetadata();
+
+    report.check(readBefore && was == expectedBefore,
+                 "invalidation before value=" + was + " expected=" + expectedBefore);
+    report.check(expectedBefore != expectedAfter,
+                 "invalidation fixture before=" + expectedBefore + " after=" + expectedAfter);
+    report.check(readAfter && is == expectedAfter,
+                 "invalidation after value=" + is + " expected=" + expectedAfter);
+  }
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -858,6 +1011,8 @@ namespace {
                    + " maskoversource=" + atFirstFrame[kMaskOverSource][key]
                    + " sourceovermask=" + atFirstFrame[kSourceOverMask][key]);
     }
+
+    checkInvalidation(report, *instance);
   }
 
   int runChecks(const std::string &pluginDir)

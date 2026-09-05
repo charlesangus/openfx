@@ -991,6 +991,29 @@ public:
 
 };
 
+// Property set accessor for: ImageEffectActionGetMetadata_InArgs
+class ImageEffectActionGetMetadata_InArgs : public PropertySetAccessor {
+public:
+    using PropertySetAccessor::PropertySetAccessor;
+
+    double time(bool error_if_missing = true) const {
+        return props_.get<PropId::OfxPropTime>(0, error_if_missing);
+    }
+
+};
+
+// Property set accessor for: ImageEffectActionGetMetadata_OutArgs
+class ImageEffectActionGetMetadata_OutArgs : public PropertySetAccessor {
+public:
+    using PropertySetAccessor::PropertySetAccessor;
+
+    ImageEffectActionGetMetadata_OutArgs& setMetadataSourceClip(const char* value, bool error_if_missing = true) {
+        props_.set<PropId::OfxImageEffectPropMetadataSourceClip>(value, 0, error_if_missing);
+        return *this;
+    }
+
+};
+
 // Property set accessor for: ImageEffectActionGetOutputColourspace_InArgs
 class ImageEffectActionGetOutputColourspace_InArgs : public PropertySetAccessor {
 public:

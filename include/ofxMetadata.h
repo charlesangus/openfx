@@ -36,7 +36,18 @@ or it may choose not to modify metadata at all.
  @param inArgs has the following properties
      - \ref kOfxPropTime the time at which the metadata is being requested
 
- @param outArgs is a property set that the effect populates with the metadata it contributes
+ @param outArgs is a property set that the effect populates with the metadata it contributes.
+ It also carries the following properties, which describe how metadata is inherited from the
+ effect's input clips
+     - \ref kOfxImageEffectPropMetadataSourceClip the name of the input clip whose metadata the
+       output inherits, defaulting to the first input clip described by the effect
+     - a set of char * X N properties, one for each of the input clips currently attached,
+       labelled with ``OfxImageClipPropMetadataRetainedKeys_`` post pended with the clip's name,
+       for example ``OfxImageClipPropMetadataRetainedKeys_Source``. Each such property lists the
+       metadata keys retained from that input clip. A key absent from the list on a clip is not
+       carried through from that clip. The host initialises each of these to the full set of keys
+       present on the clip named by \ref kOfxImageEffectPropMetadataSourceClip and to the empty
+       list on every other input clip, before the action is called.
 
  @returns
      - \ref kOfxStatOK the action was trapped and the effect has populated outArgs with the metadata it contributes,
@@ -46,8 +57,38 @@ or it may choose not to modify metadata at all.
      - \ref kOfxStatErrFatal
 
  @version Added in OpenFX NEXT
+
+    @actiondef
+    inArgs:
+      - OfxPropTime
+    outArgs:
+      - OfxImageEffectPropMetadataSourceClip
+    # this special prop has the clip name postpended after "_"
+    # - OfxImageClipPropMetadataRetainedKeys_
  */
 #define kOfxImageEffectActionGetMetadata "OfxImageEffectActionGetMetadata"
+
+/** @brief The name of the input clip whose metadata the output clip inherits
+
+An effect sets this in the ``outArgs`` of \ref kOfxImageEffectActionGetMetadata to nominate
+the single input clip that the output clip inherits metadata from. Every metadata key present
+on that input's images at the time being rendered is carried through to the output, subject to
+the per-clip ``OfxImageClipPropMetadataRetainedKeys_`` properties described in that action.
+
+   - Type - string X 1
+   - Property Set - outArgs property set of the \ref kOfxImageEffectActionGetMetadata action
+   - Valid Values - the name of any of the effect's input clips, or the empty string for an
+                    output that inherits no metadata
+   - Default - the name of the first input clip described by the effect, or the empty string
+               if the effect has no input clips
+
+ @version Added in OpenFX NEXT
+
+   @propdef
+   type: string
+   dimension: 1
+*/
+#define kOfxImageEffectPropMetadataSourceClip "OfxImageEffectPropMetadataSourceClip"
 
 /** @brief Callback used by OfxMetadataSuiteV1::metadataEnumerate to visit each key in a metadata property set
 

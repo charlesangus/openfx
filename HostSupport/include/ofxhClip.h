@@ -101,6 +101,7 @@ namespace OFX {
         bool isOutput() const {return  getName() == kOfxImageEffectOutputClipName; }
       };
 
+#     ifdef OFX_SUPPORTS_METADATA
       /// the metadata of a clip's image at a given time, as vended by ClipInstance::getMetadata
       ///
       /// This is reference counted in the same way as ImageBase: it is constructed with a
@@ -125,6 +126,7 @@ namespace OFX {
         /// add a reference to this metadata set
         void addReference() {_referenceCount++;}
       };
+#     endif // OFX_SUPPORTS_METADATA
 
       /// a clip instance
       class ClipInstance : public ClipBase
@@ -135,7 +137,9 @@ namespace OFX {
         bool  _isOutput;                         ///< are we the output clip
         std::string             _pixelDepth;     ///< what is the bit depth we is at. Set during the clip preferences action.
         std::string             _components;     ///< what components do we have.  Set during the clip preferences action.
+#       ifdef OFX_SUPPORTS_METADATA
         std::map<OfxTime, MetadataSet*> _metadataCache; ///< metadata sets vended by getMetadata(), keyed by time, one reference held per entry
+#       endif
 
       public:
         ClipInstance(ImageEffect::Instance* effectInstance, ClipDescriptor& desc);
@@ -287,6 +291,7 @@ namespace OFX {
         /// If bounds is not null, fetch the indicated section of the canonical image plane.
         virtual ImageEffect::Image* getImage(OfxTime time, const OfxRectD *optionalBounds) = 0;
 
+#     ifdef OFX_SUPPORTS_METADATA
         /// Get the metadata for this clip's image at the given time.
         ///
         /// The set is filled in by fetchMetadata() the first time a given time is asked for
@@ -306,7 +311,8 @@ namespace OFX {
         /// calls fetchMetadata() again. Call this when the state the metadata is derived
         /// from has changed.
         void invalidateMetadata();
-                             
+#     endif // OFX_SUPPORTS_METADATA
+
 #     ifdef OFX_SUPPORTS_OPENGLRENDER
         /// override this to fill in the OpenGL texture at the given time.
         /// The bounds of the image on the image plane should be 
@@ -324,14 +330,16 @@ namespace OFX {
         /// override this for extra weird custom component depths
         virtual const std::string &findSupportedComp(const std::string &s) const;
 
+#     ifdef OFX_SUPPORTS_METADATA
       protected :
         /// Override this to populate 'metadata' with the metadata this clip's effect
         /// contributes for the image at 'time'. The default implementation adds nothing,
         /// so a host that does not override it vends empty metadata sets.
         virtual void fetchMetadata(OfxTime time, Property::Set &metadata);
+#     endif // OFX_SUPPORTS_METADATA
 
       private :
-        /// hide copy construction, as an instance owns the references in its metadata cache
+        /// hide copy construction, as the ctor registers 'this' as a property get hook
         ClipInstance(const ClipInstance &);
       };
 
@@ -342,8 +350,10 @@ namespace OFX {
         /// called during ctors to get bits from the clip props into ours
         void getClipBits(ClipInstance& instance);
         int _referenceCount; ///< reference count on this image
+#       ifdef OFX_SUPPORTS_METADATA
         ClipInstance *_fetchedClip; ///< clip this image was fetched from, not owned, NULL if it was not fetched from one
         OfxTime _fetchedTime;       ///< time this image was fetched at, only meaningful if _fetchedClip is set
+#       endif
 
       public:
         // default constructor
@@ -416,6 +426,7 @@ namespace OFX {
         /// add a reference to this image
         void addReference() {_referenceCount++;}
 
+#       ifdef OFX_SUPPORTS_METADATA
         /// record the clip and time this image was fetched for, so that an image handle
         /// can later be resolved back to the clip and time its metadata belongs to.
         /// The clip is held as a bare pointer, so it must outlive every image it vends, and
@@ -428,6 +439,7 @@ namespace OFX {
 
         /// the time this image was fetched at, only meaningful if getFetchedClip() is not NULL
         OfxTime getFetchedTime() const {return _fetchedTime;}
+#       endif // OFX_SUPPORTS_METADATA
       };
 
       /// instance of an image inside an image effect

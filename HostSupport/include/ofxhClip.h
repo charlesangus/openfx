@@ -342,6 +342,8 @@ namespace OFX {
         /// called during ctors to get bits from the clip props into ours
         void getClipBits(ClipInstance& instance);
         int _referenceCount; ///< reference count on this image
+        ClipInstance *_fetchedClip; ///< clip this image was fetched from, not owned, NULL if it was not fetched from one
+        OfxTime _fetchedTime;       ///< time this image was fetched at, only meaningful if _fetchedClip is set
 
       public:
         // default constructor
@@ -413,6 +415,19 @@ namespace OFX {
 
         /// add a reference to this image
         void addReference() {_referenceCount++;}
+
+        /// record the clip and time this image was fetched for, so that an image handle
+        /// can later be resolved back to the clip and time its metadata belongs to.
+        /// The clip is held as a bare pointer, so it must outlive every image it vends, and
+        /// each fetch overwrites the record, so a clip that vends one image object for
+        /// several times reports the most recent of them.
+        void setFetchedFor(ClipInstance& instance, OfxTime time);
+
+        /// the clip this image was fetched from, NULL if it was not fetched from one
+        ClipInstance *getFetchedClip() const {return _fetchedClip;}
+
+        /// the time this image was fetched at, only meaningful if getFetchedClip() is not NULL
+        OfxTime getFetchedTime() const {return _fetchedTime;}
       };
 
       /// instance of an image inside an image effect

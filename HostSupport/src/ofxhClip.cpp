@@ -547,6 +547,8 @@ namespace OFX {
       ImageBase::ImageBase()
         : Property::Set(imageBaseStuffs)
         , _referenceCount(1)
+        , _fetchedClip(NULL)
+        , _fetchedTime(0)
       {
       }
 
@@ -574,6 +576,8 @@ namespace OFX {
       ImageBase::ImageBase(ClipInstance& instance)
         : Property::Set(imageBaseStuffs)
         , _referenceCount(1)
+        , _fetchedClip(NULL)
+        , _fetchedTime(0)
       {
         getClipBits(instance);
       }      
@@ -589,6 +593,8 @@ namespace OFX {
                    std::string uniqueIdentifier) 
         : Property::Set(imageBaseStuffs)
         , _referenceCount(1)
+        , _fetchedClip(NULL)
+        , _fetchedTime(0)
       {
         getClipBits(instance);
 
@@ -626,6 +632,12 @@ namespace OFX {
 
       ImageBase::~ImageBase() {
         //assert(_referenceCount <= 0);
+      }
+
+      void ImageBase::setFetchedFor(ClipInstance& instance, OfxTime time)
+      {
+        _fetchedClip = &instance;
+        _fetchedTime = time;
       }
 
       // release the reference 

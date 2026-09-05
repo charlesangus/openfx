@@ -25,6 +25,9 @@
 #ifdef OFX_SUPPORTS_OPENGLRENDER
 #include "ofxGPURender.h"
 #endif
+#ifdef OFX_SUPPORTS_METADATA
+#include "ofxMetadata.h"
+#endif
 #include "ofxOld.h" // old plugins may rely on deprecated properties being present
 
 #include <string.h>
@@ -2023,6 +2026,8 @@ namespace OFX {
           return kOfxStatFailed;
         }
 
+        image->setFetchedFor(*clipInstance, time);
+
         *h3 = image->getPropHandle();
 
         return kOfxStatOK;
@@ -2258,6 +2263,177 @@ namespace OFX {
         imageMemoryUnlock
       };
 
+#   ifdef OFX_SUPPORTS_METADATA
+      ////////////////////////////////////////////////////////////////////////////////
+      ////////////////////////////////////////////////////////////////////////////////
+      ////////////////////////////////////////////////////////////////////////////////
+      /// The metadata suite functions
+
+      static OfxStatus clipGetMetadata(OfxImageClipHandle clip,
+                                       OfxTime time,
+                                       OfxPropertySetHandle *metadata)
+      {
+        try {
+        if (!metadata) {
+          return kOfxStatErrBadHandle;
+        }
+
+        ClipInstance *clipInstance = reinterpret_cast<ClipInstance*>(clip);
+
+        if (!clipInstance || !clipInstance->verifyMagic()) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+
+        MetadataSet *set = clipInstance->getMetadata(time);
+
+        if (!set) {
+          *metadata = NULL;
+
+          return kOfxStatFailed;
+        }
+
+        if (set->getProperties().empty()) {
+          // no handle goes back to the plugin, so the reference the clip added for us
+          // is ours to drop
+          set->releaseReference();
+          *metadata = NULL;
+
+          return kOfxStatReplyDefault;
+        }
+
+        *metadata = set->getPropHandle();
+
+        return kOfxStatOK;
+        } catch (std::bad_alloc&) {
+          *metadata = NULL;
+
+          return kOfxStatErrMemory;
+        } catch (...) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+      }
+
+      static OfxStatus imageGetMetadata(OfxPropertySetHandle image,
+                                        OfxPropertySetHandle *metadata)
+      {
+        try {
+        if (!metadata) {
+          return kOfxStatErrBadHandle;
+        }
+
+        Property::Set *pset = reinterpret_cast<Property::Set*>(image);
+
+        if (!pset || !pset->verifyMagic()) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+
+        ImageBase *imageBase = dynamic_cast<ImageBase*>(pset);
+
+        if (!imageBase) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+
+        ClipInstance *clipInstance = imageBase->getFetchedClip();
+
+        if (!clipInstance) {
+          *metadata = NULL;
+
+          return kOfxStatReplyDefault;
+        }
+
+        return clipGetMetadata(clipInstance->getHandle(), imageBase->getFetchedTime(), metadata);
+        } catch (std::bad_alloc&) {
+          *metadata = NULL;
+
+          return kOfxStatErrMemory;
+        } catch (...) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+      }
+
+      static OfxStatus metadataRelease(OfxPropertySetHandle metadata)
+      {
+        try {
+        Property::Set *pset = reinterpret_cast<Property::Set*>(metadata);
+
+        if (!pset || !pset->verifyMagic()) {
+          return kOfxStatErrBadHandle;
+        }
+
+        MetadataSet *set = dynamic_cast<MetadataSet*>(pset);
+
+        if(set){
+          set->releaseReference();
+
+          return kOfxStatOK;
+        }
+
+        return kOfxStatErrBadHandle;
+        } catch (...) {
+          return kOfxStatErrBadHandle;
+        }
+      }
+
+      static OfxStatus metadataEnumerate(OfxPropertySetHandle metadata,
+                                         OfxMetadataEnumerateFuncV1 callback,
+                                         void *userData)
+      {
+        try {
+        if (!callback) {
+          return kOfxStatErrBadHandle;
+        }
+
+        Property::Set *pset = reinterpret_cast<Property::Set*>(metadata);
+
+        if (!pset || !pset->verifyMagic()) {
+          return kOfxStatErrBadHandle;
+        }
+
+        MetadataSet *set = dynamic_cast<MetadataSet*>(pset);
+
+        if (!set) {
+          return kOfxStatErrBadHandle;
+        }
+
+        // the callback may call back into the suite, and may release this very handle,
+        // so walk a copy of the key list rather than the map itself
+        std::vector<std::string> keys;
+        const Property::PropertyMap &map = set->getProperties();
+        Property::PropertyMap::const_iterator i;
+        for(i = map.begin(); i != map.end(); ++i)
+          keys.push_back((*i).first);
+
+        std::vector<std::string>::const_iterator k;
+        for(k = keys.begin(); k != keys.end(); ++k) {
+          OfxStatus st = callback((*k).c_str(), userData);
+          if(st != kOfxStatOK)
+            return st;
+        }
+
+        return kOfxStatOK;
+        } catch (...) {
+          return kOfxStatErrBadHandle;
+        }
+      }
+
+      static const struct OfxMetadataSuiteV1 gMetadataSuite = {
+        clipGetMetadata,
+        imageGetMetadata,
+        metadataRelease,
+        metadataEnumerate
+      };
+#   endif // OFX_SUPPORTS_METADATA
+
 #   ifdef OFX_SUPPORTS_OPENGLRENDER
       ////////////////////////////////////////////////////////////////////////////////
       ////////////////////////////////////////////////////////////////////////////////
@@ -2288,6 +2464,8 @@ namespace OFX {
 
             return kOfxStatFailed;
           }
+
+          texture->setFetchedFor(*clipInstance, time);
 
           *h3 = texture->getPropHandle();
 
@@ -2796,6 +2974,14 @@ namespace OFX {
 #     ifdef OFX_SUPPORTS_PARAMETRIC
         else if (strcmp(suiteName, kOfxParametricParameterSuite)==0) {
           return ParametricParam::GetSuite(suiteVersion);
+        }
+#     endif
+#     ifdef OFX_SUPPORTS_METADATA
+        else if (strcmp(suiteName, kOfxMetadataSuite)==0) {
+          if(suiteVersion == 1)
+            return (void*)&gMetadataSuite;
+          else
+            return NULL;
         }
 #     endif
         else  /// otherwise just grab the base class one, which is props and memory

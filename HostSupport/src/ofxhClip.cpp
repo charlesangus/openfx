@@ -213,6 +213,11 @@ namespace OFX {
         }
       }
 
+      ClipInstance::~ClipInstance()
+      {
+        invalidateMetadata();
+      }
+
       // do nothing
       int ClipInstance::getDimension(const std::string &name) const 
       {
@@ -450,8 +455,76 @@ namespace OFX {
 
         return none;
       }
-      
-      
+
+      ////////////////////////////////////////////////////////////////////////////////
+      // MetadataSet
+      //
+
+      MetadataSet::MetadataSet()
+        : Property::Set()
+        , _referenceCount(1)
+      {
+      }
+
+      MetadataSet::~MetadataSet()
+      {
+      }
+
+      // release the reference
+      void MetadataSet::releaseReference()
+      {
+        _referenceCount -= 1;
+        if(_referenceCount <= 0)
+          delete this;
+      }
+
+      ////////////////////////////////////////////////////////////////////////////////
+      // clip instance metadata
+      //
+
+      /// the maximum number of distinct times a clip instance caches metadata for
+      static const size_t kMaxCachedMetadataEntries = 64;
+
+      MetadataSet *ClipInstance::getMetadata(OfxTime time)
+      {
+        MetadataSet *metadata;
+        std::map<OfxTime, MetadataSet*>::iterator it = _metadataCache.find(time);
+
+        if(it != _metadataCache.end()) {
+          metadata = it->second;
+        }
+        else {
+          if(_metadataCache.size() >= kMaxCachedMetadataEntries)
+            invalidateMetadata();
+
+          metadata = new MetadataSet();
+
+          try {
+            fetchMetadata(time, *metadata);
+          }
+          catch (...) {
+            metadata->releaseReference();
+            throw;
+          }
+
+          _metadataCache[time] = metadata;
+        }
+
+        metadata->addReference();
+        return metadata;
+      }
+
+      void ClipInstance::invalidateMetadata()
+      {
+        for(std::map<OfxTime, MetadataSet*>::iterator it = _metadataCache.begin(); it != _metadataCache.end(); ++it)
+          it->second->releaseReference();
+        _metadataCache.clear();
+      }
+
+      void ClipInstance::fetchMetadata(OfxTime /*time*/, Property::Set &/*metadata*/)
+      {
+      }
+
       ////////////////////////////////////////////////////////////////////////////////
       // Image
       //

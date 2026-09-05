@@ -1075,8 +1075,8 @@ class ImageEffectActionGetMetadata_OutArgs : public PropertySetAccessor {
 public:
     using PropertySetAccessor::PropertySetAccessor;
 
-    const char* metadataSourceClip(bool error_if_missing = true) const {
-        return props_.get<PropId::OfxImageEffectPropMetadataSourceClip>(0, error_if_missing);
+    const char* metadataSourceClip(int index = 0, bool error_if_missing = true) const {
+        return props_.get<PropId::OfxImageEffectPropMetadataSourceClip>(index, error_if_missing);
     }
 
 };

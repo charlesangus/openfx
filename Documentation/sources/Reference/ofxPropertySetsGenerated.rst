@@ -1091,7 +1091,7 @@ For each action, the required input properties (passed from host to plugin) and 
 
 **Output Arguments**
 
-- :ref:`OfxImageEffectPropMetadataSourceClip <prop_OfxImageEffectPropMetadataSourceClip>` - Type: string, Dimension: 1 (doc: :c:macro:`kOfxImageEffectPropMetadataSourceClip`)
+- :ref:`OfxImageEffectPropMetadataSourceClip <prop_OfxImageEffectPropMetadataSourceClip>` - Type: string, Dimension: Variable (doc: :c:macro:`kOfxImageEffectPropMetadataSourceClip`)
 
 .. _action_OfxImageEffectActionGetOutputColourspace:
 

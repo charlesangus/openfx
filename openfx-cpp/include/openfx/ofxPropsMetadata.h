@@ -587,7 +587,7 @@ static inline constexpr PropDefsArray<PropDef> prop_defs = {
 { "OfxImageEffectPropInteractiveRenderStatus",
   openfx::span(prop_type_arrays::OfxImageEffectPropInteractiveRenderStatus_types, 1), 1, openfx::span<const char* const>()},
 { "OfxImageEffectPropMetadataSourceClip",
-  openfx::span(prop_type_arrays::OfxImageEffectPropMetadataSourceClip_types, 1), 1, openfx::span<const char* const>()},
+  openfx::span(prop_type_arrays::OfxImageEffectPropMetadataSourceClip_types, 1), 0, openfx::span<const char* const>()},
 { "OfxImageEffectPropMetalCommandQueue",
   openfx::span(prop_type_arrays::OfxImageEffectPropMetalCommandQueue_types, 1), 1, openfx::span<const char* const>()},
 { "OfxImageEffectPropMetalEnabled",

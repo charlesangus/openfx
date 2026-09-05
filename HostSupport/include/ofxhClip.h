@@ -5,6 +5,8 @@
 #ifndef OFX_CLIP_H
 #define OFX_CLIP_H
 
+#include <map>
+
 #include "ofxImageEffect.h"
 #include "ofxhUtilities.h"
 
@@ -99,6 +101,33 @@ namespace OFX {
         bool isOutput() const {return  getName() == kOfxImageEffectOutputClipName; }
       };
 
+#     ifdef OFX_SUPPORTS_METADATA
+      /// the metadata of a clip's image at a given time, as vended by ClipInstance::getMetadata
+      ///
+      /// This is reference counted in the same way as ImageBase: it is constructed with a
+      /// count of one, addReference() takes a further reference, and releaseReference()
+      /// drops one and deletes the set when the last is gone.
+      class MetadataSet : public Property::Set {
+      protected :
+        int _referenceCount; ///< reference count on this metadata set
+
+      public :
+        /// ctor, makes an empty metadata set
+        MetadataSet();
+
+        virtual ~MetadataSet();
+
+        /// get a handle on the metadata set for the C api
+        OfxPropertySetHandle getPropHandle() const { return Property::Set::getHandle(); }
+
+        /// release the reference count, which, if zero, deletes this
+        void releaseReference();
+
+        /// add a reference to this metadata set
+        void addReference() {_referenceCount++;}
+      };
+#     endif // OFX_SUPPORTS_METADATA
+
       /// a clip instance
       class ClipInstance : public ClipBase
                          , protected Property::GetHook
@@ -108,10 +137,15 @@ namespace OFX {
         bool  _isOutput;                         ///< are we the output clip
         std::string             _pixelDepth;     ///< what is the bit depth we is at. Set during the clip preferences action.
         std::string             _components;     ///< what components do we have.  Set during the clip preferences action.
-        
+#       ifdef OFX_SUPPORTS_METADATA
+        std::map<OfxTime, MetadataSet*> _metadataCache; ///< metadata sets vended by getMetadata(), keyed by time, one reference held per entry
+#       endif
+
       public:
         ClipInstance(ImageEffect::Instance* effectInstance, ClipDescriptor& desc);
-        
+
+        virtual ~ClipInstance();
+
         /// is the clip an output clip
         bool isOutput() const {return  _isOutput;}
 
@@ -255,8 +289,39 @@ namespace OFX {
         /// on the effect instance. Outside a render call, the optionalBounds should
         /// be 'appropriate' for the.
         /// If bounds is not null, fetch the indicated section of the canonical image plane.
+        /// ofxImageEffect.h requires a separate image handle per fetch, even for identical
+        /// arguments, so return a distinct object from each call and share the pixel data
+        /// by reference counting the buffer rather than the image object.
         virtual ImageEffect::Image* getImage(OfxTime time, const OfxRectD *optionalBounds) = 0;
-                             
+
+#     ifdef OFX_SUPPORTS_METADATA
+        /// Get the metadata for this clip's image at the given time.
+        ///
+        /// The set is filled in by fetchMetadata() the first time a given time is asked for
+        /// and is then cached, so repeated calls for the same time do not re-derive it. A
+        /// reference is added for the caller, which must call releaseReference() on the
+        /// returned set once it is done with it, as it must for the images from getImage().
+        ///
+        /// The time is an exact key, so pass the same time value that is passed to
+        /// getImage() rather than a separately rounded or scaled one.
+        ///
+        /// The cache is bounded, and is dropped in its entirety once it is full. Dropping it
+        /// only releases the reference the cache itself holds, so a set the caller still
+        /// holds a reference to remains valid until that reference is released.
+        MetadataSet *getMetadata(OfxTime time);
+
+        /// Drop every cached metadata set, so that the next getMetadata() for a given time
+        /// calls fetchMetadata() again. Call this when the state the metadata is derived
+        /// from has changed.
+        ///
+        /// This drops this clip's cached sets and, for an input clip, those of its effect's
+        /// output clip as well, which holds copies derived from it. It does not reach the
+        /// effects downstream of this one, whose input clips have cached what this effect
+        /// derived, so a host must call Instance::invalidateMetadata() on those itself, as
+        /// it is the only thing that knows the graph.
+        void invalidateMetadata();
+#     endif // OFX_SUPPORTS_METADATA
+
 #     ifdef OFX_SUPPORTS_OPENGLRENDER
         /// override this to fill in the OpenGL texture at the given time.
         /// The bounds of the image on the image plane should be 
@@ -273,6 +338,20 @@ namespace OFX {
         /// given the colour component, find the nearest set of supported colour components
         /// override this for extra weird custom component depths
         virtual const std::string &findSupportedComp(const std::string &s) const;
+
+#     ifdef OFX_SUPPORTS_METADATA
+      protected :
+        /// Override this to populate 'metadata' with the metadata this clip's effect
+        /// contributes for the image at 'time'. The default implementation derives the
+        /// metadata of an output clip from the effect's inputs, and adds nothing for an
+        /// input clip, so a host must override this to supply the metadata an input clip
+        /// carries, typically that of whatever it is connected to.
+        virtual void fetchMetadata(OfxTime time, Property::Set &metadata);
+#     endif // OFX_SUPPORTS_METADATA
+
+      private :
+        /// hide copy construction, as the ctor registers 'this' as a property get hook
+        ClipInstance(const ClipInstance &);
       };
 
       
@@ -282,6 +361,10 @@ namespace OFX {
         /// called during ctors to get bits from the clip props into ours
         void getClipBits(ClipInstance& instance);
         int _referenceCount; ///< reference count on this image
+#       ifdef OFX_SUPPORTS_METADATA
+        ClipInstance *_fetchedClip; ///< clip this image was fetched from, not owned, NULL if it was not fetched from one
+        OfxTime _fetchedTime;       ///< time this image was fetched at, only meaningful if _fetchedClip is set
+#       endif
 
       public:
         // default constructor
@@ -353,6 +436,27 @@ namespace OFX {
 
         /// add a reference to this image
         void addReference() {_referenceCount++;}
+
+#       ifdef OFX_SUPPORTS_METADATA
+        /// record the clip and time this image was fetched for, so that an image handle
+        /// can later be resolved back to the clip and time its metadata belongs to.
+        /// The clip is held as a bare pointer, so it must outlive every image it vends.
+        /// Each fetch overwrites the record. ofxImageEffect.h requires clipGetImage() to
+        /// return a separate image handle per fetch even for identical arguments, sharing
+        /// pixel data by reference counting the buffer rather than the image object, so a
+        /// conforming getImage() override returns a distinct object per call and the record
+        /// is never contended. A host that reuses one image object across fetches at
+        /// different times or from different clips breaks that requirement, and this
+        /// record, like the image's own bounds, data pointer and unique identifier, then
+        /// describes only the most recent fetch.
+        void setFetchedFor(ClipInstance& instance, OfxTime time);
+
+        /// the clip this image was fetched from, NULL if it was not fetched from one
+        ClipInstance *getFetchedClip() const {return _fetchedClip;}
+
+        /// the time this image was fetched at, only meaningful if getFetchedClip() is not NULL
+        OfxTime getFetchedTime() const {return _fetchedTime;}
+#       endif // OFX_SUPPORTS_METADATA
       };
 
       /// instance of an image inside an image effect

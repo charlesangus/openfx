@@ -1,10 +1,6 @@
 // Copyright OpenFX and contributors to the OpenFX project.
 // SPDX-License-Identifier: BSD-3-Clause
 
-#ifndef OFX_SUPPORTS_METADATA
-#error metadataHost has nothing to exercise unless OFX_SUPPORTS_METADATA is defined
-#endif
-
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -55,6 +51,8 @@
 // PASS or FAIL, and it exits non zero if any of them failed.
 
 namespace MyHost {
+
+#ifdef OFX_SUPPORTS_METADATA
 
   /// the clip and key whose published value carries gRevision below
   const char *const kRevisedClip = MetadataFixture::kInputClips[0];
@@ -158,6 +156,12 @@ namespace MyHost {
     }
   }
 
+#else
+
+  typedef Host MetadataHost;
+
+#endif // OFX_SUPPORTS_METADATA
+
 } // MyHost
 
 namespace {
@@ -166,6 +170,13 @@ namespace {
   const OfxMetadataSuiteV1    *gMetadataSuite = NULL;
   const OfxImageEffectSuiteV1 *gEffectSuite = NULL;
   const OfxMessageSuiteV2     *gMessageSuite = NULL;
+
+  /// the metadata suite is vended only by a host built with OFX_SUPPORTS_METADATA
+#ifdef OFX_SUPPORTS_METADATA
+  const bool kMetadataSuiteExpected = true;
+#else
+  const bool kMetadataSuiteExpected = false;
+#endif // OFX_SUPPORTS_METADATA
 
   ////////////////////////////////////////////////////////////////////////////////
   // formatting, shared by the fixture listing and the values read back so that the
@@ -238,21 +249,6 @@ namespace {
     return entry.time == MetadataFixture::kAnyTime || entry.time == time;
   }
 
-  /// the value the fixture gives for one key of a clip at a time, false if it gives none
-  bool fixtureValue(const std::string &clip, const std::string &key, OfxTime time, std::string &value)
-  {
-    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
-      const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
-
-      if(key == entry.key && entryAppliesAt(entry, clip, time)) {
-        value = entryValue(entry);
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   ////////////////////////////////////////////////////////////////////////////////
   // the fixture listing
 
@@ -319,12 +315,6 @@ namespace {
     int getFailures() const {return _failures;}
   };
 
-  OfxStatus collectKey(const char *key, void *userData)
-  {
-    ((std::set<std::string> *) userData)->insert(key);
-    return kOfxStatOK;
-  }
-
   std::string joinKeys(const std::set<std::string> &keys)
   {
     std::string joined;
@@ -334,6 +324,14 @@ namespace {
       joined += *it;
     }
     return joined;
+  }
+
+#ifdef OFX_SUPPORTS_METADATA
+
+  OfxStatus collectKey(const char *key, void *userData)
+  {
+    ((std::set<std::string> *) userData)->insert(key);
+    return kOfxStatOK;
   }
 
   /// read a key back the way a plugin has to, by asking the host what type it is rather
@@ -383,6 +381,8 @@ namespace {
       return false;
     }
   }
+
+#endif // OFX_SUPPORTS_METADATA
 
   ////////////////////////////////////////////////////////////////////////////////
   // what a plugin logs, and the pixels it renders
@@ -612,6 +612,23 @@ namespace {
     }
 
     return true;
+  }
+
+#ifdef OFX_SUPPORTS_METADATA
+
+  /// the value the fixture gives for one key of a clip at a time, false if it gives none
+  bool fixtureValue(const std::string &clip, const std::string &key, OfxTime time, std::string &value)
+  {
+    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+      const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
+
+      if(key == entry.key && entryAppliesAt(entry, clip, time)) {
+        value = entryValue(entry);
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /// check that a metadata set holds exactly the keys, types and values the fixture
@@ -1029,18 +1046,6 @@ namespace {
   const int  kDetailScalar  = 2;
   const int  kDetailAtTime  = 1;
 
-  /// the plugin cache has no way to replace the default search path, only to add to
-  /// it, and this must load the plugin built alongside it rather than whatever the
-  /// machine happens to have installed
-  class BuildTreePluginCache : public OFX::Host::PluginCache {
-  public :
-    explicit BuildTreePluginCache(const std::string &dir)
-    {
-      _pluginPath.clear();
-      addFileToPath(dir, false);
-    }
-  };
-
   /// the plugin retains only the keys of the standard vocabulary, so this is the one
   /// thing the harness has to know about it beyond the order it composes in
   bool isStandardKey(const std::string &key)
@@ -1221,6 +1226,8 @@ namespace {
     return ok;
   }
 
+#endif // OFX_SUPPORTS_METADATA
+
   /// write text through whichever of the host's parameter instances a name resolves to,
   /// so that a check can drive a parameter it knows only by name and value
   bool setParamValue(OFX::Host::ImageEffect::Instance &instance,
@@ -1329,6 +1336,8 @@ namespace {
     return false;
   }
 
+#ifdef OFX_SUPPORTS_METADATA
+
   /// write a value through the host's string and choice parameter instances and read it
   /// straight back, in both the scalar and the at-a-time form. A host that dropped what
   /// was written, or that answered with the declared default instead of it, fails these
@@ -1427,6 +1436,8 @@ namespace {
     report.check(readAfter && is == expectedAfter,
                  "invalidation after value=" + is + " expected=" + expectedAfter);
   }
+
+#endif // OFX_SUPPORTS_METADATA
 
   /// what a render pass produced, for a caller with more to say about it than checkRender
   /// says on its own
@@ -1555,6 +1566,18 @@ namespace {
       pass->framesPassedThrough = passedThrough;
     }
   }
+
+  /// the plugin cache has no way to replace the default search path, only to add to
+  /// it, and this must load the plugin built alongside it rather than whatever the
+  /// machine happens to have installed
+  class BuildTreePluginCache : public OFX::Host::PluginCache {
+  public :
+    explicit BuildTreePluginCache(const std::string &dir)
+    {
+      _pluginPath.clear();
+      addFileToPath(dir, false);
+    }
+  };
 
   /// find a plugin by id in an already scanned cache, reporting the one precondition
   /// both modes need before anything else can be checked
@@ -1952,6 +1975,8 @@ namespace {
     return ran;
   }
 
+#ifdef OFX_SUPPORTS_METADATA
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -2058,6 +2083,8 @@ namespace {
     checkRender(report, *instance);
   }
 
+#endif // OFX_SUPPORTS_METADATA
+
   int runChecks(const std::string &pluginDir, const std::string &pluginId, const Contract *contract)
   {
     MyHost::MetadataHost host;
@@ -2068,7 +2095,7 @@ namespace {
     gEffectSuite = (const OfxImageEffectSuiteV1 *) handle->fetchSuite(handle->host, kOfxImageEffectSuite, 1);
     gMessageSuite = (const OfxMessageSuiteV2 *) handle->fetchSuite(handle->host, kOfxMessageSuite, 2);
 
-    if(!gPropSuite || !gMetadataSuite || !gEffectSuite || !gMessageSuite) {
+    if(!gPropSuite || !gEffectSuite || !gMessageSuite) {
       std::cout << "metadataHost the host does not vend the suites this needs" << std::endl;
       std::cout << "RESULT FAIL" << std::endl;
       return 1;
@@ -2076,11 +2103,23 @@ namespace {
 
     Report report;
 
+    // the suite the host vends is what its build option decides, so its absence is a
+    // check like any other rather than a reason not to run
+    const bool suite = gMetadataSuite != NULL;
+    report.check(suite == kMetadataSuiteExpected,
+                 std::string("host metadatasuite ") + (suite ? "present" : "absent"));
+
     if(pluginId.empty()) {
+#ifdef OFX_SUPPORTS_METADATA
       checkFixture(report);
       checkComparators(report);
       checkClips(report);
       checkPlugin(report, host, pluginDir);
+#else
+      std::cerr << "metadataHost this build has no metadata suite, so --plugin-id is required"
+                << std::endl;
+      return 2;
+#endif // OFX_SUPPORTS_METADATA
     }
     else {
       const int ran = checkGenericPlugin(report, host, pluginDir, pluginId, contract);

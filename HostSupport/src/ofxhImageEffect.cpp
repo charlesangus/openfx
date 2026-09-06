@@ -2632,11 +2632,144 @@ namespace OFX {
         }
       }
 
+      /// a NULL among the values would be a crash in the host rather than a status, so
+      /// the write path looks for one; only a string can be NULL
+      static bool metadataValuesUsable(const char *const*values, int count)
+      {
+        for (int i = 0; i < count; ++i) {
+          if (!values[i]) {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      static bool metadataValuesUsable(const double *, int)
+      {
+        return true;
+      }
+
+      static bool metadataValuesUsable(const int *, int)
+      {
+        return true;
+      }
+
+      template<class T>
+      static OfxStatus metadataSetValues(OfxPropertySetHandle metadata,
+                                         const char *key,
+                                         int count,
+                                         const typename T::APIType *values,
+                                         typename T::APIType empty)
+      {
+        try {
+        Property::Set *pset = reinterpret_cast<Property::Set*>(metadata);
+
+        if (!pset || !pset->verifyMagic()) {
+          return kOfxStatErrBadHandle;
+        }
+
+        MetadataSet *set = dynamic_cast<MetadataSet*>(pset);
+
+        if (!set || !key) {
+          return kOfxStatErrBadHandle;
+        }
+
+        if (!set->isWritable() || !key[0] || count < 1 || !values) {
+          return kOfxStatErrValue;
+        }
+
+        // the values are read through before the key is touched, so a set which is
+        // refused is a set which has not been written to
+        if (!metadataValuesUsable(values, count)) {
+          return kOfxStatErrValue;
+        }
+
+        // createProperty leaves a key which is already there alone, so a key written
+        // again is replaced outright to give it the dimension it is written with
+        if (set->fetchProperty(key)) {
+          set->addProperty(new Property::PropertyTemplate<T>(key, count, false, empty));
+        }
+        else {
+          const Property::PropSpec spec = { key, T::typeCode, count, false, NULL };
+
+          set->createProperty(spec);
+        }
+
+        Property::PropertyTemplate<T> *prop = dynamic_cast<Property::PropertyTemplate<T>*>(set->fetchProperty(key));
+
+        if (!prop) {
+          return kOfxStatErrMemory;
+        }
+
+        prop->setValueN(values, count);
+
+        return kOfxStatOK;
+        } catch (const Property::Exception& e) {
+          return e.getStatus();
+        } catch (std::bad_alloc&) {
+          return kOfxStatErrMemory;
+        } catch (...) {
+          return kOfxStatErrBadHandle;
+        }
+      }
+
+      static OfxStatus metadataSetString(OfxPropertySetHandle metadata,
+                                         const char *key,
+                                         const char *value)
+      {
+        return metadataSetValues<Property::StringValue>(metadata, key, 1, &value, "");
+      }
+
+      static OfxStatus metadataSetDouble(OfxPropertySetHandle metadata,
+                                         const char *key,
+                                         double value)
+      {
+        return metadataSetValues<Property::DoubleValue>(metadata, key, 1, &value, 0);
+      }
+
+      static OfxStatus metadataSetInt(OfxPropertySetHandle metadata,
+                                      const char *key,
+                                      int value)
+      {
+        return metadataSetValues<Property::IntValue>(metadata, key, 1, &value, 0);
+      }
+
+      static OfxStatus metadataSetStringN(OfxPropertySetHandle metadata,
+                                          const char *key,
+                                          int count,
+                                          const char *const*values)
+      {
+        return metadataSetValues<Property::StringValue>(metadata, key, count, values, "");
+      }
+
+      static OfxStatus metadataSetDoubleN(OfxPropertySetHandle metadata,
+                                          const char *key,
+                                          int count,
+                                          const double *values)
+      {
+        return metadataSetValues<Property::DoubleValue>(metadata, key, count, values, 0);
+      }
+
+      static OfxStatus metadataSetIntN(OfxPropertySetHandle metadata,
+                                       const char *key,
+                                       int count,
+                                       const int *values)
+      {
+        return metadataSetValues<Property::IntValue>(metadata, key, count, values, 0);
+      }
+
       static const struct OfxMetadataSuiteV1 gMetadataSuite = {
         clipGetMetadata,
         imageGetMetadata,
         metadataRelease,
-        metadataEnumerate
+        metadataEnumerate,
+        metadataSetString,
+        metadataSetDouble,
+        metadataSetInt,
+        metadataSetStringN,
+        metadataSetDoubleN,
+        metadataSetIntN
       };
 #   endif // OFX_SUPPORTS_METADATA
 

@@ -334,52 +334,76 @@ namespace {
     return kOfxStatOK;
   }
 
-  /// read a key back the way a plugin has to, by asking the host what type it is rather
-  /// than by knowing in advance
-  bool readValue(OfxPropertySetHandle metadata, const char *key, std::string &type, std::string &value)
+  /// read a key back the way a plugin has to, by asking the host what type and dimension
+  /// it has rather than by knowing in advance
+  bool readValueN(OfxPropertySetHandle metadata,
+                  const char *key,
+                  std::string &type,
+                  int &dimension,
+                  std::string &value)
   {
     OfxPropDataType dataType = kOfxPropDataTypeNone;
-    int dimension = 0;
+
+    dimension = 0;
+    value.clear();
 
     if(gPropSuite->propGetType(metadata, key, &dataType) != kOfxStatOK)
       return false;
 
-    if(gPropSuite->propGetDimension(metadata, key, &dimension) != kOfxStatOK)
+    if(gPropSuite->propGetDimension(metadata, key, &dimension) != kOfxStatOK || dimension < 1)
       return false;
 
     switch(dataType) {
     case kOfxPropDataTypeString : {
-      char *v = NULL;
-      if(dimension != 1 || gPropSuite->propGetString(metadata, key, 0, &v) != kOfxStatOK || !v)
+      std::vector<char *> v(dimension, (char *) NULL);
+      if(gPropSuite->propGetStringN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
       type = "string";
-      value = v;
+      for(int i = 0; i < dimension; ++i) {
+        if(!v[i])
+          return false;
+        value += (i ? "," : "");
+        value += v[i];
+      }
       return true;
     }
 
     case kOfxPropDataTypeDouble : {
-      double v = 0;
-      if(dimension != 1 || gPropSuite->propGetDouble(metadata, key, 0, &v) != kOfxStatOK)
+      std::vector<double> v(dimension, 0.0);
+      if(gPropSuite->propGetDoubleN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
       type = "double";
-      value = formatDouble(v);
+      for(int i = 0; i < dimension; ++i) {
+        value += (i ? "," : "");
+        value += formatDouble(v[i]);
+      }
       return true;
     }
 
     case kOfxPropDataTypeInteger : {
-      int v[MetadataFixture::kMaxInts];
-      if(dimension < 1 || dimension > MetadataFixture::kMaxInts)
-        return false;
-      if(gPropSuite->propGetIntN(metadata, key, dimension, v) != kOfxStatOK)
+      std::vector<int> v(dimension, 0);
+      if(gPropSuite->propGetIntN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
       type = "int";
-      value = formatInts(v, dimension);
+      value = formatInts(&v[0], dimension);
       return true;
     }
 
     default :
       return false;
     }
+  }
+
+  /// read a key the fixture describes, which is a single value unless it is an array of
+  /// at most kMaxInts ints
+  bool readValue(OfxPropertySetHandle metadata, const char *key, std::string &type, std::string &value)
+  {
+    int dimension = 0;
+
+    if(!readValueN(metadata, key, type, dimension, value))
+      return false;
+
+    return type == "int" ? dimension <= MetadataFixture::kMaxInts : dimension == 1;
   }
 
 #endif // OFX_SUPPORTS_METADATA
@@ -1023,6 +1047,200 @@ namespace {
       delete clips[i];
     for(size_t i = 0; i < descriptors.size(); ++i)
       delete descriptors[i];
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  // the write path
+
+  /// the keys this writes, in a namespace of the harness's own since the standard
+  /// prefix is reserved for the standard vocabulary
+  const char kWrittenString[]  = "org.openfx.metadataHost/string";
+  const char kWrittenDouble[]  = "org.openfx.metadataHost/double";
+  const char kWrittenInt[]     = "org.openfx.metadataHost/int";
+  const char kWrittenStringN[] = "org.openfx.metadataHost/stringn";
+  const char kWrittenDoubleN[] = "org.openfx.metadataHost/doublen";
+  const char kWrittenIntN[]    = "org.openfx.metadataHost/intn";
+  const char kWrittenNever[]   = "org.openfx.metadataHost/never";
+
+  /// the values the writes in here write
+  const char *const kWriteStrings[] = {"one", "two", "three"};
+  const double      kWriteDoubles[] = {1.25, 2.5};
+  const int         kWriteInts[]    = {11, 22, 33, 44};
+
+  /// the six metadataSet entry points, in the order callSetter takes them
+  const char *const kSetterNames[] = {"string", "double", "int", "stringn", "doublen", "intn"};
+  const int kSetterCount = int(sizeof(kSetterNames) / sizeof(kSetterNames[0]));
+
+  /// call one metadataSet entry point with arguments which are valid in themselves, so
+  /// that what the call reports is down to the handle and the key it is given
+  OfxStatus callSetter(int which, OfxPropertySetHandle metadata, const char *key)
+  {
+    switch(which) {
+    case 0 : return gMetadataSuite->metadataSetString(metadata, key, kWriteStrings[0]);
+    case 1 : return gMetadataSuite->metadataSetDouble(metadata, key, kWriteDoubles[0]);
+    case 2 : return gMetadataSuite->metadataSetInt(metadata, key, kWriteInts[0]);
+    case 3 : return gMetadataSuite->metadataSetStringN(metadata, key, 3, kWriteStrings);
+    case 4 : return gMetadataSuite->metadataSetDoubleN(metadata, key, 2, kWriteDoubles);
+    case 5 : return gMetadataSuite->metadataSetIntN(metadata, key, 4, kWriteInts);
+    }
+
+    return kOfxStatFailed;
+  }
+
+  /// the status every one of the six gives for a handle and a key, one check each
+  void checkSetters(Report &report,
+                    OfxPropertySetHandle metadata,
+                    const char *key,
+                    OfxStatus expected,
+                    const std::string &where)
+  {
+    for(int i = 0; i < kSetterCount; ++i) {
+      const OfxStatus st = callSetter(i, metadata, key);
+
+      report.check(st == expected, where + " set=" + kSetterNames[i]
+                   + " status=" + formatInt(st) + " expected=" + formatInt(expected));
+    }
+  }
+
+  /// what one write reported, and what the key holds once it has been made
+  void checkWritten(Report &report,
+                    OfxPropertySetHandle metadata,
+                    const char *key,
+                    OfxStatus st,
+                    const std::string &type,
+                    int dimension,
+                    const std::string &expected)
+  {
+    const std::string where = std::string("write key=") + key;
+
+    if(!report.check(st == kOfxStatOK, where + " written status=" + formatInt(st)))
+      return;
+
+    std::string readType;
+    std::string value;
+    int readDimension = 0;
+    const bool ok = readValueN(metadata, key, readType, readDimension, value);
+
+    std::ostringstream os;
+    os << where << " type=" << readType << " dim=" << readDimension << " value=" << value
+       << " expected " << type << " dim=" << dimension << " value=" << expected;
+
+    report.check(ok && readType == type && readDimension == dimension && value == expected, os.str());
+  }
+
+  /// drive the six metadataSet entry points and the statuses they owe against sets the
+  /// harness makes itself, since a plugin sees a writable set only inside the get
+  /// metadata action and would have to misbehave to reach the cases which must fail
+  void checkMetadataWrites(Report &report)
+  {
+    OFX::Host::ImageEffect::MetadataSet *set = new OFX::Host::ImageEffect::MetadataSet(true, false);
+    OfxPropertySetHandle writable = set->getPropHandle();
+
+    checkWritten(report, writable, kWrittenString,
+                 gMetadataSuite->metadataSetString(writable, kWrittenString, kWriteStrings[0]),
+                 "string", 1, "one");
+
+    checkWritten(report, writable, kWrittenDouble,
+                 gMetadataSuite->metadataSetDouble(writable, kWrittenDouble, kWriteDoubles[0]),
+                 "double", 1, "1.25");
+
+    checkWritten(report, writable, kWrittenInt,
+                 gMetadataSuite->metadataSetInt(writable, kWrittenInt, kWriteInts[0]),
+                 "int", 1, "11");
+
+    checkWritten(report, writable, kWrittenStringN,
+                 gMetadataSuite->metadataSetStringN(writable, kWrittenStringN, 3, kWriteStrings),
+                 "string", 3, "one,two,three");
+
+    checkWritten(report, writable, kWrittenDoubleN,
+                 gMetadataSuite->metadataSetDoubleN(writable, kWrittenDoubleN, 2, kWriteDoubles),
+                 "double", 2, "1.25,2.5");
+
+    checkWritten(report, writable, kWrittenIntN,
+                 gMetadataSuite->metadataSetIntN(writable, kWrittenIntN, 4, kWriteInts),
+                 "int", 4, "11,22,33,44");
+
+    // a key written again takes the dimension it is written with, whatever it had before
+    checkWritten(report, writable, kWrittenIntN,
+                 gMetadataSuite->metadataSetIntN(writable, kWrittenIntN, 2, kWriteInts),
+                 "int", 2, "11,22");
+
+    // a set a clip vends is read only, and refuses every one of them
+    OFX::Host::ImageEffect::ClipDescriptor descriptor(MetadataFixture::kInputClips[0]);
+    MyHost::MetadataClipInstance clip(&descriptor);
+    OfxPropertySetHandle readOnly = NULL;
+    const OfxStatus fetched = gMetadataSuite->clipGetMetadata(clip.getHandle(),
+                                                              MetadataFixture::kFirstFrame,
+                                                              &readOnly);
+
+    if(report.check(fetched == kOfxStatOK && readOnly, "write readonly fetched")) {
+      checkSetters(report, readOnly, kWrittenString, kOfxStatErrValue, "write readonly");
+      gMetadataSuite->metadataRelease(readOnly);
+    }
+
+    // a property set which is not a metadata set at all is a bad handle, as is no key
+    OFX::Host::Property::Set plain;
+
+    checkSetters(report, plain.getHandle(), kWrittenString, kOfxStatErrBadHandle, "write plainset");
+    checkSetters(report, writable, NULL, kOfxStatErrBadHandle, "write nullkey");
+    checkSetters(report, writable, "", kOfxStatErrValue, "write emptykey");
+
+    report.check(gMetadataSuite->metadataSetStringN(writable, kWrittenStringN, 0, kWriteStrings) == kOfxStatErrValue,
+                 "write nocount set=stringn");
+    report.check(gMetadataSuite->metadataSetDoubleN(writable, kWrittenDoubleN, 0, kWriteDoubles) == kOfxStatErrValue,
+                 "write nocount set=doublen");
+    report.check(gMetadataSuite->metadataSetIntN(writable, kWrittenIntN, 0, kWriteInts) == kOfxStatErrValue,
+                 "write nocount set=intn");
+
+    report.check(gMetadataSuite->metadataSetStringN(writable, kWrittenStringN, 3, NULL) == kOfxStatErrValue,
+                 "write novalues set=stringn");
+    report.check(gMetadataSuite->metadataSetDoubleN(writable, kWrittenDoubleN, 2, NULL) == kOfxStatErrValue,
+                 "write novalues set=doublen");
+    report.check(gMetadataSuite->metadataSetIntN(writable, kWrittenIntN, 4, NULL) == kOfxStatErrValue,
+                 "write novalues set=intn");
+
+    // a NULL string is refused rather than dereferenced, and a refused write leaves the
+    // key as it was, whether it was there or not
+    const char *const nulled[] = {"one", NULL, "three"};
+
+    report.check(gMetadataSuite->metadataSetString(writable, kWrittenNever, NULL) == kOfxStatErrValue,
+                 "write nullstring set=string");
+    report.check(gMetadataSuite->metadataSetStringN(writable, kWrittenNever, 3, nulled) == kOfxStatErrValue,
+                 "write nullstring set=stringn");
+
+    std::string neverType;
+    std::string neverValue;
+    int neverDimension = 0;
+
+    report.check(!readValueN(writable, kWrittenNever, neverType, neverDimension, neverValue),
+                 std::string("write nullstring absent key=") + kWrittenNever);
+
+    report.check(gMetadataSuite->metadataSetStringN(writable, kWrittenStringN, 3, nulled) == kOfxStatErrValue,
+                 "write nullstring set=stringn existing");
+
+    std::string keptType;
+    std::string keptValue;
+    int keptDimension = 0;
+    const bool kept = readValueN(writable, kWrittenStringN, keptType, keptDimension, keptValue);
+
+    report.check(kept && keptType == "string" && keptDimension == 3 && keptValue == "one,two,three",
+                 std::string("write nullstring unchanged key=") + kWrittenStringN
+                 + " type=" + keptType + " value=" + keptValue);
+
+    // the host owns this one, so a plugin releasing it is refused and the set it is
+    // about to read is still there
+    report.check(gMetadataSuite->metadataRelease(writable) == kOfxStatErrValue, "write release refused");
+
+    std::string type;
+    std::string value;
+    int dimension = 0;
+    const bool readable = readValueN(writable, kWrittenString, type, dimension, value);
+
+    report.check(readable && type == "string" && dimension == 1 && value == "one",
+                 std::string("write release readable key=") + kWrittenString
+                 + " type=" + type + " value=" + value);
+
+    set->releaseReference();
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -2194,6 +2412,7 @@ namespace {
       checkFixture(report);
       checkComparators(report);
       checkClips(report);
+      checkMetadataWrites(report);
       checkPlugin(report, host, pluginDir);
 #else
       std::cerr << "metadataHost this build has no metadata suite, so --plugin-id is required"

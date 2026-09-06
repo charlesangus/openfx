@@ -629,7 +629,9 @@ typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, void *userData);
  - ::kOfxStatErrBadHandle - metadata is not a metadata property set, or key is NULL,
  - ::kOfxStatErrValue - metadata is a valid metadata property set that does not support the
    operation. A set returned by clipGetMetadata or imageGetMetadata is read-only and fails
-   with this status, as do an empty key, a count less than 1, and a NULL values array,
+   with this status, as do an empty key, a count less than 1, a NULL values array and a
+   NULL string among the values. A write which fails leaves the key as it was, present or
+   absent,
  - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, the
    plugin should abort whatever it was doing.
  */
@@ -700,7 +702,8 @@ typedef struct OfxMetadataSuiteV1 {
 
 	 @returns
 	 - ::kOfxStatOK - the metadata handle was successfully released,
-	 - ::kOfxStatErrBadHandle - the metadata handle was invalid.
+	 - ::kOfxStatErrBadHandle - the metadata handle was invalid,
+	 - ::kOfxStatErrValue - the metadata handle is not the plugin's to release, being one the host passed to an action.
 	 */
 	OfxStatus (*metadataRelease)(OfxPropertySetHandle metadata);
 

@@ -444,7 +444,18 @@ jobs:
           fi
           "$BIN"
           echo "Testing metadataHost with generic plugin mode"
+          # metadataPlugin is a build tree fixture which is never installed, so this
+          # relies on the plugin directory baked into the harness
           "$BIN" --plugin-id org.openfx.examples.metadataPlugin
+          echo "Testing the metadata-log contract against MetadataPrint"
+          # MetadataPrint is a shipped example, so it is loaded from the install tree
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataPrint --check metadata-log
+          echo "Testing that the metadata-log contract fails a plugin which logs nothing"
+          if "$BIN" --plugin-id org.openfx.examples.metadataPlugin --check metadata-log; then
+            echo "metadata-log passed a plugin which renders and logs nothing" >&2
+            exit 1
+          fi
 
       - name: Install with cmake
         env:

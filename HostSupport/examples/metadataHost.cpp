@@ -1427,10 +1427,20 @@ namespace {
                  "invalidation after value=" + is + " expected=" + expectedAfter);
   }
 
+  /// what a render pass produced, for a caller with more to say about it than checkRender
+  /// says on its own
+  struct RenderPass {
+    std::vector<LogRecord> records;
+    int framesRendered;
+    int framesPassedThrough; ///< frames whose output came back byte identical to the source
+
+    RenderPass() : framesRendered(0), framesPassedThrough(0) {}
+  };
+
   /// render every frame of the fixture range through the plugin, the way a host that
   /// meant to produce output would, and capture anything logged through the message
   /// suite instead of letting it land between the PASS/FAIL lines above
-  void checkRender(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  void checkRender(Report &report, OFX::Host::ImageEffect::Instance &instance, RenderPass *pass = NULL)
   {
     if(!report.check(instance.getClipPreferences(), "render clipprefs"))
       return;
@@ -1464,11 +1474,12 @@ namespace {
     OfxStatus stat = instance.beginRenderAction(first, last, 1.0, false, renderScale,
                                                 /*sequential=*/true, /*interactive=*/false);
 
+    int rendered = 0;
+    int passedThrough = 0;
+
     // a plugin that refused to begin the sequence must not then be issued the frames
     // of one, or the end of one
     if(report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render beginsequence")) {
-      int rendered = 0;
-
       for(OfxTime time = first; time <= last; time += 1) {
         if(gMessageSuite)
           gMessageSuite->message(instance.getHandle(), kOfxMessageLog, "metadataHost",
@@ -1496,9 +1507,14 @@ namespace {
         report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
                      "render frame=" + formatTime(time));
 
-        if(comparable)
-          report.check(imagesEqual(*held, *wanted, renderWindow),
-                       "render frame=" + formatTime(time) + " pixels rendered");
+        if(comparable) {
+          const bool identical = imagesEqual(*held, *wanted, renderWindow);
+
+          if(identical)
+            passedThrough += 1;
+
+          report.check(identical, "render frame=" + formatTime(time) + " pixels rendered");
+        }
 
         if(wanted)
           wanted->releaseReference();
@@ -1531,6 +1547,12 @@ namespace {
     // a plugin which logs nothing in the grammar has nothing to hold to the fixture
     if(!records.empty())
       checkLogAgainstFixture(report, records, "render");
+
+    if(pass) {
+      pass->records = records;
+      pass->framesRendered = rendered;
+      pass->framesPassedThrough = passedThrough;
+    }
   }
 
   /// find a plugin by id in an already scanned cache, reporting the one precondition
@@ -1592,8 +1614,104 @@ namespace {
     void      (*run)(Report &report, OFX::Host::ImageEffect::Instance &instance);
   };
 
-  const Contract *const kContracts = NULL;
-  const int kContractCount = 0;
+  /// the frames of the fixture range, which is what the contract below counts in
+  const int kFixtureFrames = int(MetadataFixture::kLastFrame - MetadataFixture::kFirstFrame) + 1;
+
+  /// the keys the fixture gives a clip at a time, joined in the ascending order a plugin
+  /// enumerating them has to impose before it logs them
+  std::string fixtureKeys(const std::string &clip, OfxTime time)
+  {
+    std::set<std::string> keys;
+
+    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+      if(entryAppliesAt(MetadataFixture::kEntries[i], clip, time))
+        keys.insert(MetadataFixture::kEntries[i].key);
+    }
+
+    return joinKeys(keys);
+  }
+
+  /// the keys a log carries for a clip at a time, joined in the order they were logged
+  std::string loggedKeys(const std::vector<LogRecord> &records, const std::string &clip, OfxTime time)
+  {
+    std::string joined;
+
+    for(size_t r = 0; r < records.size(); ++r) {
+      if(records[r].clip != clip || records[r].time != time)
+        continue;
+
+      if(!joined.empty())
+        joined += ",";
+      joined += records[r].key;
+    }
+
+    return joined;
+  }
+
+  /// what a log gives for one key of a clip at a time, false if it gives none
+  bool loggedValue(const std::vector<LogRecord> &records,
+                   const std::string &clip,
+                   OfxTime time,
+                   const std::string &key,
+                   std::string &value)
+  {
+    for(size_t r = 0; r < records.size(); ++r) {
+      if(records[r].clip == clip && records[r].time == time && records[r].key == key) {
+        value = records[r].value;
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// hold a plugin which reads the metadata of its source clip and logs it to what the
+  /// fixture gives that clip: every key of every frame, once each, with the fixture's
+  /// type and value, in ascending order, and the image passed through untouched. The
+  /// timecode check is what a plugin that read its clip once, rather than at the time it
+  /// was handed to render, falls down on
+  void checkMetadataLog(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::string clip = kOfxImageEffectSimpleSourceClipName;
+
+    RenderPass pass;
+    checkRender(report, instance, &pass);
+
+    std::ostringstream pixels;
+    pixels << "metadata-log passthrough frames=" << pass.framesRendered
+           << " identical=" << pass.framesPassedThrough;
+
+    report.check(pass.framesRendered == kFixtureFrames
+                 && pass.framesPassedThrough == pass.framesRendered,
+                 pixels.str());
+
+    checkLogAgainstFixture(report, pass.records, "metadata-log");
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      const std::string logged = loggedKeys(pass.records, clip, time);
+
+      report.check(logged == fixtureKeys(clip, time),
+                   "metadata-log clip=" + clip + " frame=" + formatTime(time) + " keys=" + logged);
+    }
+
+    std::string atFirst = "none";
+    std::string atLast = "none";
+
+    const bool advances =
+      loggedValue(pass.records, clip, MetadataFixture::kFirstFrame, kOfxMetadataKeyTimecode, atFirst)
+      && loggedValue(pass.records, clip, MetadataFixture::kLastFrame, kOfxMetadataKeyTimecode, atLast)
+      && atFirst != atLast;
+
+    report.check(advances, "metadata-log clip=" + clip + " " kOfxMetadataKeyTimecode
+                 " first=" + atFirst + " last=" + atLast);
+  }
+
+  const Contract kContractTable[] = {
+    {"metadata-log", kFixtureFrames + 3, checkMetadataLog}
+  };
+
+  const Contract *const kContracts = kContractTable;
+  const int kContractCount = sizeof(kContractTable) / sizeof(kContractTable[0]);
 
   /// the contract of that name, NULL if there is none
   const Contract *findContract(const std::string &name)

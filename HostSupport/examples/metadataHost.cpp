@@ -956,6 +956,92 @@ namespace {
                  "render messagecapture");
   }
 
+  /// find a plugin by id in an already scanned cache, reporting the one precondition
+  /// both modes need before anything else can be checked
+  OFX::Host::ImageEffect::ImageEffectPlugin *findPlugin(Report &report,
+                                                        OFX::Host::ImageEffect::PluginCache &effectCache,
+                                                        const std::string &pluginId,
+                                                        const std::string &pluginDir)
+  {
+    OFX::Host::ImageEffect::ImageEffectPlugin *plugin = effectCache.getPluginById(pluginId);
+
+    report.check(plugin != NULL, "plugin id=" + pluginId + " dir=" + pluginDir);
+
+    return plugin;
+  }
+
+  /// create an instance of a plugin in the given context, reporting the preconditions
+  /// shared by both modes: that the context can be instantiated at all, and that
+  /// createInstance itself succeeds
+  std::unique_ptr<OFX::Host::ImageEffect::Instance>
+  createPluginInstance(Report &report,
+                       OFX::Host::ImageEffect::ImageEffectPlugin *plugin,
+                       const std::string &context)
+  {
+    std::unique_ptr<OFX::Host::ImageEffect::Instance> instance(plugin->createInstance(context, NULL));
+
+    if(!report.check(instance.get() != NULL, "plugin instance context=" + context))
+      return instance;
+
+    const OfxStatus created = instance->createInstanceAction();
+    report.check(created == kOfxStatOK || created == kOfxStatReplyDefault, "plugin createinstance");
+
+    return instance;
+  }
+
+  /// the context a plugin driven by --plugin-id is instantiated in: the one Filter
+  /// context read-only plugins are expected to declare, falling back to whatever the
+  /// plugin does declare so the scratch composition plugin, which predates that
+  /// convention and only declares General, can still be driven through this mode
+  std::string chooseContext(OFX::Host::ImageEffect::ImageEffectPlugin &plugin)
+  {
+    const std::set<std::string> &contexts = plugin.getContexts();
+
+    if(contexts.count(kOfxImageEffectContextFilter))
+      return kOfxImageEffectContextFilter;
+    if(contexts.count(kOfxImageEffectContextGeneral))
+      return kOfxImageEffectContextGeneral;
+
+    return contexts.empty() ? std::string() : *contexts.begin();
+  }
+
+  /// load an arbitrary plugin by id and drive it far enough to prove the contract any
+  /// plugin has to meet, regardless of what it does: it resolves, describes, creates an
+  /// instance exposing the clips its context guarantees, and completes a render pass.
+  /// It asserts nothing about composition order or retained keys, which a read-only
+  /// plugin implements neither of
+  void checkGenericPlugin(Report &report,
+                          MyHost::MetadataHost &host,
+                          const std::string &pluginDir,
+                          const std::string &pluginId)
+  {
+    BuildTreePluginCache cache(pluginDir);
+    OFX::Host::ImageEffect::PluginCache effectCache(host);
+
+    cache.setCacheVersion("metadataHostV1");
+    effectCache.registerInCache(cache);
+    cache.scanPluginFiles();
+
+    OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, pluginId, pluginDir);
+
+    if(!plugin)
+      return;
+
+    const std::string context = chooseContext(*plugin);
+
+    std::unique_ptr<OFX::Host::ImageEffect::Instance> instance = createPluginInstance(report, plugin, context);
+
+    if(!instance.get())
+      return;
+
+    report.check(instance->getClip(kOfxImageEffectSimpleSourceClipName) != NULL,
+                 "plugin clip=" kOfxImageEffectSimpleSourceClipName);
+    report.check(instance->getClip(kOfxImageEffectOutputClipName) != NULL,
+                 "plugin clip=" kOfxImageEffectOutputClipName);
+
+    checkRender(report, *instance);
+  }
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -967,19 +1053,16 @@ namespace {
     effectCache.registerInCache(cache);
     cache.scanPluginFiles();
 
-    OFX::Host::ImageEffect::ImageEffectPlugin *plugin = effectCache.getPluginById(kPluginId);
+    OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, kPluginId, pluginDir);
 
-    if(!report.check(plugin != NULL, std::string("plugin id=") + kPluginId + " dir=" + pluginDir))
+    if(!plugin)
       return;
 
     std::unique_ptr<OFX::Host::ImageEffect::Instance>
-      instance(plugin->createInstance(kOfxImageEffectContextGeneral, NULL));
+      instance = createPluginInstance(report, plugin, kOfxImageEffectContextGeneral);
 
-    if(!report.check(instance.get() != NULL, "plugin instance context=" kOfxImageEffectContextGeneral))
+    if(!instance.get())
       return;
-
-    const OfxStatus created = instance->createInstanceAction();
-    report.check(created == kOfxStatOK || created == kOfxStatReplyDefault, "plugin createinstance");
 
     OFX::Host::ImageEffect::ClipInstance *output = instance->getClip(kOfxImageEffectOutputClipName);
     MyHost::MyIntegerInstance *order =
@@ -1063,7 +1146,7 @@ namespace {
     checkRender(report, *instance);
   }
 
-  int runChecks(const std::string &pluginDir)
+  int runChecks(const std::string &pluginDir, const std::string &pluginId)
   {
     MyHost::MetadataHost host;
     OfxHost *handle = host.getHandle();
@@ -1081,9 +1164,14 @@ namespace {
 
     Report report;
 
-    checkFixture(report);
-    checkClips(report);
-    checkPlugin(report, host, pluginDir);
+    if(pluginId.empty()) {
+      checkFixture(report);
+      checkClips(report);
+      checkPlugin(report, host, pluginDir);
+    }
+    else {
+      checkGenericPlugin(report, host, pluginDir, pluginId);
+    }
 
     std::cout << "metadataHost checks=" << report.getChecks()
               << " failures=" << report.getFailures() << std::endl;
@@ -1094,10 +1182,21 @@ namespace {
 
   void usage(std::ostream &os)
   {
-    os << "usage: metadataHost [--list] [--plugin-dir <path>]" << std::endl;
+    os << "usage: metadataHost [--list] [--plugin-dir <path>] [--plugin-id <id>]" << std::endl;
     os << "  --list              print the fixture table and exit" << std::endl;
-    os << "  --plugin-dir <path> look for metadataPlugin.ofx.bundle in <path> rather" << std::endl;
-    os << "                      than in " << METADATA_PLUGIN_DIR << std::endl;
+    os << "  --plugin-dir <path> look for the plugin bundle in <path> rather than in"
+       << std::endl;
+    os << "                      " << METADATA_PLUGIN_DIR << std::endl;
+    os << "  --plugin-id <id>    load <id> from --plugin-dir and check the general"
+       << std::endl;
+    os << "                      preconditions any plugin has to meet - describe,"
+       << std::endl;
+    os << "                      create an instance, expose its clips, render the"
+       << std::endl;
+    os << "                      fixture range - rather than the scratch composition"
+       << std::endl;
+    os << "                      plugin's own composition order and retained-key checks"
+       << std::endl;
     os << "  with no arguments, publish the fixture through a host, read it back" << std::endl;
     os << "  through the metadata suite, then run it through the metadata plugin and" << std::endl;
     os << "  check what comes back" << std::endl;
@@ -1109,6 +1208,7 @@ int main(int argc, char **argv)
 {
   bool list = false;
   std::string pluginDir(METADATA_PLUGIN_DIR);
+  std::string pluginId;
 
   for(int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
@@ -1123,6 +1223,14 @@ int main(int argc, char **argv)
         return 2;
       }
       pluginDir = argv[++i];
+    }
+    else if(arg == "--plugin-id") {
+      if(i + 1 >= argc) {
+        std::cerr << "metadataHost --plugin-id needs an id" << std::endl;
+        usage(std::cerr);
+        return 2;
+      }
+      pluginId = argv[++i];
     }
     else if(arg == "--help" || arg == "-h") {
       usage(std::cout);
@@ -1140,5 +1248,5 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  return runChecks(pluginDir);
+  return runChecks(pluginDir, pluginId);
 }

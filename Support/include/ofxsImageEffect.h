@@ -18,6 +18,7 @@ of the direct OFX objects and any library side only functions.
 #include "ofxProgress.h"
 #include "ofxTimeLine.h"
 #include "ofxParametricParam.h"
+#include "ofxsMetadata.h"
 
 /** @brief Nasty macro used to define empty protected copy ctors and assign ops */
 #define mDeclareProtectedAssignAndCC(CLASS) \
@@ -273,6 +274,7 @@ namespace OFX {
     bool supportsProgressSuite;
     bool supportsTimeLineSuite;
     bool supportsMessageSuiteV2;
+    bool supportsMetadata;
 
   public:
     bool supportsPixelComponent(const PixelComponentEnum component) const;
@@ -576,6 +578,9 @@ namespace OFX {
     /** @brief get the OpenCL Image for this image */
     const void *getOpenCLImage(void) const { return _OpenCLImage;}
 
+    /** @brief fetch the metadata this image carries, empty if the host has none or no metadata suite */
+    MetadataSet getMetadata(void) const;
+
     /** @brief return a pixel pointer, returns NULL if (x,y) is outside the image bounds
 
     x and y are in pixel coordinates
@@ -709,6 +714,9 @@ namespace OFX {
 
     /** @brief get the RoD for this clip in the canonical coordinate system */
     OfxRectD getRegionOfDefinition(double t);
+
+    /** @brief fetch the metadata this clip carries at the given time, empty if the host has none or no metadata suite */
+    MetadataSet getMetadata(double time);
 
     /** @brief fetch an image
 

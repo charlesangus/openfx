@@ -885,6 +885,11 @@ namespace OFX {
     OFX::Private::gEffectSuite->clipReleaseImage(_imageProps.propSetHandle());
   }
 
+  MetadataSet Image::getMetadata(void) const
+  {
+    return MetadataSet::fetchFromImage(_imageProps.propSetHandle());
+  }
+
 #ifdef OFX_SUPPORTS_OPENGLRENDER
   ////////////////////////////////////////////////////////////////////////////////
   // wraps up an OpenGL texture
@@ -1164,6 +1169,11 @@ namespace OFX {
     }
     throwSuiteStatusException(stat);
     return bounds;
+  }
+
+  MetadataSet Clip::getMetadata(double time)
+  {
+    return MetadataSet::fetchFromClip(getHandle(), time);
   }
 
   /** @brief fetch an image */
@@ -1977,6 +1987,7 @@ namespace OFX {
         OFX::gHostDescription.supportsMessageSuiteV2 = gMessageSuiteV2 != NULL;
         OFX::gHostDescription.supportsProgressSuite = (gProgressSuiteV1 != NULL || gProgressSuiteV2 != NULL);
         OFX::gHostDescription.supportsTimeLineSuite = gTimeLineSuite != NULL;
+        OFX::gHostDescription.supportsMetadata = gMetadataSuite != NULL && gPropSuiteV2 != NULL;
 
         // fetch the interact suite if the host supports interaction
         if(OFX::gHostDescription.supportsOverlays || OFX::gHostDescription.supportsCustomInteract)

@@ -15,6 +15,7 @@ the API.
     ofxExample3_Gain
     ofxExample4_Saturation
     ofxExample5_Circle
+    ofxMetadataGuide
 
 .. literalinclude:: README.txt
 .. literalinclude:: TODO.txt

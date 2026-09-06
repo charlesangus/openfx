@@ -48,7 +48,13 @@ namespace MetadataFixture {
   /// key it does not define itself
   const char kDataWindowKey[] = "org.openfx.examples.metadataHost.dataWindow";
 
+  /// another reverse DNS key; its value is a realistic path that happens to carry a
+  /// bare '%' (an opacity folder) and a '%s' (an unsubstituted shot-name token), so it
+  /// catches a plugin that passes metadata text as a printf format rather than an arg
+  const char kBurnInTemplateKey[] = "org.openfx.examples.metadataHost.burnInTemplate";
+
   const char kSourceMovie[] = "/shots/ab_010/plate/ab_010_plate.mov";
+  const char kBurnInTemplate[] = "/shots/ab_010/burnin/50%/ab_010_%s.txt";
 
   /// Source is a movie, so it carries one path at every frame and a timecode that
   /// advances a frame at a time; Mask is a numbered sequence, so its path and its
@@ -59,6 +65,7 @@ namespace MetadataFixture {
     {"Source", kOfxMetadataKeySampleType,  eString, kAnyTime, "float",       0,    {0},                0},
     {"Source", kOfxMetadataKeyBitDepth,    eInt,    kAnyTime, 0,             0,    {16},               1},
     {"Source", kDataWindowKey,             eInt,    kAnyTime, 0,             0,    {0, 0, 1920, 1080}, 4},
+    {"Source", kBurnInTemplateKey,         eString, kAnyTime, kBurnInTemplate, 0,   {0},                0},
     {"Source", kOfxMetadataKeyTimecode,    eString, 1,        "01:00:00:00", 0,    {0},                0},
     {"Source", kOfxMetadataKeyTimecode,    eString, 2,        "01:00:00:01", 0,    {0},                0},
     {"Source", kOfxMetadataKeyTimecode,    eString, 3,        "01:00:00:02", 0,    {0},                0},

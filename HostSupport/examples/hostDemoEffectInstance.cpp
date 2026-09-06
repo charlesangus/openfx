@@ -72,11 +72,13 @@ namespace MyHost {
       *_messageCapture += id;
       *_messageCapture += " ";
       *_messageCapture += buf;
+      *_messageCapture += '\n';
       return kOfxStatOK;
     }
 
     printf("%s %s ",type,id);
     vprintf(format,args);
+    printf("\n");
     return kOfxStatOK;
   }
 

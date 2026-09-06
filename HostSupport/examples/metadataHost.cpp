@@ -2405,6 +2405,18 @@ namespace {
 
     report.check(noted, std::string("effect param=") + kNoteParam + " contributed=" + note);
 
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    const int defaultOrder = kMaskOverSource;
+    report.check(orderValue == formatInt(defaultOrder),
+                 std::string("plugin param=") + kOrderParam + " default=" + orderValue);
+
+    // nothing has touched the instance yet, so this is the composition a param change
+    // later on has to be shown moving the output away from
+    std::map<std::string, std::string> baseline;
+    checkOutput(report, *output, defaultOrder, MetadataFixture::kFirstFrame, note, baseline);
+
     std::vector<std::string> contested;
     contestedKeys(contested);
     report.check(!contested.empty(), "fixture contestedkeys=" + joinKeys(std::set<std::string>(contested.begin(), contested.end())));
@@ -2431,20 +2443,41 @@ namespace {
     report.check(setParamValue(*instance, kOrderParam, formatInt(kUntrappedOrder)),
                  "effect order=" + formatInt(kUntrappedOrder) + " parameter set");
 
-    instance->invalidateMetadata();
+    instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+    instance->paramInstanceChangedAction(kOrderParam, kOfxChangeUserEdited, MetadataFixture::kFirstFrame, renderScale);
+    instance->endInstanceChangedAction(kOfxChangeUserEdited);
 
     for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
       std::map<std::string, std::string> read;
       checkOutput(report, *output, kUntrappedOrder, time, note, read);
       actions += 1;
+
+      if(time == MetadataFixture::kFirstFrame)
+        atFirstFrame[kUntrappedOrder] = read;
     }
+
+    // nothing here calls invalidateMetadata directly: the changed action above is the
+    // only thing that could have moved the read below off the baseline composition
+    bool movedFromDefault = baseline.size() != atFirstFrame[kUntrappedOrder].size();
+
+    for(std::map<std::string, std::string>::const_iterator it = baseline.begin();
+        it != baseline.end() && !movedFromDefault; ++it) {
+      std::map<std::string, std::string>::const_iterator found = atFirstFrame[kUntrappedOrder].find(it->first);
+      movedFromDefault = found == atFirstFrame[kUntrappedOrder].end() || found->second != it->second;
+    }
+
+    report.check(movedFromDefault,
+                 "effect param=" + std::string(kOrderParam) + " order=" + formatInt(kUntrappedOrder)
+                 + " composition=updated withoutmanualinvalidate=true");
 
     // in this one the plugin nominates no clip at all, so there is nothing to inherit and
     // the output has to carry the keys it contributed and none besides
     report.check(setParamValue(*instance, kOrderParam, formatInt(kNoSourceOrder)),
                  "effect order=" + formatInt(kNoSourceOrder) + " parameter set");
 
-    instance->invalidateMetadata();
+    instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+    instance->paramInstanceChangedAction(kOrderParam, kOfxChangeUserEdited, MetadataFixture::kFirstFrame, renderScale);
+    instance->endInstanceChangedAction(kOfxChangeUserEdited);
 
     std::vector<Contributed> contributed;
     contributedKeys(note, contributed);
@@ -2483,9 +2516,9 @@ namespace {
 
       report.check(setParamValue(*instance, kOrderParam, formatInt(which)), where + " parameter set");
 
-      // the metadata is derived from the effect's state, so the sets already cached
-      // for the old value of the parameter have to go
-      instance->invalidateMetadata();
+      instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+      instance->paramInstanceChangedAction(kOrderParam, kOfxChangeUserEdited, MetadataFixture::kFirstFrame, renderScale);
+      instance->endInstanceChangedAction(kOfxChangeUserEdited);
 
       std::vector<std::string> perFrame;
       composedPerFrameKeys(which, note, perFrame);

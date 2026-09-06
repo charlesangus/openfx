@@ -9,6 +9,7 @@
 
 #include "ofxCore.h"
 #include "ofxImageEffect.h"
+#include "ofxMessage.h"
 #include "ofxParam.h"
 #include "ofxProperty.h"
 #include "ofxMetadata.h"
@@ -53,6 +54,7 @@ static const OfxImageEffectSuiteV1  *gEffectSuite = 0;
 static const OfxPropertySuiteV2     *gPropSuite = 0;
 static const OfxParameterSuiteV1    *gParamSuite = 0;
 static const OfxMetadataSuiteV1     *gMetadataSuite = 0;
+static const OfxMessageSuiteV2      *gMessageSuite = 0;
 
 static OfxStatus collectKey(const char *key, void *userData)
 {
@@ -164,6 +166,21 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
   if(gPropSuite->propGetDouble(inArgs, kOfxPropTime, 0, &time) != kOfxStatOK)
     return kOfxStatFailed;
 
+  void *vended = 0;
+
+  if(gPropSuite->propGetPointer(inArgs, kOfxImageEffectPropMetadataSet, 0, &vended) != kOfxStatOK || !vended)
+    return kOfxStatFailed;
+
+  std::vector<std::string> written;
+
+  if(gMetadataSuite->metadataEnumerate((OfxPropertySetHandle) vended, collectKey, &written) != kOfxStatOK)
+    return kOfxStatFailed;
+
+  // the set arrives empty, and the log line is how a host driving this plugin sees that
+  // it did
+  gMessageSuite->message(effect, kOfxMessageLog, "metadataPlugin",
+                         "metadataPlugin metadataset present keys=%d", int(written.size()));
+
   OfxParamSetHandle paramSet = 0;
   OfxParamHandle order = 0;
   int reversed = 0;
@@ -262,8 +279,9 @@ static OfxStatus onLoad(void)
   gPropSuite     = (const OfxPropertySuiteV2 *)    gHost->fetchSuite(gHost->host, kOfxPropertySuite, 2);
   gParamSuite    = (const OfxParameterSuiteV1 *)   gHost->fetchSuite(gHost->host, kOfxParameterSuite, 1);
   gMetadataSuite = (const OfxMetadataSuiteV1 *)    gHost->fetchSuite(gHost->host, kOfxMetadataSuite, 1);
+  gMessageSuite  = (const OfxMessageSuiteV2 *)     gHost->fetchSuite(gHost->host, kOfxMessageSuite, 2);
 
-  if(!gEffectSuite || !gPropSuite || !gParamSuite || !gMetadataSuite)
+  if(!gEffectSuite || !gPropSuite || !gParamSuite || !gMetadataSuite || !gMessageSuite)
     return kOfxStatErrMissingHostFeature;
 
   return kOfxStatOK;

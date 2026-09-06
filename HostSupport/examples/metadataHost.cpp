@@ -2019,6 +2019,20 @@ namespace {
 
 #ifdef OFX_SUPPORTS_METADATA
 
+  /// the number of non overlapping occurrences of what in text
+  int countOccurrences(const std::string &text, const std::string &what)
+  {
+    int found = 0;
+    std::string::size_type at = text.find(what);
+
+    while(at != std::string::npos) {
+      found += 1;
+      at = text.find(what, at + what.size());
+    }
+
+    return found;
+  }
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -2063,6 +2077,15 @@ namespace {
     const int orders[] = {kMaskOverSource, kSourceOverMask};
     std::map<int, std::map<std::string, std::string> > atFirstFrame;
 
+    // what the plugin logs about the set it was handed to write into, which is the only
+    // way back from inside the action
+    MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(instance.get());
+    std::string captured;
+    int actions = 0;
+
+    if(effect)
+      effect->setMessageCapture(&captured);
+
     for(size_t o = 0; o < sizeof(orders) / sizeof(orders[0]); ++o) {
       const int which = orders[o];
 
@@ -2087,6 +2110,7 @@ namespace {
       for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
         std::map<std::string, std::string> read;
         checkOutput(report, *output, which, time, read);
+        actions += 1;
 
         if(time == MetadataFixture::kFirstFrame)
           atFirstFrame[which] = read;
@@ -2109,6 +2133,20 @@ namespace {
                      where + " dropped=" + dropped[k]);
       }
     }
+
+    if(effect)
+      effect->setMessageCapture(NULL);
+
+    const int handed = countOccurrences(captured, "metadataPlugin metadataset present");
+    const int emptied = countOccurrences(captured, "metadataPlugin metadataset present keys=0");
+
+    std::ostringstream hs;
+    hs << "effect metadataset handed=" << handed << " actions=" << actions;
+    report.check(actions > 0 && handed == actions, hs.str());
+
+    std::ostringstream es;
+    es << "effect metadataset empty=" << emptied << " handed=" << handed;
+    report.check(handed > 0 && emptied == handed, es.str());
 
     // the same key composed the other way round must give the other clip's value
     for(size_t k = 0; k < contested.size(); ++k) {

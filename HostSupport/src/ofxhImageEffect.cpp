@@ -1858,6 +1858,10 @@ namespace OFX {
         /// the metadata of each input clip, fetched at most once and only when needed
         std::vector<MetadataSet *> inputMetadata(inputs.size(), (MetadataSet *) NULL);
 
+        /// the set the effect writes the metadata it contributes into. The host owns it, so
+        /// the effect cannot release it and it does not outlive the action
+        MetadataSet *contribution = new MetadataSet(true, false);
+
         try {
           /// the list starts as the first input clip the effect described, if it has one,
           /// with the whole of that clip's key set retained and every other clip's empty
@@ -1875,11 +1879,13 @@ namespace OFX {
 
           static const Property::PropSpec inStuff[] = {
             { kOfxPropTime, Property::eDouble, 1, true, "0" },
+            { kOfxImageEffectPropMetadataSet, Property::ePointer, 1, true, NULL },
             Property::propSpecEnd
           };
 
           Property::Set inArgs(inStuff);
           inArgs.setDoubleProperty(kOfxPropTime, time);
+          inArgs.setPointerProperty(kOfxImageEffectPropMetadataSet, contribution->getPropHandle());
 
 #         ifdef OFX_DEBUG_ACTIONS
             std::cout << "OFX: "<<(void*)this<<"->"<<kOfxImageEffectActionGetMetadata<<"("<<time<<")"<<std::endl;
@@ -1929,10 +1935,12 @@ namespace OFX {
         }
         catch (...) {
           releaseInputMetadata(inputMetadata);
+          contribution->releaseReference();
           throw;
         }
 
         releaseInputMetadata(inputMetadata);
+        contribution->releaseReference();
       }
 #     endif // OFX_SUPPORTS_METADATA
 
@@ -2566,13 +2574,17 @@ namespace OFX {
 
         MetadataSet *set = dynamic_cast<MetadataSet*>(pset);
 
-        if(set){
-          set->releaseReference();
-
-          return kOfxStatOK;
+        if(!set) {
+          return kOfxStatErrBadHandle;
         }
 
-        return kOfxStatErrBadHandle;
+        if(!set->isPluginOwned()) {
+          return kOfxStatErrValue;
+        }
+
+        set->releaseReference();
+
+        return kOfxStatOK;
         } catch (...) {
           return kOfxStatErrBadHandle;
         }

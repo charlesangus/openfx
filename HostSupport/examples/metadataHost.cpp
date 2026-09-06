@@ -1693,29 +1693,39 @@ namespace {
   /// fixture gives that clip: every key of every frame, once each, with the fixture's
   /// type and value, in ascending order, and the image passed through untouched. The
   /// timecode check is what a plugin that read its clip once, rather than at the time it
-  /// was handed to render, falls down on
-  void checkMetadataLog(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  /// was handed to render, falls down on. Degraded is the same plugin on a host with no
+  /// metadata suite, where it has nothing to read and so owes an empty log and the image
+  void checkMetadataLog(Report &report, OFX::Host::ImageEffect::Instance &instance, bool degraded)
   {
     const std::string clip = kOfxImageEffectSimpleSourceClipName;
+    const std::string where = degraded ? "metadata-log-degraded" : "metadata-log";
 
     RenderPass pass;
     checkRender(report, instance, &pass);
 
     std::ostringstream pixels;
-    pixels << "metadata-log passthrough frames=" << pass.framesRendered
+    pixels << where << " passthrough frames=" << pass.framesRendered
            << " identical=" << pass.framesPassedThrough;
 
     report.check(pass.framesRendered == kFixtureFrames
                  && pass.framesPassedThrough == pass.framesRendered,
                  pixels.str());
 
-    checkLogAgainstFixture(report, pass.records, "metadata-log");
+    if(degraded) {
+      std::ostringstream logged;
+      logged << where << " logrecords=" << pass.records.size();
+
+      report.check(pass.records.empty(), logged.str());
+      return;
+    }
+
+    checkLogAgainstFixture(report, pass.records, where);
 
     for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
       const std::string logged = loggedKeys(pass.records, clip, time);
 
       report.check(logged == fixtureKeys(clip, time),
-                   "metadata-log clip=" + clip + " frame=" + formatTime(time) + " keys=" + logged);
+                   where + " clip=" + clip + " frame=" + formatTime(time) + " keys=" + logged);
     }
 
     std::string atFirst = "none";
@@ -1726,8 +1736,18 @@ namespace {
       && loggedValue(pass.records, clip, MetadataFixture::kLastFrame, kOfxMetadataKeyTimecode, atLast)
       && atFirst != atLast;
 
-    report.check(advances, "metadata-log clip=" + clip + " " kOfxMetadataKeyTimecode
+    report.check(advances, where + " clip=" + clip + " " kOfxMetadataKeyTimecode
                  " first=" + atFirst + " last=" + atLast);
+  }
+
+  void checkMetadataLogSupported(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    checkMetadataLog(report, instance, /*degraded=*/false);
+  }
+
+  void checkMetadataLogDegraded(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    checkMetadataLog(report, instance, /*degraded=*/true);
   }
 
   /// the parameters a plugin which shows metadata has to expose for the contract below
@@ -1847,27 +1867,34 @@ namespace {
   /// hold a plugin which shows the metadata of its source clip in a parameter to what
   /// the fixture gives that clip, over every mode and a sweep of filters, with the image
   /// still passed through untouched. Each display is compared byte for byte, so the
-  /// separator, the line order and the absence of a line after the last one are all held
-  void checkMetadataDisplay(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  /// separator, the line order and the absence of a line after the last one are all held.
+  /// Degraded is the same plugin on a host with no metadata suite, where every display it
+  /// composes is empty whatever it is asked for
+  void checkMetadataDisplay(Report &report, OFX::Host::ImageEffect::Instance &instance, bool degraded)
   {
     const std::string clip = kOfxImageEffectSimpleSourceClipName;
     const OfxTime time = MetadataFixture::kFirstFrame;
+    const std::string contract = degraded ? "metadata-display-degraded" : "metadata-display";
 
     OfxPointD renderScale;
     renderScale.x = renderScale.y = 1.0;
 
-    const std::string pinned = expectedDisplay(clip, time, kPinnedFilter, kPinnedMode);
+    // the pinned display is a self check on this file's own composition, with no plugin
+    // in it, so a host with nothing to compose from has nothing to pin
+    if(!degraded) {
+      const std::string pinned = expectedDisplay(clip, time, kPinnedFilter, kPinnedMode);
 
-    report.check(pinned == kPinnedDisplay,
-                 std::string("metadata-display pinned filter=") + kPinnedFilter
-                 + " expected=" + escapeLines(pinned) + " literal=" + kPinnedDisplay);
+      report.check(pinned == kPinnedDisplay,
+                   contract + " pinned filter=" + kPinnedFilter
+                   + " expected=" + escapeLines(pinned) + " literal=" + kPinnedDisplay);
+    }
 
     for(int mode = 0; mode < eFilterModeCount; ++mode) {
       for(int f = 0; f < kDisplayFilterCount; ++f) {
         const std::string filter = kDisplayFilters[f];
 
         std::ostringstream os;
-        os << "metadata-display mode=" << mode << " filter=" << filter;
+        os << contract << " mode=" << mode << " filter=" << filter;
         const std::string where = os.str();
 
         const bool driven = setParamValue(instance, kFilterParam, filter)
@@ -1892,7 +1919,7 @@ namespace {
                      && pass.framesPassedThrough == pass.framesRendered,
                      pixels.str());
 
-        const std::string wanted = expectedDisplay(clip, time, filter, mode);
+        const std::string wanted = degraded ? std::string() : expectedDisplay(clip, time, filter, mode);
         std::string shown = "none";
 
         const bool read = getParamValue(instance, kDisplayParam, shown);
@@ -1904,9 +1931,24 @@ namespace {
     }
   }
 
+  void checkMetadataDisplaySupported(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    checkMetadataDisplay(report, instance, /*degraded=*/false);
+  }
+
+  void checkMetadataDisplayDegraded(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    checkMetadataDisplay(report, instance, /*degraded=*/true);
+  }
+
+  /// the degraded contracts are registered in both builds on purpose: each pair is held
+  /// to a host which cannot meet it in the build the other pair passes in, which is what
+  /// shows either of them is able to fail at all
   const Contract kContractTable[] = {
-    {"metadata-log", kFixtureFrames + 3, checkMetadataLog},
-    {"metadata-display", eFilterModeCount * kDisplayFilterCount * 2 + 1, checkMetadataDisplay}
+    {"metadata-log", kFixtureFrames + 3, checkMetadataLogSupported},
+    {"metadata-log-degraded", kFixtureFrames + 2, checkMetadataLogDegraded},
+    {"metadata-display", eFilterModeCount * kDisplayFilterCount * 2 + 1, checkMetadataDisplaySupported},
+    {"metadata-display-degraded", eFilterModeCount * kDisplayFilterCount * 2, checkMetadataDisplayDegraded}
   };
 
   const Contract *const kContracts = kContractTable;
@@ -2155,7 +2197,23 @@ namespace {
        << std::endl;
     os << "  --check <name>      hold the plugin --plugin-id names to the named contract"
        << std::endl;
-    os << "                      as well as to those preconditions" << std::endl;
+    os << "                      as well as to those preconditions, one of:" << std::endl;
+    os << "                        metadata-log               a plugin which logs the"
+       << std::endl;
+    os << "                                                   metadata of its source clip"
+       << std::endl;
+    os << "                        metadata-log-degraded      the same plugin on a host"
+       << std::endl;
+    os << "                                                   with no metadata suite"
+       << std::endl;
+    os << "                        metadata-display           a plugin which shows the"
+       << std::endl;
+    os << "                                                   metadata in a parameter"
+       << std::endl;
+    os << "                        metadata-display-degraded  the same plugin on a host"
+       << std::endl;
+    os << "                                                   with no metadata suite"
+       << std::endl;
     os << "  with no arguments, publish the fixture through a host, read it back" << std::endl;
     os << "  through the metadata suite, then run it through the metadata plugin and" << std::endl;
     os << "  check what comes back" << std::endl;

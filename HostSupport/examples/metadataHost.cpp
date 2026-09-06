@@ -2456,8 +2456,8 @@ namespace {
         atFirstFrame[kUntrappedOrder] = read;
     }
 
-    // nothing here calls invalidateMetadata directly: the changed action above is the
-    // only thing that could have moved the read below off the baseline composition
+    // do not add a manual invalidateMetadata() call above: it would make the check
+    // below pass regardless of whether the changed action itself invalidated anything
     bool movedFromDefault = baseline.size() != atFirstFrame[kUntrappedOrder].size();
 
     for(std::map<std::string, std::string>::const_iterator it = baseline.begin();

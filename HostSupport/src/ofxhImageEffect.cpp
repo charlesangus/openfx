@@ -30,6 +30,7 @@
 #endif
 #include "ofxOld.h" // old plugins may rely on deprecated properties being present
 
+#include <memory>
 #include <string.h>
 #include <stdarg.h>
 
@@ -2698,24 +2699,15 @@ namespace OFX {
           return kOfxStatErrValue;
         }
 
-        // createProperty leaves a key which is already there alone, so a key written
-        // again is replaced outright to give it the dimension it is written with
-        if (set->fetchProperty(key)) {
-          set->addProperty(new Property::PropertyTemplate<T>(key, count, false, empty));
-        }
-        else {
-          const Property::PropSpec spec = { key, T::typeCode, count, false, NULL };
+        // build and fill the replacement off the set, so a throw while copying values
+        // leaves the set exactly as it was rather than holding a half-written key;
+        // addProperty below both installs a new key and replaces an existing one,
+        // taking ownership either way
+        std::unique_ptr<Property::PropertyTemplate<T> > replacement(new Property::PropertyTemplate<T>(key, count, false, empty));
 
-          set->createProperty(spec);
-        }
+        replacement->setValueN(values, count);
 
-        Property::PropertyTemplate<T> *prop = dynamic_cast<Property::PropertyTemplate<T>*>(set->fetchProperty(key));
-
-        if (!prop) {
-          return kOfxStatErrMemory;
-        }
-
-        prop->setValueN(values, count);
+        set->addProperty(replacement.release());
 
         return kOfxStatOK;
         } catch (const Property::Exception& e) {

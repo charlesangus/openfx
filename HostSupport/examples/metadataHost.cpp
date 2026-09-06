@@ -6,6 +6,7 @@
 #endif
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -1706,8 +1707,183 @@ namespace {
                  " first=" + atFirst + " last=" + atLast);
   }
 
+  /// the parameters a plugin which shows metadata has to expose for the contract below
+  /// to drive it, and the values of its mode
+  const char kFilterParam[]     = "filter";
+  const char kFilterModeParam[] = "filterMode";
+  const char kDisplayParam[]    = "display";
+
+  enum FilterModeEnum {
+    eFilterModeKeysAndValues,
+    eFilterModeKeysOnly,
+    eFilterModeValuesOnly,
+    eFilterModeCount
+  };
+
+  /// the filters swept over: everything, one key of the fixture, the whole standard
+  /// namespace, the same one key in a case the fixture does not hold it in, and nothing
+  const char *const kDisplayFilters[] = {
+    "",
+    "timecode",
+    kOfxMetadataKeyPrefixStandard,
+    "TimeCode",
+    "nosuchkey"
+  };
+
+  const int kDisplayFilterCount = sizeof(kDisplayFilters) / sizeof(kDisplayFilters[0]);
+
+  /// the one case whose display is pinned to a literal rather than composed, so that the
+  /// same mistake in this file's substring match and in the plugin's cannot hide in the
+  /// agreement between them
+  const char kPinnedFilter[]  = "timecode";
+  const int  kPinnedMode      = eFilterModeKeysOnly;
+  const char kPinnedDisplay[] = kOfxMetadataKeyTimecode;
+
+  /// a display written as one line, so that a check stays on the line it is printed on
+  /// and a stray newline is visible in it rather than laid out as one
+  std::string escapeLines(const std::string &text)
+  {
+    std::string escaped;
+
+    for(size_t i = 0; i < text.size(); ++i) {
+      if(text[i] == '\n')
+        escaped += "\\n";
+      else
+        escaped += text[i];
+    }
+
+    return escaped;
+  }
+
+  char lowerCase(char c)
+  {
+    return char(tolower((unsigned char) c));
+  }
+
+  /// does text hold needle, ignoring case. Written by lowering both and searching rather
+  /// than the way a plugin would write it, so that the two do not share a mistake
+  bool holdsNoCase(const std::string &text, const std::string &needle)
+  {
+    std::string haystack = text;
+    std::string wanted = needle;
+
+    std::transform(haystack.begin(), haystack.end(), haystack.begin(), lowerCase);
+    std::transform(wanted.begin(), wanted.end(), wanted.begin(), lowerCase);
+
+    return haystack.find(wanted) != std::string::npos;
+  }
+
+  /// what a plugin writing a value into text gives for an entry. A double goes through
+  /// the stream default rather than formatDouble's seventeen digits, which is what a
+  /// plugin that simply streams the number out produces
+  std::string displayValue(const MetadataFixture::Entry &entry)
+  {
+    if(entry.type != MetadataFixture::eDouble)
+      return entryValue(entry);
+
+    std::ostringstream os;
+    os << entry.doubleValue;
+    return os.str();
+  }
+
+  /// the display the fixture owes for a clip at a time under a filter and a mode: the
+  /// keys holding the filter, in ascending order, one to a line with no line after the
+  /// last
+  std::string expectedDisplay(const std::string &clip,
+                              OfxTime time,
+                              const std::string &filter,
+                              int mode)
+  {
+    std::map<std::string, const MetadataFixture::Entry *> keys;
+
+    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+      if(entryAppliesAt(MetadataFixture::kEntries[i], clip, time))
+        keys[MetadataFixture::kEntries[i].key] = &MetadataFixture::kEntries[i];
+    }
+
+    std::string text;
+
+    for(std::map<std::string, const MetadataFixture::Entry *>::const_iterator it = keys.begin();
+        it != keys.end(); ++it) {
+      if(!holdsNoCase(it->first, filter))
+        continue;
+
+      if(!text.empty())
+        text += "\n";
+
+      switch(mode) {
+      case eFilterModeKeysOnly   : text += it->first; break;
+      case eFilterModeValuesOnly : text += displayValue(*it->second); break;
+      default                    : text += it->first + "=" + displayValue(*it->second); break;
+      }
+    }
+
+    return text;
+  }
+
+  /// hold a plugin which shows the metadata of its source clip in a parameter to what
+  /// the fixture gives that clip, over every mode and a sweep of filters, with the image
+  /// still passed through untouched. Each display is compared byte for byte, so the
+  /// separator, the line order and the absence of a line after the last one are all held
+  void checkMetadataDisplay(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::string clip = kOfxImageEffectSimpleSourceClipName;
+    const OfxTime time = MetadataFixture::kFirstFrame;
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    const std::string pinned = expectedDisplay(clip, time, kPinnedFilter, kPinnedMode);
+
+    report.check(pinned == kPinnedDisplay,
+                 std::string("metadata-display pinned filter=") + kPinnedFilter
+                 + " expected=" + escapeLines(pinned) + " literal=" + kPinnedDisplay);
+
+    for(int mode = 0; mode < eFilterModeCount; ++mode) {
+      for(int f = 0; f < kDisplayFilterCount; ++f) {
+        const std::string filter = kDisplayFilters[f];
+
+        std::ostringstream os;
+        os << "metadata-display mode=" << mode << " filter=" << filter;
+        const std::string where = os.str();
+
+        const bool driven = setParamValue(instance, kFilterParam, filter)
+                            && setParamValue(instance, kFilterModeParam, formatInt(mode));
+
+        if(!report.check(driven, where + " parameters set"))
+          continue;
+
+        instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+        instance.paramInstanceChangedAction(kFilterParam, kOfxChangeUserEdited, time, renderScale);
+        instance.paramInstanceChangedAction(kFilterModeParam, kOfxChangeUserEdited, time, renderScale);
+        instance.endInstanceChangedAction(kOfxChangeUserEdited);
+
+        RenderPass pass;
+        checkRender(report, instance, &pass);
+
+        std::ostringstream pixels;
+        pixels << where << " passthrough frames=" << pass.framesRendered
+               << " identical=" << pass.framesPassedThrough;
+
+        report.check(pass.framesRendered == kFixtureFrames
+                     && pass.framesPassedThrough == pass.framesRendered,
+                     pixels.str());
+
+        const std::string wanted = expectedDisplay(clip, time, filter, mode);
+        std::string shown = "none";
+
+        const bool read = getParamValue(instance, kDisplayParam, shown);
+
+        report.check(read && shown == wanted,
+                     where + " display=" + escapeLines(shown)
+                     + " expected=" + escapeLines(wanted));
+      }
+    }
+  }
+
   const Contract kContractTable[] = {
-    {"metadata-log", kFixtureFrames + 3, checkMetadataLog}
+    {"metadata-log", kFixtureFrames + 3, checkMetadataLog},
+    {"metadata-display", eFilterModeCount * kDisplayFilterCount * 2 + 1, checkMetadataDisplay}
   };
 
   const Contract *const kContracts = kContractTable;

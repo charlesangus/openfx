@@ -8,6 +8,7 @@ set(PLUGINS
 	GPUGain
 	Invert
 	MetadataPrint
+	MetadataView
 	MultiBundle
 	Retimer
 	Tester

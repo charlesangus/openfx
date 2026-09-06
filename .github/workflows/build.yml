@@ -451,6 +451,9 @@ jobs:
           # MetadataPrint is a shipped example, so it is loaded from the install tree
           "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataPrint --check metadata-log
+          echo "Testing the metadata-display contract against MetadataView"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView --check metadata-display
           echo "Testing that the metadata-log contract fails a plugin which logs nothing"
           if "$BIN" --plugin-id org.openfx.examples.metadataPlugin --check metadata-log; then
             echo "metadata-log passed a plugin which renders and logs nothing" >&2

@@ -33,30 +33,35 @@ namespace MyHost {
   // MyIntegerInstance
   //
 
-  MyIntegerInstance::MyIntegerInstance(MyEffectInstance* effect, 
-                                       const std::string& name, 
+  MyIntegerInstance::MyIntegerInstance(MyEffectInstance* effect,
+                                       const std::string& name,
                                        OFX::Host::Param::Descriptor& descriptor)
     : _effect(effect), _descriptor(descriptor), OFX::Host::Param::IntegerInstance(descriptor)
+    , _value(descriptor.getProperties().getIntProperty(kOfxParamPropDefault))
   {
   }
 
-  OfxStatus MyIntegerInstance::get(int&)
+  OfxStatus MyIntegerInstance::get(int& v)
   {
-    return kOfxStatErrMissingHostFeature;
+    v = _value;
+    return kOfxStatOK;
   }
 
-  OfxStatus MyIntegerInstance::get(OfxTime time, int&)
+  OfxStatus MyIntegerInstance::get(OfxTime time, int& v)
   {
-    return kOfxStatErrMissingHostFeature;
+    v = _value;
+    return kOfxStatOK;
   }
 
-  OfxStatus MyIntegerInstance::set(int)
+  OfxStatus MyIntegerInstance::set(int v)
   {
-    return kOfxStatErrMissingHostFeature;
+    _value = v;
+    return kOfxStatOK;
   }
 
-  OfxStatus MyIntegerInstance::set(OfxTime time, int) {
-    return kOfxStatErrMissingHostFeature;
+  OfxStatus MyIntegerInstance::set(OfxTime time, int v) {
+    _value = v;
+    return kOfxStatOK;
   }
 
   //
@@ -140,31 +145,72 @@ namespace MyHost {
   // MyChoiceInteger
   //
 
-  MyChoiceInstance::MyChoiceInstance(MyEffectInstance* effect, 
-                                     const std::string& name, 
+  MyChoiceInstance::MyChoiceInstance(MyEffectInstance* effect,
+                                     const std::string& name,
                                      OFX::Host::Param::Descriptor& descriptor)
     : _effect(effect), _descriptor(descriptor), OFX::Host::Param::ChoiceInstance(descriptor)
+    , _value(descriptor.getProperties().getIntProperty(kOfxParamPropDefault))
   {
   }
 
-  OfxStatus MyChoiceInstance::get(int&)
+  OfxStatus MyChoiceInstance::get(int& v)
   {
-    return kOfxStatErrMissingHostFeature;
+    v = _value;
+    return kOfxStatOK;
   }
 
-  OfxStatus MyChoiceInstance::get(OfxTime time, int&)
+  OfxStatus MyChoiceInstance::get(OfxTime time, int& v)
   {
-    return kOfxStatErrMissingHostFeature;
+    v = _value;
+    return kOfxStatOK;
   }
 
-  OfxStatus MyChoiceInstance::set(int)
+  OfxStatus MyChoiceInstance::set(int v)
   {
-    return kOfxStatErrMissingHostFeature;
+    _value = v;
+    return kOfxStatOK;
   }
 
-  OfxStatus MyChoiceInstance::set(OfxTime time, int) 
+  OfxStatus MyChoiceInstance::set(OfxTime time, int v)
   {
-    return kOfxStatErrMissingHostFeature;
+    _value = v;
+    return kOfxStatOK;
+  }
+
+  //
+  // MyStringInstance
+  //
+
+  MyStringInstance::MyStringInstance(MyEffectInstance* effect,
+                                     const std::string& name,
+                                     OFX::Host::Param::Descriptor& descriptor)
+    : _effect(effect), _descriptor(descriptor), OFX::Host::Param::StringInstance(descriptor)
+    , _value(descriptor.getProperties().getStringProperty(kOfxParamPropDefault))
+  {
+  }
+
+  OfxStatus MyStringInstance::get(std::string& v)
+  {
+    v = _value;
+    return kOfxStatOK;
+  }
+
+  OfxStatus MyStringInstance::get(OfxTime time, std::string& v)
+  {
+    v = _value;
+    return kOfxStatOK;
+  }
+
+  OfxStatus MyStringInstance::set(const char* v)
+  {
+    _value = v;
+    return kOfxStatOK;
+  }
+
+  OfxStatus MyStringInstance::set(OfxTime time, const char* v)
+  {
+    _value = v;
+    return kOfxStatOK;
   }
 
   //

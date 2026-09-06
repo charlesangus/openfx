@@ -20,6 +20,7 @@
 #include "ofxCore.h"
 #include "ofxProperty.h"
 #include "ofxImageEffect.h"
+#include "ofxMessage.h"
 #include "ofxPixels.h"
 #include "ofxMetadata.h"
 
@@ -39,6 +40,7 @@
 #include "hostDemoHostDescriptor.h"
 #include "hostDemoEffectInstance.h"
 #include "hostDemoClipInstance.h"
+#include "hostDemoParamInstance.h"
 
 #include "metadataHostFixture.h"
 
@@ -86,27 +88,7 @@ namespace MyHost {
     virtual void fetchMetadata(OfxTime time, OFX::Host::Property::Set &metadata);
   };
 
-  /// the integer parameter the metadata plugin reads its composition order from. The
-  /// demo host's integer parameter answers kOfxStatErrMissingHostFeature to everything,
-  /// so it cannot carry a value the plugin can act on
-  class MetadataIntegerInstance : public OFX::Host::Param::IntegerInstance {
-    int _value;
-
-  public :
-    MetadataIntegerInstance(OFX::Host::Param::Descriptor &descriptor,
-                            OFX::Host::Param::SetInstance *instance)
-      : OFX::Host::Param::IntegerInstance(descriptor, instance)
-      , _value(descriptor.getProperties().getIntProperty(kOfxParamPropDefault))
-    {
-    }
-
-    virtual OfxStatus get(int &v) {v = _value; return kOfxStatOK;}
-    virtual OfxStatus get(OfxTime, int &v) {v = _value; return kOfxStatOK;}
-    virtual OfxStatus set(int v) {_value = v; return kOfxStatOK;}
-    virtual OfxStatus set(OfxTime, int v) {_value = v; return kOfxStatOK;}
-  };
-
-  /// an effect whose clips publish the fixture and whose integer parameters hold a value
+  /// an effect whose clips publish the fixture
   class MetadataEffectInstance : public MyEffectInstance {
   public :
     MetadataEffectInstance(OFX::Host::ImageEffect::ImageEffectPlugin *plugin,
@@ -121,14 +103,6 @@ namespace MyHost {
                                                                   int)
     {
       return new MetadataClipInstance(descriptor, this);
-    }
-
-    virtual OFX::Host::Param::Instance *newParam(const std::string &name,
-                                                 OFX::Host::Param::Descriptor &descriptor)
-    {
-      if(descriptor.getType() == kOfxParamTypeInteger)
-        return new MetadataIntegerInstance(descriptor, this);
-      return MyEffectInstance::newParam(name, descriptor);
     }
   };
 
@@ -190,6 +164,7 @@ namespace {
   const OfxPropertySuiteV2    *gPropSuite = NULL;
   const OfxMetadataSuiteV1    *gMetadataSuite = NULL;
   const OfxImageEffectSuiteV1 *gEffectSuite = NULL;
+  const OfxMessageSuiteV2     *gMessageSuite = NULL;
 
   ////////////////////////////////////////////////////////////////////////////////
   // formatting, shared by the fixture listing and the values read back so that the
@@ -199,6 +174,13 @@ namespace {
   {
     std::ostringstream os;
     os << std::setprecision(17) << v;
+    return os.str();
+  }
+
+  std::string formatInt(int v)
+  {
+    std::ostringstream os;
+    os << v;
     return os.str();
   }
 
@@ -665,10 +647,21 @@ namespace {
 
   const char kPluginId[] = "org.openfx.examples.metadataPlugin";
 
-  /// the plugin's parameter, and the two values of it this checks
+  /// the plugin's composition order parameter, and the two values of it this checks
   const char kOrderParam[] = "compositionOrder";
   const int  kMaskOverSource = 0;
   const int  kSourceOverMask = 1;
+
+  /// the plugin's string and choice parameters, the defaults it declares for them and
+  /// the values this writes through them
+  const char kNoteParam[]   = "note";
+  const char kNoteDefault[] = "unset";
+  const char kNoteScalar[]  = "scalar";
+  const char kNoteAtTime[]  = "attime";
+  const char kDetailParam[] = "detail";
+  const int  kDetailDefault = 0;
+  const int  kDetailScalar  = 2;
+  const int  kDetailAtTime  = 1;
 
   /// the plugin cache has no way to replace the default search path, only to add to
   /// it, and this must load the plugin built alongside it rather than whatever the
@@ -862,6 +855,63 @@ namespace {
     return ok;
   }
 
+  /// write a value through the host's string and choice parameter instances and read it
+  /// straight back, in both the scalar and the at-a-time form. A host that dropped what
+  /// was written, or that answered with the declared default instead of it, fails these
+  void checkParams(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    MyHost::MyStringInstance *note =
+      dynamic_cast<MyHost::MyStringInstance *>(instance.getParam(kNoteParam));
+    MyHost::MyChoiceInstance *detail =
+      dynamic_cast<MyHost::MyChoiceInstance *>(instance.getParam(kDetailParam));
+
+    if(!report.check(note != NULL, std::string("plugin param=") + kNoteParam))
+      return;
+    if(!report.check(detail != NULL, std::string("plugin param=") + kDetailParam))
+      return;
+
+    const OfxTime time = MetadataFixture::kLastFrame;
+    const std::string noteWhere = std::string("param=") + kNoteParam;
+    const std::string noteAtTime = noteWhere + " time=" + formatTime(time);
+
+    std::string text = "none";
+    bool ok = note->get(text) == kOfxStatOK && text == kNoteDefault;
+    report.check(ok, noteWhere + " default=" + text);
+
+    report.check(note->set(kNoteScalar) == kOfxStatOK, noteWhere + " set=" + kNoteScalar);
+
+    text = "none";
+    ok = note->get(text) == kOfxStatOK && text == kNoteScalar;
+    report.check(ok, noteWhere + " value=" + text);
+
+    report.check(note->set(time, kNoteAtTime) == kOfxStatOK, noteAtTime + " set=" + kNoteAtTime);
+
+    text = "none";
+    ok = note->get(time, text) == kOfxStatOK && text == kNoteAtTime;
+    report.check(ok, noteAtTime + " value=" + text);
+
+    const std::string choiceWhere = std::string("param=") + kDetailParam;
+    const std::string choiceAtTime = choiceWhere + " time=" + formatTime(time);
+
+    int option = -1;
+    ok = detail->get(option) == kOfxStatOK && option == kDetailDefault;
+    report.check(ok, choiceWhere + " default=" + formatInt(option));
+
+    report.check(detail->set(kDetailScalar) == kOfxStatOK,
+                 choiceWhere + " set=" + formatInt(kDetailScalar));
+
+    option = -1;
+    ok = detail->get(option) == kOfxStatOK && option == kDetailScalar;
+    report.check(ok, choiceWhere + " value=" + formatInt(option));
+
+    report.check(detail->set(time, kDetailAtTime) == kOfxStatOK,
+                 choiceAtTime + " set=" + formatInt(kDetailAtTime));
+
+    option = -1;
+    ok = detail->get(time, option) == kOfxStatOK && option == kDetailAtTime;
+    report.check(ok, choiceAtTime + " value=" + formatInt(option));
+  }
+
   /// change what an input clip publishes, drop that one clip's cached sets, and check
   /// the effect's output clip, which holds copies derived from them, gives back the new
   /// value. A host whose reader reloads one input has only that clip to invalidate
@@ -910,6 +960,168 @@ namespace {
                  "invalidation after value=" + is + " expected=" + expectedAfter);
   }
 
+  /// render every frame of the fixture range through the plugin, the way a host that
+  /// meant to produce output would, and capture anything logged through the message
+  /// suite instead of letting it land between the PASS/FAIL lines above
+  void checkRender(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    if(!report.check(instance.getClipPreferences(), "render clipprefs"))
+      return;
+
+    MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(&instance);
+    report.check(effect != NULL, "render effect instance");
+
+    std::string captured;
+    if(effect)
+      effect->setMessageCapture(&captured);
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    OfxRectI renderWindow;
+    renderWindow.x1 = renderWindow.y1 = 0;
+    renderWindow.x2 = renderWindow.y2 = 4;
+
+    OfxRectD roi;
+    roi.x1 = roi.y1 = 0;
+    roi.x2 = roi.y2 = 4;
+
+    const OfxTime first = MetadataFixture::kFirstFrame;
+    const OfxTime last  = MetadataFixture::kLastFrame;
+
+    OfxStatus stat = instance.beginRenderAction(first, last, 1.0, false, renderScale,
+                                                /*sequential=*/true, /*interactive=*/false);
+
+    // a plugin that refused to begin the sequence must not then be issued the frames
+    // of one, or the end of one
+    if(report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render beginsequence")) {
+      int rendered = 0;
+
+      for(OfxTime time = first; time <= last; time += 1) {
+        if(gMessageSuite)
+          gMessageSuite->message(instance.getHandle(), kOfxMessageLog, "metadataHost",
+                                 "metadataHost rendered frame %g", time);
+
+        std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
+        stat = instance.getRegionOfInterestAction(time, renderScale, roi, rois);
+        report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
+                     "render frame=" + formatTime(time) + " roi");
+
+        stat = instance.renderAction(time, kOfxImageFieldBoth, renderWindow, renderScale,
+                                     /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
+        report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
+                     "render frame=" + formatTime(time));
+
+        rendered += 1;
+      }
+
+      stat = instance.endRenderAction(first, last, 1.0, false, renderScale,
+                                      /*sequential=*/true, /*interactive=*/false);
+      report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render endsequence");
+
+      std::ostringstream framesWhere;
+      framesWhere << "render framesrendered=" << rendered;
+      report.check(rendered == int(last - first + 1), framesWhere.str());
+    }
+
+    if(effect)
+      effect->setMessageCapture(NULL);
+
+    std::cout << "metadataHost captured messages begin" << std::endl;
+    std::cout << captured;
+    std::cout << "metadataHost captured messages end" << std::endl;
+
+    report.check(captured.find("metadataHost rendered frame") != std::string::npos,
+                 "render messagecapture");
+  }
+
+  /// find a plugin by id in an already scanned cache, reporting the one precondition
+  /// both modes need before anything else can be checked
+  OFX::Host::ImageEffect::ImageEffectPlugin *findPlugin(Report &report,
+                                                        OFX::Host::ImageEffect::PluginCache &effectCache,
+                                                        const std::string &pluginId,
+                                                        const std::string &pluginDir)
+  {
+    OFX::Host::ImageEffect::ImageEffectPlugin *plugin = effectCache.getPluginById(pluginId);
+
+    report.check(plugin != NULL, "plugin id=" + pluginId + " dir=" + pluginDir);
+
+    return plugin;
+  }
+
+  /// create an instance of a plugin in the given context, reporting the preconditions
+  /// shared by both modes: that the context can be instantiated at all, and that
+  /// createInstance itself succeeds
+  std::unique_ptr<OFX::Host::ImageEffect::Instance>
+  createPluginInstance(Report &report,
+                       OFX::Host::ImageEffect::ImageEffectPlugin *plugin,
+                       const std::string &context)
+  {
+    std::unique_ptr<OFX::Host::ImageEffect::Instance> instance(plugin->createInstance(context, NULL));
+
+    if(!report.check(instance.get() != NULL, "plugin instance context=" + context))
+      return instance;
+
+    const OfxStatus created = instance->createInstanceAction();
+
+    if(!report.check(created == kOfxStatOK || created == kOfxStatReplyDefault, "plugin createinstance"))
+      instance.reset();
+
+    return instance;
+  }
+
+  /// the context a plugin driven by --plugin-id is instantiated in: Filter is preferred,
+  /// General is the fallback for a plugin that declares only it, and failing both,
+  /// whatever the plugin does declare
+  std::string chooseContext(OFX::Host::ImageEffect::ImageEffectPlugin &plugin)
+  {
+    const std::set<std::string> &contexts = plugin.getContexts();
+
+    if(contexts.count(kOfxImageEffectContextFilter))
+      return kOfxImageEffectContextFilter;
+    if(contexts.count(kOfxImageEffectContextGeneral))
+      return kOfxImageEffectContextGeneral;
+
+    return contexts.empty() ? std::string() : *contexts.begin();
+  }
+
+  /// load an arbitrary plugin by id and drive it far enough to prove the contract any
+  /// plugin has to meet, regardless of what it does: it resolves, describes, creates an
+  /// instance exposing the clips its context guarantees, and completes a render pass.
+  /// It asserts nothing about composition order or retained keys, which a read-only
+  /// plugin implements neither of
+  void checkGenericPlugin(Report &report,
+                          MyHost::MetadataHost &host,
+                          const std::string &pluginDir,
+                          const std::string &pluginId)
+  {
+    BuildTreePluginCache cache(pluginDir);
+    OFX::Host::ImageEffect::PluginCache effectCache(host);
+
+    cache.setCacheVersion("metadataHostV1");
+    effectCache.registerInCache(cache);
+    cache.scanPluginFiles();
+
+    OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, pluginId, pluginDir);
+
+    if(!plugin)
+      return;
+
+    const std::string context = chooseContext(*plugin);
+
+    std::unique_ptr<OFX::Host::ImageEffect::Instance> instance = createPluginInstance(report, plugin, context);
+
+    if(!instance.get())
+      return;
+
+    report.check(instance->getClip(kOfxImageEffectSimpleSourceClipName) != NULL,
+                 "plugin clip=" kOfxImageEffectSimpleSourceClipName);
+    report.check(instance->getClip(kOfxImageEffectOutputClipName) != NULL,
+                 "plugin clip=" kOfxImageEffectOutputClipName);
+
+    checkRender(report, *instance);
+  }
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -921,28 +1133,27 @@ namespace {
     effectCache.registerInCache(cache);
     cache.scanPluginFiles();
 
-    OFX::Host::ImageEffect::ImageEffectPlugin *plugin = effectCache.getPluginById(kPluginId);
+    OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, kPluginId, pluginDir);
 
-    if(!report.check(plugin != NULL, std::string("plugin id=") + kPluginId + " dir=" + pluginDir))
+    if(!plugin)
       return;
 
     std::unique_ptr<OFX::Host::ImageEffect::Instance>
-      instance(plugin->createInstance(kOfxImageEffectContextGeneral, NULL));
+      instance = createPluginInstance(report, plugin, kOfxImageEffectContextGeneral);
 
-    if(!report.check(instance.get() != NULL, "plugin instance context=" kOfxImageEffectContextGeneral))
+    if(!instance.get())
       return;
 
-    const OfxStatus created = instance->createInstanceAction();
-    report.check(created == kOfxStatOK || created == kOfxStatReplyDefault, "plugin createinstance");
-
     OFX::Host::ImageEffect::ClipInstance *output = instance->getClip(kOfxImageEffectOutputClipName);
-    MyHost::MetadataIntegerInstance *order =
-      dynamic_cast<MyHost::MetadataIntegerInstance *>(instance->getParam(kOrderParam));
+    MyHost::MyIntegerInstance *order =
+      dynamic_cast<MyHost::MyIntegerInstance *>(instance->getParam(kOrderParam));
 
     if(!report.check(output != NULL, "plugin clip=" kOfxImageEffectOutputClipName))
       return;
     if(!report.check(order != NULL, std::string("plugin param=") + kOrderParam))
       return;
+
+    checkParams(report, *instance);
 
     std::vector<std::string> contested;
     contestedKeys(contested);
@@ -1013,9 +1224,11 @@ namespace {
     }
 
     checkInvalidation(report, *instance);
+
+    checkRender(report, *instance);
   }
 
-  int runChecks(const std::string &pluginDir)
+  int runChecks(const std::string &pluginDir, const std::string &pluginId)
   {
     MyHost::MetadataHost host;
     OfxHost *handle = host.getHandle();
@@ -1023,8 +1236,9 @@ namespace {
     gPropSuite = (const OfxPropertySuiteV2 *) handle->fetchSuite(handle->host, kOfxPropertySuite, 2);
     gMetadataSuite = (const OfxMetadataSuiteV1 *) handle->fetchSuite(handle->host, kOfxMetadataSuite, 1);
     gEffectSuite = (const OfxImageEffectSuiteV1 *) handle->fetchSuite(handle->host, kOfxImageEffectSuite, 1);
+    gMessageSuite = (const OfxMessageSuiteV2 *) handle->fetchSuite(handle->host, kOfxMessageSuite, 2);
 
-    if(!gPropSuite || !gMetadataSuite || !gEffectSuite) {
+    if(!gPropSuite || !gMetadataSuite || !gEffectSuite || !gMessageSuite) {
       std::cout << "metadataHost the host does not vend the suites this needs" << std::endl;
       std::cout << "RESULT FAIL" << std::endl;
       return 1;
@@ -1032,9 +1246,14 @@ namespace {
 
     Report report;
 
-    checkFixture(report);
-    checkClips(report);
-    checkPlugin(report, host, pluginDir);
+    if(pluginId.empty()) {
+      checkFixture(report);
+      checkClips(report);
+      checkPlugin(report, host, pluginDir);
+    }
+    else {
+      checkGenericPlugin(report, host, pluginDir, pluginId);
+    }
 
     std::cout << "metadataHost checks=" << report.getChecks()
               << " failures=" << report.getFailures() << std::endl;
@@ -1045,10 +1264,21 @@ namespace {
 
   void usage(std::ostream &os)
   {
-    os << "usage: metadataHost [--list] [--plugin-dir <path>]" << std::endl;
+    os << "usage: metadataHost [--list] [--plugin-dir <path>] [--plugin-id <id>]" << std::endl;
     os << "  --list              print the fixture table and exit" << std::endl;
-    os << "  --plugin-dir <path> look for metadataPlugin.ofx.bundle in <path> rather" << std::endl;
-    os << "                      than in " << METADATA_PLUGIN_DIR << std::endl;
+    os << "  --plugin-dir <path> look for the plugin bundle in <path> rather than in"
+       << std::endl;
+    os << "                      " << METADATA_PLUGIN_DIR << std::endl;
+    os << "  --plugin-id <id>    load <id> from --plugin-dir and check the general"
+       << std::endl;
+    os << "                      preconditions any plugin has to meet - describe,"
+       << std::endl;
+    os << "                      create an instance, expose its clips, render the"
+       << std::endl;
+    os << "                      fixture range - rather than the scratch composition"
+       << std::endl;
+    os << "                      plugin's own composition order and retained-key checks"
+       << std::endl;
     os << "  with no arguments, publish the fixture through a host, read it back" << std::endl;
     os << "  through the metadata suite, then run it through the metadata plugin and" << std::endl;
     os << "  check what comes back" << std::endl;
@@ -1060,6 +1290,7 @@ int main(int argc, char **argv)
 {
   bool list = false;
   std::string pluginDir(METADATA_PLUGIN_DIR);
+  std::string pluginId;
 
   for(int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
@@ -1074,6 +1305,14 @@ int main(int argc, char **argv)
         return 2;
       }
       pluginDir = argv[++i];
+    }
+    else if(arg == "--plugin-id") {
+      if(i + 1 >= argc) {
+        std::cerr << "metadataHost --plugin-id needs an id" << std::endl;
+        usage(std::cerr);
+        return 2;
+      }
+      pluginId = argv[++i];
     }
     else if(arg == "--help" || arg == "-h") {
       usage(std::cout);
@@ -1091,5 +1330,5 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  return runChecks(pluginDir);
+  return runChecks(pluginDir, pluginId);
 }

@@ -75,151 +75,152 @@ enum class PropId {
   OfxImageEffectPropFrameStep, // 39
   OfxImageEffectPropInAnalysis, // 40
   OfxImageEffectPropInteractiveRenderStatus, // 41
-  OfxImageEffectPropMetadataSourceClip, // 42
-  OfxImageEffectPropMetalCommandQueue, // 43
-  OfxImageEffectPropMetalEnabled, // 44
-  OfxImageEffectPropMetalRenderSupported, // 45
-  OfxImageEffectPropMultipleClipDepths, // 46
-  OfxImageEffectPropNoSpatialAwareness, // 47
-  OfxImageEffectPropOCIOConfig, // 48
-  OfxImageEffectPropOCIODisplay, // 49
-  OfxImageEffectPropOCIOView, // 50
-  OfxImageEffectPropOpenCLCommandQueue, // 51
-  OfxImageEffectPropOpenCLEnabled, // 52
-  OfxImageEffectPropOpenCLImage, // 53
-  OfxImageEffectPropOpenCLRenderSupported, // 54
-  OfxImageEffectPropOpenCLSupported, // 55
-  OfxImageEffectPropOpenGLEnabled, // 56
-  OfxImageEffectPropOpenGLRenderSupported, // 57
-  OfxImageEffectPropOpenGLTextureIndex, // 58
-  OfxImageEffectPropOpenGLTextureTarget, // 59
-  OfxImageEffectPropPixelAspectRatio, // 60
-  OfxImageEffectPropPixelDepth, // 61
-  OfxImageEffectPropPluginHandle, // 62
-  OfxImageEffectPropPreMultiplication, // 63
-  OfxImageEffectPropProjectExtent, // 64
-  OfxImageEffectPropProjectOffset, // 65
-  OfxImageEffectPropProjectSize, // 66
-  OfxImageEffectPropRegionOfDefinition, // 67
-  OfxImageEffectPropRegionOfInterest, // 68
-  OfxImageEffectPropRenderQualityDraft, // 69
-  OfxImageEffectPropRenderScale, // 70
-  OfxImageEffectPropRenderWindow, // 71
-  OfxImageEffectPropSequentialRenderStatus, // 72
-  OfxImageEffectPropSetableFielding, // 73
-  OfxImageEffectPropSetableFrameRate, // 74
-  OfxImageEffectPropSupportedComponents, // 75
-  OfxImageEffectPropSupportedContexts, // 76
-  OfxImageEffectPropSupportedPixelDepths, // 77
-  OfxImageEffectPropSupportsMultiResolution, // 78
-  OfxImageEffectPropSupportsMultipleClipPARs, // 79
-  OfxImageEffectPropSupportsOverlays, // 80
-  OfxImageEffectPropSupportsTiles, // 81
-  OfxImageEffectPropTemporalClipAccess, // 82
-  OfxImageEffectPropThumbnailRender, // 83
-  OfxImageEffectPropUnmappedFrameRange, // 84
-  OfxImageEffectPropUnmappedFrameRate, // 85
-  OfxImagePropBounds, // 86
-  OfxImagePropData, // 87
-  OfxImagePropField, // 88
-  OfxImagePropPixelAspectRatio, // 89
-  OfxImagePropRegionOfDefinition, // 90
-  OfxImagePropRowBytes, // 91
-  OfxImagePropUniqueIdentifier, // 92
-  OfxInteractPropBackgroundColour, // 93
-  OfxInteractPropBitDepth, // 94
-  OfxInteractPropDrawContext, // 95
-  OfxInteractPropHasAlpha, // 96
-  OfxInteractPropPenPosition, // 97
-  OfxInteractPropPenPressure, // 98
-  OfxInteractPropPenViewportPosition, // 99
-  OfxInteractPropPixelScale, // 100
-  OfxInteractPropSlaveToParam, // 101
-  OfxInteractPropSuggestedColour, // 102
-  OfxInteractPropViewport, // 103
-  OfxOpenGLPropPixelDepth, // 104
-  OfxParamHostPropMaxPages, // 105
-  OfxParamHostPropMaxParameters, // 106
-  OfxParamHostPropPageRowColumnCount, // 107
-  OfxParamHostPropSupportsBooleanAnimation, // 108
-  OfxParamHostPropSupportsChoiceAnimation, // 109
-  OfxParamHostPropSupportsCustomAnimation, // 110
-  OfxParamHostPropSupportsCustomInteract, // 111
-  OfxParamHostPropSupportsParametricAnimation, // 112
-  OfxParamHostPropSupportsStrChoice, // 113
-  OfxParamHostPropSupportsStrChoiceAnimation, // 114
-  OfxParamHostPropSupportsStringAnimation, // 115
-  OfxParamPropAnimates, // 116
-  OfxParamPropCacheInvalidation, // 117
-  OfxParamPropCanUndo, // 118
-  OfxParamPropChoiceEnum, // 119
-  OfxParamPropChoiceOption, // 120
-  OfxParamPropChoiceOrder, // 121
-  OfxParamPropColourManagement, // 122
-  OfxParamPropCustomCallbackV1, // 123
-  OfxParamPropCustomValue, // 124
-  OfxParamPropDataPtr, // 125
-  OfxParamPropDefault, // 126
-  OfxParamPropDefaultCoordinateSystem, // 127
-  OfxParamPropDigits, // 128
-  OfxParamPropDimensionLabel, // 129
-  OfxParamPropDisplayMax, // 130
-  OfxParamPropDisplayMin, // 131
-  OfxParamPropDoubleType, // 132
-  OfxParamPropEnabled, // 133
-  OfxParamPropEvaluateOnChange, // 134
-  OfxParamPropGroupOpen, // 135
-  OfxParamPropHasHostOverlayHandle, // 136
-  OfxParamPropHint, // 137
-  OfxParamPropIncrement, // 138
-  OfxParamPropInteractMinimumSize, // 139
-  OfxParamPropInteractPreferedSize, // 140
-  OfxParamPropInteractSize, // 141
-  OfxParamPropInteractSizeAspect, // 142
-  OfxParamPropInteractV1, // 143
-  OfxParamPropInterpolationAmount, // 144
-  OfxParamPropInterpolationTime, // 145
-  OfxParamPropIsAnimating, // 146
-  OfxParamPropIsAutoKeying, // 147
-  OfxParamPropMax, // 148
-  OfxParamPropMin, // 149
-  OfxParamPropPageChild, // 150
-  OfxParamPropParametricDimension, // 151
-  OfxParamPropParametricInteractBackground, // 152
-  OfxParamPropParametricRange, // 153
-  OfxParamPropParametricUIColour, // 154
-  OfxParamPropParent, // 155
-  OfxParamPropPersistant, // 156
-  OfxParamPropPluginMayWrite, // 157
-  OfxParamPropScriptName, // 158
-  OfxParamPropSecret, // 159
-  OfxParamPropShowTimeMarker, // 160
-  OfxParamPropStringFilePathExists, // 161
-  OfxParamPropStringMode, // 162
-  OfxParamPropType, // 163
-  OfxPluginPropFilePath, // 164
-  OfxPluginPropParamPageOrder, // 165
-  OfxPropAPIVersion, // 166
-  OfxPropChangeReason, // 167
-  OfxPropEffectInstance, // 168
-  OfxPropHostOSHandle, // 169
-  OfxPropIcon, // 170
-  OfxPropInstanceData, // 171
-  OfxPropIsInteractive, // 172
-  OfxPropLabel, // 173
-  OfxPropLongLabel, // 174
-  OfxPropName, // 175
-  OfxPropParamSetNeedsSyncing, // 176
-  OfxPropPluginDescription, // 177
-  OfxPropShortLabel, // 178
-  OfxPropTime, // 179
-  OfxPropType, // 180
-  OfxPropVersion, // 181
-  OfxPropVersionLabel, // 182
-  OfxParamPropUseHostOverlayHandle, // 183 (orig name: OfxParamPropUseHostOverlayHandle)
-  OfxPropKeyString, // 184 (orig name: OfxPropKeyString)
-  OfxPropKeySym, // 185 (orig name: OfxPropKeySym)
-  NProps // 186
+  OfxImageEffectPropMetadataSet, // 42
+  OfxImageEffectPropMetadataSourceClip, // 43
+  OfxImageEffectPropMetalCommandQueue, // 44
+  OfxImageEffectPropMetalEnabled, // 45
+  OfxImageEffectPropMetalRenderSupported, // 46
+  OfxImageEffectPropMultipleClipDepths, // 47
+  OfxImageEffectPropNoSpatialAwareness, // 48
+  OfxImageEffectPropOCIOConfig, // 49
+  OfxImageEffectPropOCIODisplay, // 50
+  OfxImageEffectPropOCIOView, // 51
+  OfxImageEffectPropOpenCLCommandQueue, // 52
+  OfxImageEffectPropOpenCLEnabled, // 53
+  OfxImageEffectPropOpenCLImage, // 54
+  OfxImageEffectPropOpenCLRenderSupported, // 55
+  OfxImageEffectPropOpenCLSupported, // 56
+  OfxImageEffectPropOpenGLEnabled, // 57
+  OfxImageEffectPropOpenGLRenderSupported, // 58
+  OfxImageEffectPropOpenGLTextureIndex, // 59
+  OfxImageEffectPropOpenGLTextureTarget, // 60
+  OfxImageEffectPropPixelAspectRatio, // 61
+  OfxImageEffectPropPixelDepth, // 62
+  OfxImageEffectPropPluginHandle, // 63
+  OfxImageEffectPropPreMultiplication, // 64
+  OfxImageEffectPropProjectExtent, // 65
+  OfxImageEffectPropProjectOffset, // 66
+  OfxImageEffectPropProjectSize, // 67
+  OfxImageEffectPropRegionOfDefinition, // 68
+  OfxImageEffectPropRegionOfInterest, // 69
+  OfxImageEffectPropRenderQualityDraft, // 70
+  OfxImageEffectPropRenderScale, // 71
+  OfxImageEffectPropRenderWindow, // 72
+  OfxImageEffectPropSequentialRenderStatus, // 73
+  OfxImageEffectPropSetableFielding, // 74
+  OfxImageEffectPropSetableFrameRate, // 75
+  OfxImageEffectPropSupportedComponents, // 76
+  OfxImageEffectPropSupportedContexts, // 77
+  OfxImageEffectPropSupportedPixelDepths, // 78
+  OfxImageEffectPropSupportsMultiResolution, // 79
+  OfxImageEffectPropSupportsMultipleClipPARs, // 80
+  OfxImageEffectPropSupportsOverlays, // 81
+  OfxImageEffectPropSupportsTiles, // 82
+  OfxImageEffectPropTemporalClipAccess, // 83
+  OfxImageEffectPropThumbnailRender, // 84
+  OfxImageEffectPropUnmappedFrameRange, // 85
+  OfxImageEffectPropUnmappedFrameRate, // 86
+  OfxImagePropBounds, // 87
+  OfxImagePropData, // 88
+  OfxImagePropField, // 89
+  OfxImagePropPixelAspectRatio, // 90
+  OfxImagePropRegionOfDefinition, // 91
+  OfxImagePropRowBytes, // 92
+  OfxImagePropUniqueIdentifier, // 93
+  OfxInteractPropBackgroundColour, // 94
+  OfxInteractPropBitDepth, // 95
+  OfxInteractPropDrawContext, // 96
+  OfxInteractPropHasAlpha, // 97
+  OfxInteractPropPenPosition, // 98
+  OfxInteractPropPenPressure, // 99
+  OfxInteractPropPenViewportPosition, // 100
+  OfxInteractPropPixelScale, // 101
+  OfxInteractPropSlaveToParam, // 102
+  OfxInteractPropSuggestedColour, // 103
+  OfxInteractPropViewport, // 104
+  OfxOpenGLPropPixelDepth, // 105
+  OfxParamHostPropMaxPages, // 106
+  OfxParamHostPropMaxParameters, // 107
+  OfxParamHostPropPageRowColumnCount, // 108
+  OfxParamHostPropSupportsBooleanAnimation, // 109
+  OfxParamHostPropSupportsChoiceAnimation, // 110
+  OfxParamHostPropSupportsCustomAnimation, // 111
+  OfxParamHostPropSupportsCustomInteract, // 112
+  OfxParamHostPropSupportsParametricAnimation, // 113
+  OfxParamHostPropSupportsStrChoice, // 114
+  OfxParamHostPropSupportsStrChoiceAnimation, // 115
+  OfxParamHostPropSupportsStringAnimation, // 116
+  OfxParamPropAnimates, // 117
+  OfxParamPropCacheInvalidation, // 118
+  OfxParamPropCanUndo, // 119
+  OfxParamPropChoiceEnum, // 120
+  OfxParamPropChoiceOption, // 121
+  OfxParamPropChoiceOrder, // 122
+  OfxParamPropColourManagement, // 123
+  OfxParamPropCustomCallbackV1, // 124
+  OfxParamPropCustomValue, // 125
+  OfxParamPropDataPtr, // 126
+  OfxParamPropDefault, // 127
+  OfxParamPropDefaultCoordinateSystem, // 128
+  OfxParamPropDigits, // 129
+  OfxParamPropDimensionLabel, // 130
+  OfxParamPropDisplayMax, // 131
+  OfxParamPropDisplayMin, // 132
+  OfxParamPropDoubleType, // 133
+  OfxParamPropEnabled, // 134
+  OfxParamPropEvaluateOnChange, // 135
+  OfxParamPropGroupOpen, // 136
+  OfxParamPropHasHostOverlayHandle, // 137
+  OfxParamPropHint, // 138
+  OfxParamPropIncrement, // 139
+  OfxParamPropInteractMinimumSize, // 140
+  OfxParamPropInteractPreferedSize, // 141
+  OfxParamPropInteractSize, // 142
+  OfxParamPropInteractSizeAspect, // 143
+  OfxParamPropInteractV1, // 144
+  OfxParamPropInterpolationAmount, // 145
+  OfxParamPropInterpolationTime, // 146
+  OfxParamPropIsAnimating, // 147
+  OfxParamPropIsAutoKeying, // 148
+  OfxParamPropMax, // 149
+  OfxParamPropMin, // 150
+  OfxParamPropPageChild, // 151
+  OfxParamPropParametricDimension, // 152
+  OfxParamPropParametricInteractBackground, // 153
+  OfxParamPropParametricRange, // 154
+  OfxParamPropParametricUIColour, // 155
+  OfxParamPropParent, // 156
+  OfxParamPropPersistant, // 157
+  OfxParamPropPluginMayWrite, // 158
+  OfxParamPropScriptName, // 159
+  OfxParamPropSecret, // 160
+  OfxParamPropShowTimeMarker, // 161
+  OfxParamPropStringFilePathExists, // 162
+  OfxParamPropStringMode, // 163
+  OfxParamPropType, // 164
+  OfxPluginPropFilePath, // 165
+  OfxPluginPropParamPageOrder, // 166
+  OfxPropAPIVersion, // 167
+  OfxPropChangeReason, // 168
+  OfxPropEffectInstance, // 169
+  OfxPropHostOSHandle, // 170
+  OfxPropIcon, // 171
+  OfxPropInstanceData, // 172
+  OfxPropIsInteractive, // 173
+  OfxPropLabel, // 174
+  OfxPropLongLabel, // 175
+  OfxPropName, // 176
+  OfxPropParamSetNeedsSyncing, // 177
+  OfxPropPluginDescription, // 178
+  OfxPropShortLabel, // 179
+  OfxPropTime, // 180
+  OfxPropType, // 181
+  OfxPropVersion, // 182
+  OfxPropVersionLabel, // 183
+  OfxParamPropUseHostOverlayHandle, // 184 (orig name: OfxParamPropUseHostOverlayHandle)
+  OfxPropKeyString, // 185 (orig name: OfxPropKeyString)
+  OfxPropKeySym, // 186 (orig name: OfxPropKeySym)
+  NProps // 187
 }; // PropId
 
 // Separate arrays for enum-values for enum props, to keep everything constexpr
@@ -337,6 +338,7 @@ static constexpr PropType OfxImageEffectPropFrameRate_types[] = {PropType::Doubl
 static constexpr PropType OfxImageEffectPropFrameStep_types[] = {PropType::Double};
 static constexpr PropType OfxImageEffectPropInAnalysis_types[] = {PropType::Bool};
 static constexpr PropType OfxImageEffectPropInteractiveRenderStatus_types[] = {PropType::Bool};
+static constexpr PropType OfxImageEffectPropMetadataSet_types[] = {PropType::Pointer};
 static constexpr PropType OfxImageEffectPropMetadataSourceClip_types[] = {PropType::String};
 static constexpr PropType OfxImageEffectPropMetalCommandQueue_types[] = {PropType::Pointer};
 static constexpr PropType OfxImageEffectPropMetalEnabled_types[] = {PropType::Bool};
@@ -596,6 +598,8 @@ static inline constexpr PropDefsArray<PropDef> prop_defs = {
   openfx::span(prop_type_arrays::OfxImageEffectPropInAnalysis_types, 1), 1, openfx::span<const char* const>()},
 { "OfxImageEffectPropInteractiveRenderStatus",
   openfx::span(prop_type_arrays::OfxImageEffectPropInteractiveRenderStatus_types, 1), 1, openfx::span<const char* const>()},
+{ "OfxImageEffectPropMetadataSet",
+  openfx::span(prop_type_arrays::OfxImageEffectPropMetadataSet_types, 1), 1, openfx::span<const char* const>()},
 { "OfxImageEffectPropMetadataSourceClip",
   openfx::span(prop_type_arrays::OfxImageEffectPropMetadataSourceClip_types, 1), 0, openfx::span<const char* const>()},
 { "OfxImageEffectPropMetalCommandQueue",
@@ -945,6 +949,7 @@ DEFINE_PROP_TRAITS(OfxImageEffectPropFrameRate, double, false);
 DEFINE_PROP_TRAITS(OfxImageEffectPropFrameStep, double, false);
 DEFINE_PROP_TRAITS(OfxImageEffectPropInAnalysis, bool, false);
 DEFINE_PROP_TRAITS(OfxImageEffectPropInteractiveRenderStatus, bool, false);
+DEFINE_PROP_TRAITS(OfxImageEffectPropMetadataSet, void *, false);
 DEFINE_PROP_TRAITS(OfxImageEffectPropMetadataSourceClip, const char *, false);
 DEFINE_PROP_TRAITS(OfxImageEffectPropMetalCommandQueue, void *, false);
 DEFINE_PROP_TRAITS(OfxImageEffectPropMetalEnabled, bool, false);
@@ -1137,6 +1142,7 @@ static_assert(string_view("OfxImageEffectPropFrameRate") == string_view(kOfxImag
 static_assert(string_view("OfxImageEffectPropFrameStep") == string_view(kOfxImageEffectPropFrameStep));
 static_assert(string_view("OfxImageEffectPropInAnalysis") == string_view(kOfxImageEffectPropInAnalysis));
 static_assert(string_view("OfxImageEffectPropInteractiveRenderStatus") == string_view(kOfxImageEffectPropInteractiveRenderStatus));
+static_assert(string_view("OfxImageEffectPropMetadataSet") == string_view(kOfxImageEffectPropMetadataSet));
 static_assert(string_view("OfxImageEffectPropMetadataSourceClip") == string_view(kOfxImageEffectPropMetadataSourceClip));
 static_assert(string_view("OfxImageEffectPropMetalCommandQueue") == string_view(kOfxImageEffectPropMetalCommandQueue));
 static_assert(string_view("OfxImageEffectPropMetalEnabled") == string_view(kOfxImageEffectPropMetalEnabled));

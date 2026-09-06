@@ -102,23 +102,32 @@ namespace OFX {
       };
 
 #     ifdef OFX_SUPPORTS_METADATA
-      /// the metadata of a clip's image at a given time, as vended by ClipInstance::getMetadata
+      /// a metadata property set, as vended by ClipInstance::getMetadata for a clip's image at
+      /// a given time and by Instance::getOutputMetadata for an effect to write into
       ///
       /// This is reference counted in the same way as ImageBase: it is constructed with a
       /// count of one, addReference() takes a further reference, and releaseReference()
       /// drops one and deletes the set when the last is gone.
       class MetadataSet : public Property::Set {
       protected :
-        int _referenceCount; ///< reference count on this metadata set
+        int _referenceCount;  ///< reference count on this metadata set
+        bool _writable;       ///< may the metadata suite's set entry points write keys into this
+        bool _pluginOwned;    ///< is a plugin holding a reference which metadataRelease drops
 
       public :
         /// ctor, makes an empty metadata set
-        MetadataSet();
+        MetadataSet(bool writable = false, bool pluginOwned = true);
 
         virtual ~MetadataSet();
 
         /// get a handle on the metadata set for the C api
         OfxPropertySetHandle getPropHandle() const { return Property::Set::getHandle(); }
+
+        /// may a plugin write keys into this set
+        bool isWritable() const {return _writable;}
+
+        /// may a plugin release this set
+        bool isPluginOwned() const {return _pluginOwned;}
 
         /// release the reference count, which, if zero, deletes this
         void releaseReference();

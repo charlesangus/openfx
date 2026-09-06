@@ -65,6 +65,12 @@ the set, so an effect can read back what it has written.
 The handle is valid only for the duration of this action, and must not be released with
 OfxMetadataSuiteV1::metadataRelease.
 
+An effect that does not trap the action returns \ref kOfxStatReplyDefault, and everything it wrote
+is then ignored. The host reads back neither the metadata set the effect contributed into nor
+either of the inheritance controls in ``outArgs``, whether or not the effect wrote to them, and
+composes the output's metadata from the default it initialised ``outArgs`` with. An effect that
+means anything it wrote to be honoured has to return ::kOfxStatOK.
+
  @param handle handle to the instance, cast to an \ref OfxImageEffectHandle
 
  @param inArgs has the following properties
@@ -89,7 +95,9 @@ OfxMetadataSuiteV1::metadataRelease.
 
  @returns
      - \ref kOfxStatOK the action was trapped and the effect has populated outArgs with the metadata it contributes,
-     - \ref kOfxStatReplyDefault the action was not trapped and the host should use its default metadata,
+     - \ref kOfxStatReplyDefault the action was not trapped, so the host uses its default metadata and
+       discards everything the effect wrote, the contributed metadata set as much as the nominated
+       source clips and the retained-keys lists,
      - \ref kOfxStatErrMemory the host ran out of memory, in which case the action may be called again after a memory purge,
      - \ref kOfxStatFailed something went wrong but no error code is appropriate, the plugin should post a message,
      - \ref kOfxStatErrFatal

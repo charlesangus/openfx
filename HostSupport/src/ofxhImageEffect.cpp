@@ -1799,6 +1799,30 @@ namespace OFX {
         return -1;
       }
 
+      /// the inheritance the out args describe: the input clips whose metadata the output
+      /// composes, in increasing precedence, and the keys retained from each input clip
+      static void readMetadataInheritance(const Property::Set &outArgs,
+                                          const std::vector<std::string> &retainedKeysPropNames,
+                                          std::vector<std::string> &sources,
+                                          std::vector<std::vector<std::string> > &retainedKeys)
+      {
+        sources.clear();
+        retainedKeys.clear();
+        retainedKeys.resize(retainedKeysPropNames.size());
+
+        const int nSources = outArgs.getDimension(kOfxImageEffectPropMetadataSourceClip);
+
+        for(int s = 0; s < nSources; ++s)
+          sources.push_back(outArgs.getStringProperty(kOfxImageEffectPropMetadataSourceClip, s));
+
+        for(size_t i = 0; i < retainedKeysPropNames.size(); ++i) {
+          const int nKeys = outArgs.getDimension(retainedKeysPropNames[i]);
+
+          for(int k = 0; k < nKeys; ++k)
+            retainedKeys[i].push_back(outArgs.getStringProperty(retainedKeysPropNames[i], k));
+        }
+      }
+
       /// drop the reference held on each metadata set fetched from an input clip
       static void releaseInputMetadata(std::vector<MetadataSet *> &inputMetadata)
       {
@@ -1862,6 +1886,12 @@ namespace OFX {
               outArgs.setStringProperty(retainedKeysPropNames[0], k->first, n++);
           }
 
+          /// the inheritance the host offers, read before the effect can write over it
+          std::vector<std::string> sources;
+          std::vector<std::vector<std::string> > retainedKeys;
+
+          readMetadataInheritance(outArgs, retainedKeysPropNames, sources, retainedKeys);
+
           static const Property::PropSpec inStuff[] = {
             { kOfxPropTime, Property::eDouble, 1, true, "0" },
             { kOfxImageEffectPropMetadataSet, Property::ePointer, 1, true, NULL },
@@ -1886,12 +1916,15 @@ namespace OFX {
           if(st != kOfxStatOK && st != kOfxStatReplyDefault)
             throw Property::Exception(st);
 
+          /// kOfxStatReplyDefault says the action was not trapped, so nothing the effect
+          /// left behind is read: neither the out args nor the set it was handed
+          if(st == kOfxStatOK)
+            readMetadataInheritance(outArgs, retainedKeysPropNames, sources, retainedKeys);
+
           /// the list is read in increasing precedence, so a key carried by a clip later in
           /// it replaces the same key contributed by an earlier one
-          const int nSources = outArgs.getDimension(kOfxImageEffectPropMetadataSourceClip);
-
-          for(int s = 0; s < nSources; ++s) {
-            const int source = findInputClip(inputs, outArgs.getStringProperty(kOfxImageEffectPropMetadataSourceClip, s));
+          for(size_t s = 0; s < sources.size(); ++s) {
+            const int source = findInputClip(inputs, sources[s]);
 
             if(source < 0)
               continue;
@@ -1899,11 +1932,10 @@ namespace OFX {
             if(!inputMetadata[source])
               inputMetadata[source] = inputs[source]->getMetadata(time);
 
-            const std::string &propName = retainedKeysPropNames[source];
-            const int nKeys = outArgs.getDimension(propName);
+            const std::vector<std::string> &keys = retainedKeys[source];
 
-            for(int k = 0; k < nKeys; ++k)
-              copyMetadataKey(metadata, *inputMetadata[source], outArgs.getStringProperty(propName, k));
+            for(size_t k = 0; k < keys.size(); ++k)
+              copyMetadataKey(metadata, *inputMetadata[source], keys[k]);
           }
 
           if(st == kOfxStatOK) {

@@ -35,7 +35,9 @@
 // pass metadata through has to do.
 //
 // It also writes a handful of keys of its own into the set the host hands it, which
-// the host has to put over whatever the same key inherited.
+// the host has to put over whatever the same key inherited. One value of its
+// 'compositionOrder' parameter makes it write into everything the action can write
+// into and then report the action untrapped, which a host has to ignore in full.
 
 // the host composes this property's name by post pending the clip's name, and the
 // api defines the prefix in prose rather than as a macro
@@ -44,6 +46,10 @@ static const char kRetainedKeysPropPrefix[] = "OfxImageClipPropMetadataRetainedK
 static const char kSourceClip[] = kOfxImageEffectSimpleSourceClipName;
 static const char kMaskClip[]   = "Mask";
 static const char kOrderParam[] = "compositionOrder";
+
+// the value of the composition order parameter which selects the path that writes and
+// then reports the action untrapped
+static const int kOrderUntrapped = 2;
 
 // the keys the plugin writes into the set it is handed. The last is named after the
 // property the host reads the composition order out of, which lives in the action's
@@ -213,6 +219,22 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
   if(gParamSuite->paramGetValueAtTime(order, time, &reversed) != kOfxStatOK)
     return kOfxStatFailed;
 
+  // none of what this path writes is what the host arrives at on its own: it nominates
+  // the clip the host does not default to and drops the keys retained from the one it
+  // does, on top of the keys already contributed above, and then reports the action
+  // untrapped so that every one of those writes has to be ignored
+  if(reversed == kOrderUntrapped) {
+    const char *nominated = kMaskClip;
+    const std::string retained = std::string(kRetainedKeysPropPrefix) + kSourceClip;
+
+    if(gPropSuite->propSetStringN(outArgs, kOfxImageEffectPropMetadataSourceClip, 1, &nominated) != kOfxStatOK)
+      return kOfxStatFailed;
+    if(gPropSuite->propSetStringN(outArgs, retained.c_str(), 0, 0) != kOfxStatOK)
+      return kOfxStatFailed;
+
+    return kOfxStatReplyDefault;
+  }
+
   // the list is read in increasing precedence, so the clip named last wins
   const char *sources[2];
   sources[0] = reversed ? kMaskClip   : kSourceClip;
@@ -254,7 +276,8 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
   gPropSuite->propSetInt(paramProps, kOfxParamPropDefault, 0, 0);
   gPropSuite->propSetString(paramProps, kOfxPropLabel, 0, "Composition Order");
   gPropSuite->propSetString(paramProps, kOfxParamPropHint, 0,
-                            "0 composes Mask over Source, 1 composes Source over Mask");
+                            "0 composes Mask over Source, 1 composes Source over Mask, "
+                            "2 writes and then reports the action untrapped");
 
   if(gParamSuite->paramDefine(paramSet, kOfxParamTypeString, kNoteParam, &paramProps) != kOfxStatOK)
     return kOfxStatFailed;

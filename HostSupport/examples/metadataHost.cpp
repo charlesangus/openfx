@@ -1253,6 +1253,10 @@ namespace {
   const int  kMaskOverSource = 0;
   const int  kSourceOverMask = 1;
 
+  /// the value of that parameter which makes the plugin write into everything the action
+  /// can write into and then report the action untrapped
+  const int  kUntrappedOrder = 2;
+
   /// the plugin's string and choice parameters, the defaults it declares for them and
   /// the values this writes through them
   const char kNoteParam[]   = "note";
@@ -1298,12 +1302,27 @@ namespace {
   }
 
   /// what composing the fixture in that order, retaining only the standard keys, should
-  /// leave on the effect's output clip
+  /// leave on the effect's output clip. In the order the plugin does not trap the action
+  /// in, what the host offered it stands instead
   void expectedOutput(int order,
                       OfxTime time,
                       std::map<std::string, std::string> &values,
                       std::map<std::string, std::string> &types)
   {
+    if(order == kUntrappedOrder) {
+      for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+        const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
+
+        if(!entryAppliesAt(entry, MetadataFixture::kInputClips[0], time))
+          continue;
+
+        values[entry.key] = entryValue(entry);
+        types[entry.key] = typeName(entry.type);
+      }
+
+      return;
+    }
+
     std::vector<std::string> clips;
     sourceClips(order, clips);
 
@@ -1374,20 +1393,24 @@ namespace {
     for(std::map<std::string, std::string>::const_iterator it = values.begin(); it != values.end(); ++it)
       report.check(found.count(it->first) != 0, where + " key=" + it->first + " present");
 
-    for(int c = 0; c < kContributedCount; ++c) {
-      const Contributed &contributed = kContributed[c];
+    // in the order the plugin does not trap the action in there is nothing of what it
+    // contributed to read back, and the key set checked above is what says so
+    if(order != kUntrappedOrder) {
+      for(int c = 0; c < kContributedCount; ++c) {
+        const Contributed &contributed = kContributed[c];
 
-      std::string type = "none";
-      std::string value = "none";
-      int dimension = 0;
+        std::string type = "none";
+        std::string value = "none";
+        int dimension = 0;
 
-      const bool ok = readValueN(metadata, contributed.key, type, dimension, value)
-                      && type == contributed.type
-                      && dimension == contributed.dimension
-                      && value == contributed.value;
+        const bool ok = readValueN(metadata, contributed.key, type, dimension, value)
+                        && type == contributed.type
+                        && dimension == contributed.dimension
+                        && value == contributed.value;
 
-      report.check(ok, where + " contributed=" + contributed.key + " type=" + type
-                   + " dimension=" + formatInt(dimension) + " value=" + value);
+        report.check(ok, where + " contributed=" + contributed.key + " type=" + type
+                     + " dimension=" + formatInt(dimension) + " value=" + value);
+      }
     }
 
     report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
@@ -2343,6 +2366,20 @@ namespace {
 
     if(effect)
       effect->setMessageCapture(&captured);
+
+    // in this order the plugin writes into everything the action can write into and then
+    // reports the action untrapped, so the output has to carry what the host offered it
+    // and nothing of what was written
+    report.check(setParamValue(*instance, kOrderParam, formatInt(kUntrappedOrder)),
+                 "effect order=" + formatInt(kUntrappedOrder) + " parameter set");
+
+    instance->invalidateMetadata();
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      std::map<std::string, std::string> read;
+      checkOutput(report, *output, kUntrappedOrder, time, read);
+      actions += 1;
+    }
 
     for(size_t o = 0; o < sizeof(orders) / sizeof(orders[0]); ++o) {
       const int which = orders[o];

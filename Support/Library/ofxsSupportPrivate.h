@@ -4,6 +4,8 @@
 #ifndef _ofxsSupportPrivate_H_
 #define _ofxsSupportPrivate_H_
 
+#include "ofxMetadata.h"
+
 #include "ofxsInteract.h"
 #include "ofxsImageEffect.h"
 #include "ofxsLog.h"
@@ -22,6 +24,12 @@ namespace OFX {
 
     /** @brief Pointer to the property suite */
     extern OfxPropertySuiteV1    *gPropSuite;
+
+    /** @brief Pointer to the optional property suite V2, which is the one carrying propGetType */
+    extern OfxPropertySuiteV2    *gPropSuiteV2;
+
+    /** @brief Pointer to the optional metadata suite */
+    extern OfxMetadataSuiteV1    *gMetadataSuite;
 
     /** @brief Pointer to the  interact suite */
     extern OfxInteractSuiteV1    *gInteractSuite;

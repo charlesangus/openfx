@@ -111,6 +111,8 @@ namespace OFX {
     OfxHost               *gHost = 0;
     OfxImageEffectSuiteV1 *gEffectSuite = 0;
     OfxPropertySuiteV1    *gPropSuite = 0;
+    OfxPropertySuiteV2    *gPropSuiteV2 = 0;
+    OfxMetadataSuiteV1    *gMetadataSuite = 0;
     OfxInteractSuiteV1    *gInteractSuite = 0;
     OfxParameterSuiteV1   *gParamSuite = 0;
     OfxMemorySuiteV1      *gMemorySuite = 0;
@@ -1953,6 +1955,7 @@ namespace OFX {
       if(gLoadCount == 1) {
         gEffectSuite    = (OfxImageEffectSuiteV1 *) fetchSuite(kOfxImageEffectSuite, 1);
         gPropSuite      = (OfxPropertySuiteV1 *)    fetchSuite(kOfxPropertySuite, 1);
+        gPropSuiteV2    = (OfxPropertySuiteV2 *)    fetchSuite(kOfxPropertySuite, 2, true);
         gParamSuite     = (OfxParameterSuiteV1 *)   fetchSuite(kOfxParameterSuite, 1);
         gMemorySuite    = (OfxMemorySuiteV1 *)      fetchSuite(kOfxMemorySuite, 1);
         gThreadSuite    = (OfxMultiThreadSuiteV1 *) fetchSuite(kOfxMultiThreadSuite, 1);
@@ -1962,6 +1965,7 @@ namespace OFX {
         gProgressSuiteV2 = (OfxProgressSuiteV2 *)     fetchSuite(kOfxProgressSuite, 2, true);
         gTimeLineSuite   = (OfxTimeLineSuiteV1 *)     fetchSuite(kOfxTimeLineSuite, 1, true);
         gParametricParameterSuite = (OfxParametricParameterSuiteV1*) fetchSuite(kOfxParametricParameterSuite, 1, true);
+        gMetadataSuite  = (OfxMetadataSuiteV1 *)    fetchSuite(kOfxMetadataSuite, 1, true);
 #ifdef OFX_SUPPORTS_OPENGLRENDER
         gOpenGLRenderSuite = (OfxImageEffectOpenGLRenderSuiteV1*) fetchSuite(kOfxOpenGLRenderSuite, 1, true);
 #endif
@@ -2002,6 +2006,8 @@ namespace OFX {
         // force these to null
         gEffectSuite = 0;
         gPropSuite = 0;
+        gPropSuiteV2 = 0;
+        gMetadataSuite = 0;
         gParamSuite = 0;
         gMemorySuite = 0;
         gThreadSuite = 0;

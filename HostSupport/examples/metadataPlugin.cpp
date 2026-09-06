@@ -37,7 +37,8 @@
 // It also writes a handful of keys of its own into the set the host hands it, which
 // the host has to put over whatever the same key inherited. One value of its
 // 'compositionOrder' parameter makes it write into everything the action can write
-// into and then report the action untrapped, which a host has to ignore in full.
+// into and then report the action untrapped, which a host has to ignore in full, and
+// another makes it nominate no source clip at all.
 
 // the host composes this property's name by post pending the clip's name, and the
 // api defines the prefix in prose rather than as a macro
@@ -51,18 +52,31 @@ static const char kOrderParam[] = "compositionOrder";
 // then reports the action untrapped
 static const int kOrderUntrapped = 2;
 
-// the keys the plugin writes into the set it is handed. The last is named after the
-// property the host reads the composition order out of, which lives in the action's
-// out args and so cannot be confused with a key of that name
-static const char   kContributedKey[]        = "org.openfx.examples.metadataPlugin.contributed";
-static const int    kContributedInts[]       = {7, 8, 9};
+// the value which selects the path nominating no source clip at all
+static const int kOrderNoSource = 3;
+
+// the keys the plugin writes into the set it is handed, under its own reverse DNS prefix
+// as the standard requires of a key it does not define itself. The frame rate is one the
+// plugin also retains from Source, so that the host putting one over the other is
+// observable, and the last is named after the property the host reads the composition
+// order out of, which lives in the action's out args and so cannot be confused with a key
+// of that name
+static const char   kContributedNoteKey[]    = "org.openfx.examples.metadataPlugin.note";
+static const char   kContributedGainKey[]    = "org.openfx.examples.metadataPlugin.gain";
+static const char   kContributedPassesKey[]  = "org.openfx.examples.metadataPlugin.passes";
+static const char   kContributedWindowKey[]  = "org.openfx.examples.metadataPlugin.window";
+
+static const double kContributedGain         = 1.75;
+static const int    kContributedPasses       = 5;
+static const int    kContributedWindow[]     = {12, 24, 1908, 1056};
 static const double kContributedFrameRate    = 48.0;
 static const char   kContributedSourceClip[] = "contributed";
 
-// nothing in this plugin reads these two: they are declared so that a host's string
-// and choice parameter instances are instantiated and can be driven
 static const char kNoteParam[]    = "note";
 static const char kNoteDefault[]  = "unset";
+
+// nothing in this plugin reads this one: it is declared so that a host's choice parameter
+// instance is instantiated and can be driven
 static const char kDetailParam[]  = "detail";
 static const int  kDetailDefault  = 0;
 
@@ -198,25 +212,38 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
   gMessageSuite->message(effect, kOfxMessageLog, "metadataPlugin",
                          "metadataPlugin metadataset present keys=%d", int(written.size()));
 
-  OfxPropertySetHandle contribution = (OfxPropertySetHandle) vended;
-
-  if(gMetadataSuite->metadataSetIntN(contribution, kContributedKey, 3, kContributedInts) != kOfxStatOK)
-    return kOfxStatFailed;
-  if(gMetadataSuite->metadataSetDouble(contribution, kOfxMetadataKeyFrameRate, kContributedFrameRate) != kOfxStatOK)
-    return kOfxStatFailed;
-  if(gMetadataSuite->metadataSetString(contribution, kOfxImageEffectPropMetadataSourceClip,
-                                       kContributedSourceClip) != kOfxStatOK)
-    return kOfxStatFailed;
-
   OfxParamSetHandle paramSet = 0;
   OfxParamHandle order = 0;
+  OfxParamHandle noteParam = 0;
   int reversed = 0;
+  char *note = 0;
 
   if(gEffectSuite->getParamSet(effect, &paramSet) != kOfxStatOK)
     return kOfxStatFailed;
   if(gParamSuite->paramGetHandle(paramSet, kOrderParam, &order, 0) != kOfxStatOK)
     return kOfxStatFailed;
   if(gParamSuite->paramGetValueAtTime(order, time, &reversed) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gParamSuite->paramGetHandle(paramSet, kNoteParam, &noteParam, 0) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gParamSuite->paramGetValueAtTime(noteParam, time, &note) != kOfxStatOK || !note)
+    return kOfxStatFailed;
+
+  OfxPropertySetHandle contribution = (OfxPropertySetHandle) vended;
+  const int window = int(sizeof(kContributedWindow) / sizeof(kContributedWindow[0]));
+
+  if(gMetadataSuite->metadataSetString(contribution, kContributedNoteKey, note) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetDouble(contribution, kContributedGainKey, kContributedGain) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetInt(contribution, kContributedPassesKey, kContributedPasses) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetIntN(contribution, kContributedWindowKey, window, kContributedWindow) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetDouble(contribution, kOfxMetadataKeyFrameRate, kContributedFrameRate) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetString(contribution, kOfxImageEffectPropMetadataSourceClip,
+                                       kContributedSourceClip) != kOfxStatOK)
     return kOfxStatFailed;
 
   // none of what this path writes is what the host arrives at on its own: it nominates
@@ -234,6 +261,11 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
 
     return kOfxStatReplyDefault;
   }
+
+  // nominating no clip at all leaves the output nothing to inherit, so it carries only
+  // what was contributed above
+  if(reversed == kOrderNoSource)
+    return gPropSuite->propSetStringN(outArgs, kOfxImageEffectPropMetadataSourceClip, 0, 0);
 
   // the list is read in increasing precedence, so the clip named last wins
   const char *sources[2];
@@ -277,7 +309,8 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
   gPropSuite->propSetString(paramProps, kOfxPropLabel, 0, "Composition Order");
   gPropSuite->propSetString(paramProps, kOfxParamPropHint, 0,
                             "0 composes Mask over Source, 1 composes Source over Mask, "
-                            "2 writes and then reports the action untrapped");
+                            "2 writes and then reports the action untrapped, "
+                            "3 nominates no source clip at all");
 
   if(gParamSuite->paramDefine(paramSet, kOfxParamTypeString, kNoteParam, &paramProps) != kOfxStatOK)
     return kOfxStatFailed;

@@ -1257,6 +1257,10 @@ namespace {
   /// can write into and then report the action untrapped
   const int  kUntrappedOrder = 2;
 
+  /// the value which makes it nominate no source clip at all, so that there is nothing to
+  /// inherit and the output carries only what it contributed
+  const int  kNoSourceOrder = 3;
+
   /// the plugin's string and choice parameters, the defaults it declares for them and
   /// the values this writes through them
   const char kNoteParam[]   = "note";
@@ -1268,24 +1272,61 @@ namespace {
   const int  kDetailScalar  = 2;
   const int  kDetailAtTime  = 1;
 
+  /// the keys the plugin writes under its own reverse DNS prefix, and the values it
+  /// writes into them, the string one being whatever the note parameter holds
+  const char kContributedNote[]   = "org.openfx.examples.metadataPlugin.note";
+  const char kContributedGain[]   = "org.openfx.examples.metadataPlugin.gain";
+  const char kContributedPasses[] = "org.openfx.examples.metadataPlugin.passes";
+  const char kContributedWindow[] = "org.openfx.examples.metadataPlugin.window";
+
+  const double kContributedGainValue     = 1.75;
+  const int    kContributedPassesValue   = 5;
+  const int    kContributedWindowValue[] = {12, 24, 1908, 1056};
+  const int    kContributedWindowCount   =
+    int(sizeof(kContributedWindowValue) / sizeof(kContributedWindowValue[0]));
+
+  /// the value it writes into the one key it also retains from Source, and into the one
+  /// named after the property the composition order is nominated in
+  const double kContributedFrameRate    = 48.0;
+  const char   kContributedSourceClip[] = "contributed";
+
   /// a key the plugin writes into the set the host hands it, and what it has to read
   /// back as on the output clip once the host has put it over what was inherited
   struct Contributed {
-    const char *key;
-    const char *type;
+    std::string key;
+    std::string type;
     int         dimension;
-    const char *value;
+    std::string value;
   };
 
-  /// the second of these is a key the plugin also inherits from Source, and the third
-  /// is named after the property the composition order is nominated in
-  const Contributed kContributed[] = {
-    {"org.openfx.examples.metadataPlugin.contributed", "int",    3, "7,8,9"},
-    {kOfxMetadataKeyFrameRate,                         "double", 1, "48"},
-    {kOfxImageEffectPropMetadataSourceClip,            "string", 1, "contributed"}
-  };
+  void addContributed(std::vector<Contributed> &contributed,
+                      const std::string &key,
+                      const std::string &type,
+                      int dimension,
+                      const std::string &value)
+  {
+    Contributed one;
 
-  const int kContributedCount = int(sizeof(kContributed) / sizeof(kContributed[0]));
+    one.key = key;
+    one.type = type;
+    one.dimension = dimension;
+    one.value = value;
+
+    contributed.push_back(one);
+  }
+
+  /// everything the plugin contributes when the note parameter holds the given value,
+  /// composed the way the fixture's own entries are rather than written out as literals
+  void contributedKeys(const std::string &note, std::vector<Contributed> &contributed)
+  {
+    addContributed(contributed, kContributedNote, "string", 1, note);
+    addContributed(contributed, kContributedGain, "double", 1, formatDouble(kContributedGainValue));
+    addContributed(contributed, kContributedPasses, "int", 1, formatInt(kContributedPassesValue));
+    addContributed(contributed, kContributedWindow, "int", kContributedWindowCount,
+                   formatInts(kContributedWindowValue, kContributedWindowCount));
+    addContributed(contributed, kOfxMetadataKeyFrameRate, "double", 1, formatDouble(kContributedFrameRate));
+    addContributed(contributed, kOfxImageEffectPropMetadataSourceClip, "string", 1, kContributedSourceClip);
+  }
 
   /// the plugin retains only the keys of the standard vocabulary, so this is the one
   /// thing the harness has to know about it beyond the order it composes in
@@ -1306,6 +1347,7 @@ namespace {
   /// in, what the host offered it stands instead
   void expectedOutput(int order,
                       OfxTime time,
+                      const std::string &note,
                       std::map<std::string, std::string> &values,
                       std::map<std::string, std::string> &types)
   {
@@ -1323,24 +1365,29 @@ namespace {
       return;
     }
 
-    std::vector<std::string> clips;
-    sourceClips(order, clips);
+    if(order != kNoSourceOrder) {
+      std::vector<std::string> clips;
+      sourceClips(order, clips);
 
-    for(size_t c = 0; c < clips.size(); ++c) {
-      for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
-        const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
+      for(size_t c = 0; c < clips.size(); ++c) {
+        for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+          const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
 
-        if(!entryAppliesAt(entry, clips[c], time) || !isStandardKey(entry.key))
-          continue;
+          if(!entryAppliesAt(entry, clips[c], time) || !isStandardKey(entry.key))
+            continue;
 
-        values[entry.key] = entryValue(entry);
-        types[entry.key] = typeName(entry.type);
+          values[entry.key] = entryValue(entry);
+          types[entry.key] = typeName(entry.type);
+        }
       }
     }
 
-    for(int c = 0; c < kContributedCount; ++c) {
-      values[kContributed[c].key] = kContributed[c].value;
-      types[kContributed[c].key] = kContributed[c].type;
+    std::vector<Contributed> contributed;
+    contributedKeys(note, contributed);
+
+    for(size_t c = 0; c < contributed.size(); ++c) {
+      values[contributed[c].key] = contributed[c].value;
+      types[contributed[c].key] = contributed[c].type;
     }
   }
 
@@ -1350,6 +1397,7 @@ namespace {
                    OFX::Host::ImageEffect::ClipInstance &output,
                    int order,
                    OfxTime time,
+                   const std::string &note,
                    std::map<std::string, std::string> &read)
   {
     std::ostringstream os;
@@ -1364,7 +1412,7 @@ namespace {
 
     std::map<std::string, std::string> values;
     std::map<std::string, std::string> types;
-    expectedOutput(order, time, values, types);
+    expectedOutput(order, time, note, values, types);
 
     std::set<std::string> expected;
     for(std::map<std::string, std::string>::const_iterator it = values.begin(); it != values.end(); ++it)
@@ -1396,19 +1444,22 @@ namespace {
     // in the order the plugin does not trap the action in there is nothing of what it
     // contributed to read back, and the key set checked above is what says so
     if(order != kUntrappedOrder) {
-      for(int c = 0; c < kContributedCount; ++c) {
-        const Contributed &contributed = kContributed[c];
+      std::vector<Contributed> contributed;
+      contributedKeys(note, contributed);
+
+      for(size_t c = 0; c < contributed.size(); ++c) {
+        const Contributed &one = contributed[c];
 
         std::string type = "none";
         std::string value = "none";
         int dimension = 0;
 
-        const bool ok = readValueN(metadata, contributed.key, type, dimension, value)
-                        && type == contributed.type
-                        && dimension == contributed.dimension
-                        && value == contributed.value;
+        const bool ok = readValueN(metadata, one.key.c_str(), type, dimension, value)
+                        && type == one.type
+                        && dimension == one.dimension
+                        && value == one.value;
 
-        report.check(ok, where + " contributed=" + contributed.key + " type=" + type
+        report.check(ok, where + " contributed=" + one.key + " type=" + type
                      + " dimension=" + formatInt(dimension) + " value=" + value);
       }
     }
@@ -1448,7 +1499,7 @@ namespace {
   /// the keys whose composed value the fixture changes at every frame of its range, in
   /// the given order. A host that derived the output's metadata once and kept it, rather
   /// than per frame, would hand back the same value for these at every frame
-  void composedPerFrameKeys(int order, std::vector<std::string> &keys)
+  void composedPerFrameKeys(int order, const std::string &note, std::vector<std::string> &keys)
   {
     std::map<std::string, std::set<std::string> > seen;
     int frames = 0;
@@ -1456,7 +1507,7 @@ namespace {
     for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
       std::map<std::string, std::string> values;
       std::map<std::string, std::string> types;
-      expectedOutput(order, time, values, types);
+      expectedOutput(order, time, note, values, types);
 
       for(std::map<std::string, std::string>::const_iterator it = values.begin(); it != values.end(); ++it)
         seen[it->first].insert(it->second);
@@ -2347,6 +2398,13 @@ namespace {
 
     checkParams(report, *instance);
 
+    // the plugin derives one of the keys it contributes from this, so what it holds now
+    // is what the output has to come back carrying
+    std::string note = "none";
+    const bool noted = getParamValue(*instance, kNoteParam, note) && !note.empty();
+
+    report.check(noted, std::string("effect param=") + kNoteParam + " contributed=" + note);
+
     std::vector<std::string> contested;
     contestedKeys(contested);
     report.check(!contested.empty(), "fixture contestedkeys=" + joinKeys(std::set<std::string>(contested.begin(), contested.end())));
@@ -2377,8 +2435,43 @@ namespace {
 
     for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
       std::map<std::string, std::string> read;
-      checkOutput(report, *output, kUntrappedOrder, time, read);
+      checkOutput(report, *output, kUntrappedOrder, time, note, read);
       actions += 1;
+    }
+
+    // in this one the plugin nominates no clip at all, so there is nothing to inherit and
+    // the output has to carry the keys it contributed and none besides
+    report.check(setParamValue(*instance, kOrderParam, formatInt(kNoSourceOrder)),
+                 "effect order=" + formatInt(kNoSourceOrder) + " parameter set");
+
+    instance->invalidateMetadata();
+
+    std::vector<Contributed> contributed;
+    contributedKeys(note, contributed);
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      std::map<std::string, std::string> read;
+      checkOutput(report, *output, kNoSourceOrder, time, note, read);
+      actions += 1;
+
+      int inherited = 0;
+
+      for(std::map<std::string, std::string>::const_iterator it = read.begin(); it != read.end(); ++it) {
+        bool contributes = false;
+
+        for(size_t c = 0; c < contributed.size(); ++c)
+          contributes = contributes || contributed[c].key == it->first;
+
+        if(!contributes)
+          inherited += 1;
+      }
+
+      std::ostringstream ns;
+      ns << "effect order=" << kNoSourceOrder << " time=" << formatTime(time)
+         << " keys=" << read.size() << " contributed=" << contributed.size()
+         << " inherited=" << inherited;
+
+      report.check(read.size() == contributed.size() && inherited == 0, ns.str());
     }
 
     for(size_t o = 0; o < sizeof(orders) / sizeof(orders[0]); ++o) {
@@ -2395,7 +2488,7 @@ namespace {
       instance->invalidateMetadata();
 
       std::vector<std::string> perFrame;
-      composedPerFrameKeys(which, perFrame);
+      composedPerFrameKeys(which, note, perFrame);
       report.check(!perFrame.empty(),
                    where + " perframekeys=" + joinKeys(std::set<std::string>(perFrame.begin(), perFrame.end())));
 
@@ -2404,7 +2497,7 @@ namespace {
 
       for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
         std::map<std::string, std::string> read;
-        checkOutput(report, *output, which, time, read);
+        checkOutput(report, *output, which, time, note, read);
         actions += 1;
 
         if(time == MetadataFixture::kFirstFrame)

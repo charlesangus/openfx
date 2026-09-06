@@ -1785,21 +1785,6 @@ namespace OFX {
           to.addProperty(prop->deepCopy());
       }
 
-      /// is the named property one of the ones the host put in the out args to describe
-      /// inheritance, rather than a metadata key the effect contributed
-      static bool isInheritanceProp(const std::string &name, const std::vector<std::string> &retainedKeysPropNames)
-      {
-        if(name == kOfxImageEffectPropMetadataSourceClip)
-          return true;
-
-        for(size_t i = 0; i < retainedKeysPropNames.size(); ++i) {
-          if(name == retainedKeysPropNames[i])
-            return true;
-        }
-
-        return false;
-      }
-
       /// the index in 'inputs' of the clip with the given name, -1 if there is no such input
       static int findInputClip(const std::vector<ClipInstance *> &inputs, const std::string &name)
       {
@@ -1922,15 +1907,11 @@ namespace OFX {
           }
 
           if(st == kOfxStatOK) {
-            /// what the effect contributed goes in over what was inherited
-            const Property::PropertyMap &props = outArgs.getProperties();
+            /// what the effect wrote goes in over what was inherited
+            const Property::PropertyMap &contributed = contribution->getProperties();
 
-            for(Property::PropertyMap::const_iterator it = props.begin(); it != props.end(); ++it) {
-              if(isInheritanceProp(it->first, retainedKeysPropNames))
-                continue;
-
+            for(Property::PropertyMap::const_iterator it = contributed.begin(); it != contributed.end(); ++it)
               metadata.addProperty(it->second->deepCopy());
-            }
           }
         }
         catch (...) {

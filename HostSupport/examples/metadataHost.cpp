@@ -1264,6 +1264,25 @@ namespace {
   const int  kDetailScalar  = 2;
   const int  kDetailAtTime  = 1;
 
+  /// a key the plugin writes into the set the host hands it, and what it has to read
+  /// back as on the output clip once the host has put it over what was inherited
+  struct Contributed {
+    const char *key;
+    const char *type;
+    int         dimension;
+    const char *value;
+  };
+
+  /// the second of these is a key the plugin also inherits from Source, and the third
+  /// is named after the property the composition order is nominated in
+  const Contributed kContributed[] = {
+    {"org.openfx.examples.metadataPlugin.contributed", "int",    3, "7,8,9"},
+    {kOfxMetadataKeyFrameRate,                         "double", 1, "48"},
+    {kOfxImageEffectPropMetadataSourceClip,            "string", 1, "contributed"}
+  };
+
+  const int kContributedCount = int(sizeof(kContributed) / sizeof(kContributed[0]));
+
   /// the plugin retains only the keys of the standard vocabulary, so this is the one
   /// thing the harness has to know about it beyond the order it composes in
   bool isStandardKey(const std::string &key)
@@ -1298,6 +1317,11 @@ namespace {
         values[entry.key] = entryValue(entry);
         types[entry.key] = typeName(entry.type);
       }
+    }
+
+    for(int c = 0; c < kContributedCount; ++c) {
+      values[kContributed[c].key] = kContributed[c].value;
+      types[kContributed[c].key] = kContributed[c].type;
     }
   }
 
@@ -1349,6 +1373,22 @@ namespace {
 
     for(std::map<std::string, std::string>::const_iterator it = values.begin(); it != values.end(); ++it)
       report.check(found.count(it->first) != 0, where + " key=" + it->first + " present");
+
+    for(int c = 0; c < kContributedCount; ++c) {
+      const Contributed &contributed = kContributed[c];
+
+      std::string type = "none";
+      std::string value = "none";
+      int dimension = 0;
+
+      const bool ok = readValueN(metadata, contributed.key, type, dimension, value)
+                      && type == contributed.type
+                      && dimension == contributed.dimension
+                      && value == contributed.value;
+
+      report.check(ok, where + " contributed=" + contributed.key + " type=" + type
+                   + " dimension=" + formatInt(dimension) + " value=" + value);
+    }
 
     report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
   }

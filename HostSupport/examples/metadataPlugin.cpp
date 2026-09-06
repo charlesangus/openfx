@@ -33,6 +33,9 @@
 // knowledge of which keys its inputs carry: it enumerates them and reads each one
 // back by the type the host reports for it, which is what a plugin that means to
 // pass metadata through has to do.
+//
+// It also writes a handful of keys of its own into the set the host hands it, which
+// the host has to put over whatever the same key inherited.
 
 // the host composes this property's name by post pending the clip's name, and the
 // api defines the prefix in prose rather than as a macro
@@ -41,6 +44,14 @@ static const char kRetainedKeysPropPrefix[] = "OfxImageClipPropMetadataRetainedK
 static const char kSourceClip[] = kOfxImageEffectSimpleSourceClipName;
 static const char kMaskClip[]   = "Mask";
 static const char kOrderParam[] = "compositionOrder";
+
+// the keys the plugin writes into the set it is handed. The last is named after the
+// property the host reads the composition order out of, which lives in the action's
+// out args and so cannot be confused with a key of that name
+static const char   kContributedKey[]        = "org.openfx.examples.metadataPlugin.contributed";
+static const int    kContributedInts[]       = {7, 8, 9};
+static const double kContributedFrameRate    = 48.0;
+static const char   kContributedSourceClip[] = "contributed";
 
 // nothing in this plugin reads these two: they are declared so that a host's string
 // and choice parameter instances are instantiated and can be driven
@@ -180,6 +191,16 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
   // it did
   gMessageSuite->message(effect, kOfxMessageLog, "metadataPlugin",
                          "metadataPlugin metadataset present keys=%d", int(written.size()));
+
+  OfxPropertySetHandle contribution = (OfxPropertySetHandle) vended;
+
+  if(gMetadataSuite->metadataSetIntN(contribution, kContributedKey, 3, kContributedInts) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetDouble(contribution, kOfxMetadataKeyFrameRate, kContributedFrameRate) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetString(contribution, kOfxImageEffectPropMetadataSourceClip,
+                                       kContributedSourceClip) != kOfxStatOK)
+    return kOfxStatFailed;
 
   OfxParamSetHandle paramSet = 0;
   OfxParamHandle order = 0;

@@ -1068,6 +1068,11 @@ public:
         return *this;
     }
 
+    ImageEffectActionGetMetadata_InArgs& setMetadataSet(void* value, bool error_if_missing = true) {
+        props_.set<PropId::OfxImageEffectPropMetadataSet>(value, 0, error_if_missing);
+        return *this;
+    }
+
 };
 
 // Property set accessor for: ImageEffectActionGetMetadata_OutArgs

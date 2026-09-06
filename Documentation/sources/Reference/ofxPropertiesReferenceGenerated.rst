@@ -1751,6 +1751,16 @@ Pointer Properties
 - **Dimension**: 1
 - **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPropCudaStream`.
 
+.. _prop_OfxImageEffectPropMetadataSet:
+
+**OfxImageEffectPropMetadataSet**
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **C #define**: :c:macro:`kOfxImageEffectPropMetadataSet`
+- **Type**: pointer
+- **Dimension**: 1
+- **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPropMetadataSet`.
+
 .. _prop_OfxImageEffectPropMetalCommandQueue:
 
 **OfxImageEffectPropMetalCommandQueue**

@@ -1089,6 +1089,8 @@ For each action, the required input properties (passed from host to plugin) and 
 
 - :ref:`OfxPropTime <prop_OfxPropTime>` - Type: double, Dimension: 1 (:c:macro:`kOfxPropTime`)
 
+- :ref:`OfxImageEffectPropMetadataSet <prop_OfxImageEffectPropMetadataSet>` - Type: pointer, Dimension: 1 (:c:macro:`kOfxImageEffectPropMetadataSet`)
+
 **Output Arguments**
 
 - :ref:`OfxImageEffectPropMetadataSourceClip <prop_OfxImageEffectPropMetadataSourceClip>` - Type: string, Dimension: Variable (doc: :c:macro:`kOfxImageEffectPropMetadataSourceClip`)

@@ -52,17 +52,29 @@ Metadata is a property of an image — a clip at a specific time — and this ac
 The host calls this action whenever the effect's parameter or input state changes, using the same hash it
 already uses for the render cache, so no separate invalidation property is required or defined.
 
-An effect may add or modify metadata properties in the metadata property set returned via the suite,
-or it may choose not to modify metadata at all.
+An effect writes the metadata it contributes into the metadata property set passed in
+\ref kOfxImageEffectPropMetadataSet, or it may choose not to contribute any metadata at all.
+
+That set arrives empty. It is not pre-populated with the metadata inherited from the effect's input
+clips: an effect that needs to see what its inputs carry reads it with
+OfxMetadataSuiteV1::clipGetMetadata. Keys are written into the set with the ``metadataSet`` entry
+points of \ref OfxMetadataSuiteV1, which create a key that is not already present; a key cannot be
+created through the generic Property Suite. OfxMetadataSuiteV1::metadataEnumerate is permitted on
+the set, so an effect can read back what it has written.
+
+The handle is valid only for the duration of this action, and must not be released with
+OfxMetadataSuiteV1::metadataRelease.
 
  @param handle handle to the instance, cast to an \ref OfxImageEffectHandle
 
  @param inArgs has the following properties
      - \ref kOfxPropTime the time at which the metadata is being requested
+     - \ref kOfxImageEffectPropMetadataSet the metadata property set the effect writes the metadata
+       it contributes into
 
- @param outArgs is a property set that the effect populates with the metadata it contributes.
- It also carries the following properties, which describe how metadata is inherited from the
- effect's input clips
+ @param outArgs is a property set describing how metadata is inherited from the effect's input
+ clips. The metadata the effect contributes is not written here; it goes into the property set
+ named by \ref kOfxImageEffectPropMetadataSet. It has the following properties
      - \ref kOfxImageEffectPropMetadataSourceClip the ordered list of input clip names whose
        metadata the output composes, read in increasing precedence, defaulting to a
        single-element list naming the first input clip described by the effect
@@ -87,12 +99,39 @@ or it may choose not to modify metadata at all.
     @actiondef
     inArgs:
       - OfxPropTime
+      - OfxImageEffectPropMetadataSet
     outArgs:
       - OfxImageEffectPropMetadataSourceClip
     # this special prop has the clip name postpended after "_"
     # - OfxImageClipPropMetadataRetainedKeys_
  */
 #define kOfxImageEffectActionGetMetadata "OfxImageEffectActionGetMetadata"
+
+/** @brief The metadata property set an effect writes its metadata contribution into
+
+The host passes this in the ``inArgs`` of \ref kOfxImageEffectActionGetMetadata. The value is a
+pointer holding an \ref OfxPropertySetHandle, which the effect casts it to before use.
+
+The set arrives empty, and is the only metadata property set an effect may write to. Keys are added
+to it with the ``metadataSet`` entry points of \ref OfxMetadataSuiteV1, which create a key that is
+not already present; a key cannot be created through the generic Property Suite, which fails on a
+property that does not already exist. Once a key has been written, its value can be read back with
+OfxMetadataSuiteV1::metadataEnumerate and the generic Property Suite.
+
+The handle is owned by the host and is valid only for the duration of the action. It must not be
+released with OfxMetadataSuiteV1::metadataRelease.
+
+   - Type - pointer X 1
+   - Property Set - inArgs property set of the \ref kOfxImageEffectActionGetMetadata action
+   - Valid Values - a handle to a writable metadata property set, supplied by the host
+
+ @version Added in OpenFX NEXT
+
+   @propdef
+   type: pointer
+   dimension: 1
+*/
+#define kOfxImageEffectPropMetadataSet "OfxImageEffectPropMetadataSet"
 
 /** @brief The ordered list of input clip names whose metadata the output clip inherits
 
@@ -566,6 +605,33 @@ typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, void *userData);
 
  Hosts may evaluate metadata lazily, for example only reading it from a file the
  first time it is requested for a given clip and time.
+
+ A metadata property set is either read-only or writable. The sets returned by
+ clipGetMetadata and imageGetMetadata are read-only. The set the host passes to the
+ \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet is
+ writable, and is the only metadata property set a plugin may write to.
+
+ Keys are written with the six metadataSet entry points below. The generic Property Suite
+ cannot be used to write them, as it fails on a property that does not already exist and a
+ metadata key is by nature not known in advance; creating a key is the business of this
+ suite alone.
+
+ The N forms are the primitive ones. They take a count and an array of that many values,
+ and deliberately take no index: an index presupposes a property that already has a
+ dimension, and a key that does not yet exist has none. The scalar forms are exactly the N
+ forms with a count of 1. Either form creates the key if it is absent, and replaces both
+ the value and the dimension of a key that is already present.
+
+ All six share one set of status codes, given here once rather than repeated on each of
+ them:
+
+ - ::kOfxStatOK - the key was written, having been created if it was not already present,
+ - ::kOfxStatErrBadHandle - metadata is not a metadata property set, or key is NULL,
+ - ::kOfxStatErrValue - metadata is a valid metadata property set that does not support the
+   operation. A set returned by clipGetMetadata or imageGetMetadata is read-only and fails
+   with this status, as do an empty key, a count less than 1, and a NULL values array,
+ - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, the
+   plugin should abort whatever it was doing.
  */
 typedef struct OfxMetadataSuiteV1 {
 	/** @brief Retrieves the metadata property set for a clip at the given time
@@ -580,6 +646,10 @@ typedef struct OfxMetadataSuiteV1 {
 	 \post
 	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
 	 - on other status codes, metadata is set to NULL and there is nothing to release
+
+	 The property set returned is read-only. The metadataSet entry points fail on it with
+	 ::kOfxStatErrValue; only the set passed to the \ref kOfxImageEffectActionGetMetadata
+	 action in \ref kOfxImageEffectPropMetadataSet may be written to.
 
 	 @returns
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
@@ -604,6 +674,10 @@ typedef struct OfxMetadataSuiteV1 {
 	 \post
 	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
 	 - on other status codes, metadata is set to NULL and there is nothing to release
+
+	 The property set returned is read-only. The metadataSet entry points fail on it with
+	 ::kOfxStatErrValue; only the set passed to the \ref kOfxImageEffectActionGetMetadata
+	 action in \ref kOfxImageEffectPropMetadataSet may be written to.
 
 	 @returns
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
@@ -647,8 +721,13 @@ typedef struct OfxMetadataSuiteV1 {
 	 Once a key name has been obtained this way, the plugin can retrieve its value
 	 from metadata using the generic Property Suite.
 
+	 Enumeration is permitted on the writable set passed to the
+	 \ref kOfxImageEffectActionGetMetadata action as well as on a read-only one, so a plugin
+	 can read back the keys it has written during that action.
+
 	 \pre
-	 - metadata was returned by clipGetMetadata or imageGetMetadata
+	 - metadata was returned by clipGetMetadata or imageGetMetadata, or is the set passed to
+	   the \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
 
 	 @returns
 	 - ::kOfxStatOK - enumeration completed, having visited every key,
@@ -656,6 +735,144 @@ typedef struct OfxMetadataSuiteV1 {
 	 - any other status returned by callback to stop enumeration early.
 	 */
 	OfxStatus (*metadataEnumerate)(OfxPropertySetHandle metadata, OfxMetadataEnumerateFuncV1 callback, void *userData);
+
+	/** @brief Writes a single string value to a metadata key, creating the key if needed
+
+	 \arg \c metadata  writable metadata property set to write into
+	 \arg \c key       name of the metadata key to write
+	 \arg \c value     value to give the key
+
+	 Exactly metadataSetStringN with a count of 1.
+
+	 \pre
+	 - metadata is writable, that is it is the set passed to the
+	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
+	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
+
+	 \post
+	 - on ::kOfxStatOK, key is present in metadata as a string of dimension 1 holding value
+
+	 @returns the status codes shared by the metadataSet entry points, described in this
+	 suite's documentation above.
+	 */
+	OfxStatus (*metadataSetString) (OfxPropertySetHandle metadata, const char *key, const char *value);
+
+	/** @brief Writes a single double value to a metadata key, creating the key if needed
+
+	 \arg \c metadata  writable metadata property set to write into
+	 \arg \c key       name of the metadata key to write
+	 \arg \c value     value to give the key
+
+	 Exactly metadataSetDoubleN with a count of 1.
+
+	 \pre
+	 - metadata is writable, that is it is the set passed to the
+	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
+	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
+
+	 \post
+	 - on ::kOfxStatOK, key is present in metadata as a double of dimension 1 holding value
+
+	 @returns the status codes shared by the metadataSet entry points, described in this
+	 suite's documentation above.
+	 */
+	OfxStatus (*metadataSetDouble) (OfxPropertySetHandle metadata, const char *key, double value);
+
+	/** @brief Writes a single int value to a metadata key, creating the key if needed
+
+	 \arg \c metadata  writable metadata property set to write into
+	 \arg \c key       name of the metadata key to write
+	 \arg \c value     value to give the key
+
+	 Exactly metadataSetIntN with a count of 1.
+
+	 \pre
+	 - metadata is writable, that is it is the set passed to the
+	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
+	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
+
+	 \post
+	 - on ::kOfxStatOK, key is present in metadata as an int of dimension 1 holding value
+
+	 @returns the status codes shared by the metadataSet entry points, described in this
+	 suite's documentation above.
+	 */
+	OfxStatus (*metadataSetInt)    (OfxPropertySetHandle metadata, const char *key, int value);
+
+	/** @brief Writes an array of string values to a metadata key, creating the key if needed
+
+	 \arg \c metadata  writable metadata property set to write into
+	 \arg \c key       name of the metadata key to write
+	 \arg \c count     number of values being written, which becomes the key's dimension
+	 \arg \c values    array of count values to give the key
+
+	 No index is taken: the whole value of the key is written at once, and the key's dimension
+	 becomes count whether or not the key already existed and whatever dimension it had before.
+
+	 \pre
+	 - metadata is writable, that is it is the set passed to the
+	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
+	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
+	 - count is at least 1, and values points to at least count values
+
+	 \post
+	 - on ::kOfxStatOK, key is present in metadata as a string of dimension count holding
+	   the values given, which the host has copied
+
+	 @returns the status codes shared by the metadataSet entry points, described in this
+	 suite's documentation above.
+	 */
+	OfxStatus (*metadataSetStringN)(OfxPropertySetHandle metadata, const char *key, int count, const char *const*values);
+
+	/** @brief Writes an array of double values to a metadata key, creating the key if needed
+
+	 \arg \c metadata  writable metadata property set to write into
+	 \arg \c key       name of the metadata key to write
+	 \arg \c count     number of values being written, which becomes the key's dimension
+	 \arg \c values    array of count values to give the key
+
+	 No index is taken: the whole value of the key is written at once, and the key's dimension
+	 becomes count whether or not the key already existed and whatever dimension it had before.
+
+	 \pre
+	 - metadata is writable, that is it is the set passed to the
+	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
+	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
+	 - count is at least 1, and values points to at least count values
+
+	 \post
+	 - on ::kOfxStatOK, key is present in metadata as a double of dimension count holding
+	   the values given, which the host has copied
+
+	 @returns the status codes shared by the metadataSet entry points, described in this
+	 suite's documentation above.
+	 */
+	OfxStatus (*metadataSetDoubleN)(OfxPropertySetHandle metadata, const char *key, int count, const double *values);
+
+	/** @brief Writes an array of int values to a metadata key, creating the key if needed
+
+	 \arg \c metadata  writable metadata property set to write into
+	 \arg \c key       name of the metadata key to write
+	 \arg \c count     number of values being written, which becomes the key's dimension
+	 \arg \c values    array of count values to give the key
+
+	 No index is taken: the whole value of the key is written at once, and the key's dimension
+	 becomes count whether or not the key already existed and whatever dimension it had before.
+
+	 \pre
+	 - metadata is writable, that is it is the set passed to the
+	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
+	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
+	 - count is at least 1, and values points to at least count values
+
+	 \post
+	 - on ::kOfxStatOK, key is present in metadata as an int of dimension count holding
+	   the values given, which the host has copied
+
+	 @returns the status codes shared by the metadataSet entry points, described in this
+	 suite's documentation above.
+	 */
+	OfxStatus (*metadataSetIntN)   (OfxPropertySetHandle metadata, const char *key, int count, const int *values);
 
 } OfxMetadataSuiteV1;
 

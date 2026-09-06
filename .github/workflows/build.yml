@@ -179,6 +179,7 @@ jobs:
             compiler-desc: Clang
             cuda: true
             opencl: true
+            check_metadata_off: true
           - name_prefix: MacOS
             release_prefix: mac
             ostype: mac
@@ -457,6 +458,51 @@ jobs:
           echo "Testing that the metadata-log contract fails a plugin which logs nothing"
           if "$BIN" --plugin-id org.openfx.examples.metadataPlugin --check metadata-log; then
             echo "metadata-log passed a plugin which renders and logs nothing" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-log-degraded contract fails a plugin which reads metadata"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataPrint --check metadata-log-degraded; then
+            echo "metadata-log-degraded passed a plugin which reads and logs metadata" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-display-degraded contract fails a plugin which reads metadata"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView --check metadata-display-degraded; then
+            echo "metadata-display-degraded passed a plugin which reads and displays metadata" >&2
+            exit 1
+          fi
+
+      - name: Configure NoMetadata build with cmake
+        if: matrix.check_metadata_off == true
+        run: |
+          cmake -S . -B build/NoMetadata -G "Unix Makefiles" \
+            -DCMAKE_TOOLCHAIN_FILE=$(pwd)/$BUILD_DIR/generators/conan_toolchain.cmake \
+            -DCMAKE_POLICY_DEFAULT_CMP0091=NEW \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_EXAMPLE_PLUGINS=TRUE \
+            -DOFX_SUPPORTS_METADATA=OFF \
+            -DPLUGIN_INSTALLDIR=$(pwd)/build/InstallNoMetadata
+
+      - name: Build NoMetadata build with cmake
+        if: matrix.check_metadata_off == true
+        run: |
+          cmake --build build/NoMetadata --target install --parallel
+
+      - name: Verify metadataHost degrades without the metadata suite
+        if: matrix.check_metadata_off == true
+        run: |
+          BIN=build/NoMetadata/HostSupport/examples/metadataHost
+          echo "Testing the metadata-log-degraded contract against MetadataPrint on the OFF build"
+          "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataPrint --check metadata-log-degraded
+          echo "Testing the metadata-display-degraded contract against MetadataView on the OFF build"
+          "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataView --check metadata-display-degraded
+          echo "Testing that the metadata-log contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataPrint --check metadata-log; then
+            echo "metadata-log passed on a host with no metadata suite" >&2
             exit 1
           fi
 

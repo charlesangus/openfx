@@ -66,6 +66,75 @@ property therefore inherits all of the first input clip's metadata and nothing f
 input, unchanged from a plugin's point of view whether or not it is aware that composition across
 several clips is possible.
 
+Contributing Metadata
+---------------------
+
+An effect trapping :c:macro:`kOfxImageEffectActionGetMetadata` writes the metadata keys it
+contributes into a property set the host hands it for that purpose: the ``inArgs`` property
+:c:macro:`kOfxImageEffectPropMetadataSet` holds a pointer to an ``OfxPropertySetHandle``, which the
+effect casts to that type before use.
+
+**The set arrives empty.** It is not the metadata inherited from the effect's input clips, and it
+is not pre-populated with anything the effect would otherwise have to read past. An effect that
+needs to see what its inputs carry reads that separately, with ``clipGetMetadata``; what it writes
+into :c:macro:`kOfxImageEffectPropMetadataSet` is purely the metadata this effect itself
+contributes.
+
+Keys are written with the six ``metadataSet`` entry points of the :c:macro:`kOfxMetadataSuite`:
+``metadataSetString``, ``metadataSetDouble`` and ``metadataSetInt`` for a single value, and
+``metadataSetStringN``, ``metadataSetDoubleN`` and ``metadataSetIntN`` for an array. The scalar
+forms are exactly the N forms called with a count of 1; use an N form when the key's value is
+naturally an array, for example a key modelled on ``ofx/viewnames``, and a scalar form for
+everything else. Either form creates the key if it is not already present, and if the key is
+already present replaces both its value and its dimension — there is no way to append to or amend
+part of an existing key's value. The generic Property Suite cannot be used to create a metadata
+key, since it fails on a property that does not already exist; creating one is the business of
+these six entry points alone.
+
+All six share one set of status codes. :c:macro:`kOfxStatOK` means the key was written, having
+been created if it was not already present. :c:macro:`kOfxStatErrBadHandle` means the set handle
+was not a metadata property set, or ``key`` was NULL. :c:macro:`kOfxStatErrValue` means the set
+was a valid metadata property set that does not accept the write — because it is one of the
+read-only sets returned by ``clipGetMetadata`` or ``imageGetMetadata`` rather than the one passed
+to :c:macro:`kOfxImageEffectActionGetMetadata`, because ``key`` was empty, because ``count`` was
+less than 1, or because the values being written, or one of the strings among them, was NULL — and
+in every case a write that fails leaves the key exactly as it was, present or absent.
+:c:macro:`kOfxStatErrMemory` means the host had insufficient memory to complete the write.
+
+There is no entry point to delete a key. A key the effect has written itself cannot be withdrawn
+once written, and none of the six ``metadataSet`` entry points can remove a key that arrived
+through inheritance either. Suppressing an inherited key is the job of the retained-keys list
+described in `Composing Metadata from Input Clips`_: an effect that does not want a particular
+input clip's key to reach the output leaves that key out of the corresponding
+``OfxImageClipPropMetadataRetainedKeys_`` list in ``outArgs``, rather than looking for a removal
+call in this suite.
+
+**Contributed keys beat inherited keys.** After the action returns, the host composes the output's
+metadata from the input clips exactly as :c:macro:`kOfxImageEffectPropMetadataSourceClip` and the
+retained-keys lists describe, and then lays whatever the effect wrote into
+:c:macro:`kOfxImageEffectPropMetadataSet` over the top, replacing any inherited key of the same
+name. A key the effect writes therefore always wins, regardless of how the inheritance is
+configured.
+
+The handle is valid only for the duration of the action. It is owned by the host: it must not be
+released with ``metadataRelease``, which fails with :c:macro:`kOfxStatErrValue` if attempted since
+the handle is not the plugin's to release, and it is dead as soon as the action returns — an effect
+must not retain it and use it afterwards.
+
+An effect that does not trap :c:macro:`kOfxImageEffectActionGetMetadata`, or traps it but returns
+:c:macro:`kOfxStatReplyDefault`, has everything it wrote discarded. The host reads back neither the
+metadata set the effect contributed into nor either of the inheritance controls in ``outArgs``,
+whatever the effect left in them, and composes the output's metadata from the default it had
+already initialised ``outArgs`` with before calling the action. Only :c:macro:`kOfxStatOK` has the
+effect's contribution, and any change it made to the inheritance controls, taken into account.
+
+As with any other metadata key, a key a plugin contributes is subject to the namespace rules in
+`The Key Namespaces`_: a plugin must not invent a key under
+:c:macro:`kOfxMetadataKeyPrefixStandard`, which is reserved for the standard vocabulary defined in
+this specification. A plugin-defined key is a vendor key, and so must be named in reverse DNS form
+using a domain the plugin's author controls, for example
+``org.openfx.examples.metadataPlugin.gain``, exactly as described in `Vendor Keys`_.
+
 The Key Namespaces
 ------------------
 

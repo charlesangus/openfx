@@ -300,6 +300,20 @@ namespace {
       return ok;
     }
 
+    /// the check count as it stands, to be handed back to ranAtLeast()
+    int mark() const {return _checks;}
+
+    /// check that at least least checks have been made since mark() gave since, so that
+    /// a run which returned early is reported as a failure rather than as a clean run
+    /// which happened to assert nothing
+    void ranAtLeast(int since, int least, const std::string &what)
+    {
+      std::ostringstream os;
+      os << what << " ran=" << (_checks - since) << " least=" << least;
+
+      check(_checks - since >= least, os.str());
+    }
+
     int getChecks() const {return _checks;}
     int getFailures() const {return _failures;}
   };
@@ -367,6 +381,236 @@ namespace {
     default :
       return false;
     }
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  // what a plugin logs, and the pixels it renders
+
+  bool parseInt(const std::string &text, int &value)
+  {
+    std::istringstream is(text);
+    is >> value;
+    return !is.fail() && is.eof();
+  }
+
+  bool parseDouble(const std::string &text, double &value)
+  {
+    std::istringstream is(text);
+    is >> value;
+    return !is.fail() && is.eof();
+  }
+
+  bool parseInts(const std::string &text, std::vector<int> &values)
+  {
+    std::istringstream is(text);
+    std::string field;
+
+    while(std::getline(is, field, ',')) {
+      int value = 0;
+      if(!parseInt(field, value))
+        return false;
+      values.push_back(value);
+    }
+
+    return !values.empty();
+  }
+
+  /// one metadata key as a plugin logs it, in the grammar
+  ///   clip=<name> frame=<n> key=<key> type=<type> value=<value>
+  struct LogRecord {
+    std::string clip;
+    OfxTime     time;
+    std::string key;
+    std::string type;
+    std::string value;
+
+    LogRecord() : time(MetadataFixture::kAnyTime) {}
+  };
+
+  /// pull the log records out of captured message text. Tokens which are none of the
+  /// grammar's are skipped, so the type and id vmessage prepends need not be accounted
+  /// for, and a line carrying no key= is not a record at all, so a plugin may log a
+  /// header. value= is last and everything after it is the value, so a value may hold
+  /// spaces
+  void parseLogRecords(const std::string &text, std::vector<LogRecord> &records)
+  {
+    std::istringstream lines(text);
+    std::string line;
+
+    while(std::getline(lines, line)) {
+      std::string head = line;
+      std::string value;
+
+      const std::string::size_type valueAt = line.find("value=");
+
+      if(valueAt != std::string::npos) {
+        head = line.substr(0, valueAt);
+        value = line.substr(valueAt + strlen("value="));
+      }
+
+      if(head.find("key=") == std::string::npos)
+        continue;
+
+      LogRecord record;
+      record.value = value;
+
+      std::istringstream tokens(head);
+      std::string token;
+
+      while(tokens >> token) {
+        if(token.compare(0, 5, "clip=") == 0)
+          record.clip = token.substr(5);
+        else if(token.compare(0, 6, "frame=") == 0)
+          parseDouble(token.substr(6), record.time);
+        else if(token.compare(0, 4, "key=") == 0)
+          record.key = token.substr(4);
+        else if(token.compare(0, 5, "type=") == 0)
+          record.type = token.substr(5);
+      }
+
+      records.push_back(record);
+    }
+  }
+
+  /// strings have to be logged literally, but a double or an int is only required to
+  /// parse back to what the fixture holds, so that a plugin is not held to the
+  /// formatting formatDouble happens to use
+  bool logValueMatches(const MetadataFixture::Entry &entry, const std::string &value)
+  {
+    switch(entry.type) {
+    case MetadataFixture::eString :
+      return value == entry.stringValue;
+
+    case MetadataFixture::eDouble : {
+      double parsed = 0;
+      return parseDouble(value, parsed) && parsed == entry.doubleValue;
+    }
+
+    case MetadataFixture::eInt : {
+      std::vector<int> parsed;
+
+      if(!parseInts(value, parsed) || int(parsed.size()) != entry.intCount)
+        return false;
+
+      for(int i = 0; i < entry.intCount; ++i) {
+        if(parsed[i] != entry.intValues[i])
+          return false;
+      }
+
+      return true;
+    }
+    }
+
+    return false;
+  }
+
+  std::string recordId(const std::string &clip, OfxTime time, const std::string &key)
+  {
+    return clip + " " + formatTime(time) + " " + key;
+  }
+
+  /// why a log is not exactly what the fixture gives for the clips it names, over the
+  /// whole fixture range, once each and in ascending key order within a clip and frame.
+  /// The empty string means it is
+  std::string logMismatch(const std::vector<LogRecord> &records)
+  {
+    if(records.empty())
+      return "norecords";
+
+    std::set<std::string> clips;
+    for(size_t r = 0; r < records.size(); ++r)
+      clips.insert(records[r].clip);
+
+    std::set<std::string> expected;
+
+    for(std::set<std::string>::const_iterator it = clips.begin(); it != clips.end(); ++it) {
+      for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+        for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+          if(entryAppliesAt(MetadataFixture::kEntries[i], *it, time))
+            expected.insert(recordId(*it, time, MetadataFixture::kEntries[i].key));
+        }
+      }
+    }
+
+    std::set<std::string> seen;
+
+    for(size_t r = 0; r < records.size(); ++r) {
+      const LogRecord &record = records[r];
+      const std::string id = recordId(record.clip, record.time, record.key);
+      const MetadataFixture::Entry *entry = NULL;
+
+      for(int i = 0; i < MetadataFixture::kEntryCount && !entry; ++i) {
+        if(record.key == MetadataFixture::kEntries[i].key
+           && entryAppliesAt(MetadataFixture::kEntries[i], record.clip, record.time))
+          entry = &MetadataFixture::kEntries[i];
+      }
+
+      if(!entry)
+        return "notinfixture " + id;
+
+      if(record.type != typeName(entry->type))
+        return "type " + id + " logged=" + record.type + " fixture=" + typeName(entry->type);
+
+      if(!logValueMatches(*entry, record.value))
+        return "value " + id + " logged=" + record.value + " fixture=" + entryValue(*entry);
+
+      if(!seen.insert(id).second)
+        return "repeated " + id;
+    }
+
+    for(std::set<std::string>::const_iterator it = expected.begin(); it != expected.end(); ++it) {
+      if(!seen.count(*it))
+        return "missing " + *it;
+    }
+
+    for(size_t r = 1; r < records.size(); ++r) {
+      if(records[r].clip == records[r - 1].clip
+         && records[r].time == records[r - 1].time
+         && records[r].key <= records[r - 1].key)
+        return "unsorted " + recordId(records[r].clip, records[r].time, records[r].key);
+    }
+
+    return "";
+  }
+
+  /// check what a plugin logged against what the fixture gives for the clips it named
+  void checkLogAgainstFixture(Report &report,
+                              const std::vector<LogRecord> &records,
+                              const std::string &where)
+  {
+    const std::string why = logMismatch(records);
+
+    std::ostringstream os;
+    os << where << " logrecords=" << records.size();
+
+    report.check(why.empty(), why.empty() ? os.str() : os.str() + " " + why);
+  }
+
+  /// the side of the window rendered through, and of the window pixels are compared
+  /// over, which has to be wide enough to hold more than one image's worth of detail
+  const int kRenderWindowSize = 64;
+
+  /// true if two images carry the same pixels over the window, which has to hold at
+  /// least one pixel of both of them
+  bool imagesEqual(const MyHost::MyImage &a, const MyHost::MyImage &b, const OfxRectI &window)
+  {
+    if(window.x2 <= window.x1 || window.y2 <= window.y1)
+      return false;
+
+    for(int y = window.y1; y < window.y2; ++y) {
+      for(int x = window.x1; x < window.x2; ++x) {
+        const OfxRGBAColourB *pa = a.pixel(x, y);
+        const OfxRGBAColourB *pb = b.pixel(x, y);
+
+        if(!pa || !pb)
+          return false;
+
+        if(pa->r != pb->r || pa->g != pb->g || pa->b != pb->b || pa->a != pb->a)
+          return false;
+      }
+    }
+
+    return true;
   }
 
   /// check that a metadata set holds exactly the keys, types and values the fixture
@@ -453,6 +697,127 @@ namespace {
                  && MetadataFixture::kInputClipCount > 0
                  && MetadataFixture::kLastFrame > MetadataFixture::kFirstFrame,
                  os.str());
+  }
+
+  /// what a plugin would log for an entry. A double is written the way printf's %f
+  /// writes it rather than the way formatDouble does, so that the record set below is
+  /// only accepted if doubles are compared by what they parse to
+  std::string loggedValue(const MetadataFixture::Entry &entry)
+  {
+    if(entry.type != MetadataFixture::eDouble)
+      return entryValue(entry);
+
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(6) << entry.doubleValue;
+    return os.str();
+  }
+
+  /// the whole fixture written out the way a plugin reading it would log it, behind a
+  /// header line and the type and id vmessage prepends
+  std::string fixtureLog()
+  {
+    std::ostringstream os;
+
+    os << "log fixture reading the fixture" << std::endl;
+
+    for(int c = 0; c < MetadataFixture::kInputClipCount; ++c) {
+      const std::string clip = MetadataFixture::kInputClips[c];
+
+      for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+        std::map<std::string, const MetadataFixture::Entry *> keys;
+
+        for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+          if(entryAppliesAt(MetadataFixture::kEntries[i], clip, time))
+            keys[MetadataFixture::kEntries[i].key] = &MetadataFixture::kEntries[i];
+        }
+
+        for(std::map<std::string, const MetadataFixture::Entry *>::const_iterator it = keys.begin();
+            it != keys.end(); ++it) {
+          os << "log fixture clip=" << clip
+             << " frame=" << formatTime(time)
+             << " key=" << it->first
+             << " type=" << typeName(it->second->type)
+             << " value=" << loggedValue(*it->second) << std::endl;
+        }
+      }
+    }
+
+    return os.str();
+  }
+
+  /// the comparators the plugin checks rest on are worth nothing unless they reject what
+  /// they are meant to, so build a record set the fixture itself gives, check it is
+  /// accepted, then mutate it one way at a time and check each mutation is caught
+  void checkComparators(Report &report)
+  {
+    std::vector<LogRecord> records;
+    parseLogRecords(fixtureLog(), records);
+
+    std::ostringstream parsed;
+    parsed << "selfcheck logparsed=" << records.size();
+
+    if(!report.check(records.size() > 1, parsed.str()))
+      return;
+
+    report.check(logMismatch(records).empty(), "selfcheck log accepted");
+
+    std::vector<LogRecord> dropped(records);
+    dropped.erase(dropped.begin());
+    report.check(!logMismatch(dropped).empty(), "selfcheck log droppedrecord");
+
+    std::vector<LogRecord> wrongValue(records);
+    wrongValue[0].value += "-wrong";
+    report.check(!logMismatch(wrongValue).empty(), "selfcheck log wrongvalue");
+
+    std::vector<LogRecord> wrongType(records);
+    wrongType[0].type = wrongType[0].type == "int" ? "string" : "int";
+    report.check(!logMismatch(wrongType).empty(), "selfcheck log wrongtype");
+
+    std::string atFirst = "none";
+    std::string atLast = "none";
+    const bool advances =
+      fixtureValue(MyHost::kRevisedClip, kOfxMetadataKeyTimecode, MetadataFixture::kFirstFrame, atFirst)
+      && fixtureValue(MyHost::kRevisedClip, kOfxMetadataKeyTimecode, MetadataFixture::kLastFrame, atLast)
+      && atFirst != atLast;
+
+    if(report.check(advances, "selfcheck fixture timecode first=" + atFirst + " last=" + atLast)) {
+      std::vector<LogRecord> repeated(records);
+
+      for(size_t r = 0; r < repeated.size(); ++r) {
+        if(repeated[r].key == kOfxMetadataKeyTimecode && repeated[r].time == MetadataFixture::kLastFrame)
+          repeated[r].value = atFirst;
+      }
+
+      report.check(!logMismatch(repeated).empty(), "selfcheck log repeatedtimecode");
+    }
+
+    size_t swapAt = 0;
+
+    for(size_t r = 1; r < records.size() && !swapAt; ++r) {
+      if(records[r].clip == records[r - 1].clip && records[r].time == records[r - 1].time)
+        swapAt = r;
+    }
+
+    if(report.check(swapAt != 0, "selfcheck log sortable")) {
+      std::vector<LogRecord> unsorted(records);
+      std::swap(unsorted[swapAt], unsorted[swapAt - 1]);
+      report.check(!logMismatch(unsorted).empty(), "selfcheck log unsortedkeys");
+    }
+
+    OFX::Host::ImageEffect::ClipDescriptor descriptor(MetadataFixture::kInputClips[0]);
+    MyHost::MetadataClipInstance clip(&descriptor);
+
+    MyHost::MyImage first(clip, MetadataFixture::kFirstFrame);
+    MyHost::MyImage last(clip, MetadataFixture::kLastFrame);
+
+    OfxRectI window;
+    window.x1 = window.y1 = 0;
+    window.x2 = window.y2 = kRenderWindowSize;
+
+    report.check(imagesEqual(first, first, window), "selfcheck image sameframe");
+    report.check(!imagesEqual(first, last, window),
+                 "selfcheck image frames=" + formatTime(MetadataFixture::kFirstFrame)
+                 + "," + formatTime(MetadataFixture::kLastFrame));
   }
 
   /// read every frame of a clip through clipGetMetadata
@@ -855,61 +1220,163 @@ namespace {
     return ok;
   }
 
+  /// write text through whichever of the host's parameter instances a name resolves to,
+  /// so that a check can drive a parameter it knows only by name and value
+  bool setParamValue(OFX::Host::ImageEffect::Instance &instance,
+                     const std::string &name,
+                     const std::string &value)
+  {
+    OFX::Host::Param::Instance *param = instance.getParam(name);
+
+    if(MyHost::MyStringInstance *text = dynamic_cast<MyHost::MyStringInstance *>(param))
+      return text->set(value.c_str()) == kOfxStatOK;
+
+    int number = 0;
+
+    if(!parseInt(value, number))
+      return false;
+
+    if(MyHost::MyChoiceInstance *choice = dynamic_cast<MyHost::MyChoiceInstance *>(param))
+      return choice->set(number) == kOfxStatOK;
+    if(MyHost::MyIntegerInstance *integer = dynamic_cast<MyHost::MyIntegerInstance *>(param))
+      return integer->set(number) == kOfxStatOK;
+
+    return false;
+  }
+
+  /// the same, at a time rather than as the parameter's scalar value
+  bool setParamValue(OFX::Host::ImageEffect::Instance &instance,
+                     const std::string &name,
+                     OfxTime time,
+                     const std::string &value)
+  {
+    OFX::Host::Param::Instance *param = instance.getParam(name);
+
+    if(MyHost::MyStringInstance *text = dynamic_cast<MyHost::MyStringInstance *>(param))
+      return text->set(time, value.c_str()) == kOfxStatOK;
+
+    int number = 0;
+
+    if(!parseInt(value, number))
+      return false;
+
+    if(MyHost::MyChoiceInstance *choice = dynamic_cast<MyHost::MyChoiceInstance *>(param))
+      return choice->set(time, number) == kOfxStatOK;
+    if(MyHost::MyIntegerInstance *integer = dynamic_cast<MyHost::MyIntegerInstance *>(param))
+      return integer->set(time, number) == kOfxStatOK;
+
+    return false;
+  }
+
+  /// read a parameter back as text, false if the instance holds no such parameter or it
+  /// is of a type this cannot drive
+  bool getParamValue(OFX::Host::ImageEffect::Instance &instance,
+                     const std::string &name,
+                     std::string &value)
+  {
+    OFX::Host::Param::Instance *param = instance.getParam(name);
+
+    if(MyHost::MyStringInstance *text = dynamic_cast<MyHost::MyStringInstance *>(param))
+      return text->get(value) == kOfxStatOK;
+
+    int number = 0;
+
+    if(MyHost::MyChoiceInstance *choice = dynamic_cast<MyHost::MyChoiceInstance *>(param)) {
+      if(choice->get(number) != kOfxStatOK)
+        return false;
+      value = formatInt(number);
+      return true;
+    }
+
+    if(MyHost::MyIntegerInstance *integer = dynamic_cast<MyHost::MyIntegerInstance *>(param)) {
+      if(integer->get(number) != kOfxStatOK)
+        return false;
+      value = formatInt(number);
+      return true;
+    }
+
+    return false;
+  }
+
+  /// the same, at a time rather than as the parameter's scalar value
+  bool getParamValue(OFX::Host::ImageEffect::Instance &instance,
+                     const std::string &name,
+                     OfxTime time,
+                     std::string &value)
+  {
+    OFX::Host::Param::Instance *param = instance.getParam(name);
+
+    if(MyHost::MyStringInstance *text = dynamic_cast<MyHost::MyStringInstance *>(param))
+      return text->get(time, value) == kOfxStatOK;
+
+    int number = 0;
+
+    if(MyHost::MyChoiceInstance *choice = dynamic_cast<MyHost::MyChoiceInstance *>(param)) {
+      if(choice->get(time, number) != kOfxStatOK)
+        return false;
+      value = formatInt(number);
+      return true;
+    }
+
+    if(MyHost::MyIntegerInstance *integer = dynamic_cast<MyHost::MyIntegerInstance *>(param)) {
+      if(integer->get(time, number) != kOfxStatOK)
+        return false;
+      value = formatInt(number);
+      return true;
+    }
+
+    return false;
+  }
+
   /// write a value through the host's string and choice parameter instances and read it
   /// straight back, in both the scalar and the at-a-time form. A host that dropped what
   /// was written, or that answered with the declared default instead of it, fails these
   void checkParams(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
-    MyHost::MyStringInstance *note =
-      dynamic_cast<MyHost::MyStringInstance *>(instance.getParam(kNoteParam));
-    MyHost::MyChoiceInstance *detail =
-      dynamic_cast<MyHost::MyChoiceInstance *>(instance.getParam(kDetailParam));
+    std::string text = "none";
+    std::string option = "none";
 
-    if(!report.check(note != NULL, std::string("plugin param=") + kNoteParam))
+    if(!report.check(getParamValue(instance, kNoteParam, text), std::string("plugin param=") + kNoteParam))
       return;
-    if(!report.check(detail != NULL, std::string("plugin param=") + kDetailParam))
+    if(!report.check(getParamValue(instance, kDetailParam, option), std::string("plugin param=") + kDetailParam))
       return;
 
     const OfxTime time = MetadataFixture::kLastFrame;
     const std::string noteWhere = std::string("param=") + kNoteParam;
     const std::string noteAtTime = noteWhere + " time=" + formatTime(time);
 
-    std::string text = "none";
-    bool ok = note->get(text) == kOfxStatOK && text == kNoteDefault;
-    report.check(ok, noteWhere + " default=" + text);
+    report.check(text == kNoteDefault, noteWhere + " default=" + text);
 
-    report.check(note->set(kNoteScalar) == kOfxStatOK, noteWhere + " set=" + kNoteScalar);
+    report.check(setParamValue(instance, kNoteParam, kNoteScalar), noteWhere + " set=" + kNoteScalar);
 
     text = "none";
-    ok = note->get(text) == kOfxStatOK && text == kNoteScalar;
+    bool ok = getParamValue(instance, kNoteParam, text) && text == kNoteScalar;
     report.check(ok, noteWhere + " value=" + text);
 
-    report.check(note->set(time, kNoteAtTime) == kOfxStatOK, noteAtTime + " set=" + kNoteAtTime);
+    report.check(setParamValue(instance, kNoteParam, time, kNoteAtTime), noteAtTime + " set=" + kNoteAtTime);
 
     text = "none";
-    ok = note->get(time, text) == kOfxStatOK && text == kNoteAtTime;
+    ok = getParamValue(instance, kNoteParam, time, text) && text == kNoteAtTime;
     report.check(ok, noteAtTime + " value=" + text);
 
     const std::string choiceWhere = std::string("param=") + kDetailParam;
     const std::string choiceAtTime = choiceWhere + " time=" + formatTime(time);
 
-    int option = -1;
-    ok = detail->get(option) == kOfxStatOK && option == kDetailDefault;
-    report.check(ok, choiceWhere + " default=" + formatInt(option));
+    report.check(option == formatInt(kDetailDefault), choiceWhere + " default=" + option);
 
-    report.check(detail->set(kDetailScalar) == kOfxStatOK,
+    report.check(setParamValue(instance, kDetailParam, formatInt(kDetailScalar)),
                  choiceWhere + " set=" + formatInt(kDetailScalar));
 
-    option = -1;
-    ok = detail->get(option) == kOfxStatOK && option == kDetailScalar;
-    report.check(ok, choiceWhere + " value=" + formatInt(option));
+    option = "none";
+    ok = getParamValue(instance, kDetailParam, option) && option == formatInt(kDetailScalar);
+    report.check(ok, choiceWhere + " value=" + option);
 
-    report.check(detail->set(time, kDetailAtTime) == kOfxStatOK,
+    report.check(setParamValue(instance, kDetailParam, time, formatInt(kDetailAtTime)),
                  choiceAtTime + " set=" + formatInt(kDetailAtTime));
 
-    option = -1;
-    ok = detail->get(time, option) == kOfxStatOK && option == kDetailAtTime;
-    report.check(ok, choiceAtTime + " value=" + formatInt(option));
+    option = "none";
+    ok = getParamValue(instance, kDetailParam, time, option) && option == formatInt(kDetailAtTime);
+    report.check(ok, choiceAtTime + " value=" + option);
   }
 
   /// change what an input clip publishes, drop that one clip's cached sets, and check
@@ -980,11 +1447,16 @@ namespace {
 
     OfxRectI renderWindow;
     renderWindow.x1 = renderWindow.y1 = 0;
-    renderWindow.x2 = renderWindow.y2 = 4;
+    renderWindow.x2 = renderWindow.y2 = kRenderWindowSize;
 
     OfxRectD roi;
     roi.x1 = roi.y1 = 0;
     roi.x2 = roi.y2 = 4;
+
+    MyHost::MyClipInstance *source =
+      dynamic_cast<MyHost::MyClipInstance *>(instance.getClip(kOfxImageEffectSimpleSourceClipName));
+    MyHost::MyClipInstance *output =
+      dynamic_cast<MyHost::MyClipInstance *>(instance.getClip(kOfxImageEffectOutputClipName));
 
     const OfxTime first = MetadataFixture::kFirstFrame;
     const OfxTime last  = MetadataFixture::kLastFrame;
@@ -1007,10 +1479,29 @@ namespace {
         report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
                      "render frame=" + formatTime(time) + " roi");
 
+        // a plugin which has yet to fetch its output image has left nothing to compare,
+        // and comparing what it renders against what it started from says nothing unless
+        // the two differed to begin with
+        MyHost::MyImage *held = output ? output->getOutputImage() : NULL;
+        MyHost::MyImage *wanted =
+          held && source ? dynamic_cast<MyHost::MyImage *>(source->getImage(time, NULL)) : NULL;
+
+        const bool comparable = wanted && !imagesEqual(*held, *wanted, renderWindow);
+
+        if(wanted)
+          report.check(comparable, "render frame=" + formatTime(time) + " pixels differ");
+
         stat = instance.renderAction(time, kOfxImageFieldBoth, renderWindow, renderScale,
                                      /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
         report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
                      "render frame=" + formatTime(time));
+
+        if(comparable)
+          report.check(imagesEqual(*held, *wanted, renderWindow),
+                       "render frame=" + formatTime(time) + " pixels rendered");
+
+        if(wanted)
+          wanted->releaseReference();
 
         rendered += 1;
       }
@@ -1033,6 +1524,13 @@ namespace {
 
     report.check(captured.find("metadataHost rendered frame") != std::string::npos,
                  "render messagecapture");
+
+    std::vector<LogRecord> records;
+    parseLogRecords(captured, records);
+
+    // a plugin which logs nothing in the grammar has nothing to hold to the fixture
+    if(!records.empty())
+      checkLogAgainstFixture(report, records, "render");
   }
 
   /// find a plugin by id in an already scanned cache, reporting the one precondition
@@ -1085,15 +1583,40 @@ namespace {
     return contexts.empty() ? std::string() : *contexts.begin();
   }
 
+  /// what a plugin named by --plugin-id is held to beyond the generic preconditions,
+  /// selected by name with --check. leastChecks is what the contract has to assert
+  /// before it can be said to have run at all
+  struct Contract {
+    const char *name;
+    int         leastChecks;
+    void      (*run)(Report &report, OFX::Host::ImageEffect::Instance &instance);
+  };
+
+  const Contract *const kContracts = NULL;
+  const int kContractCount = 0;
+
+  /// the contract of that name, NULL if there is none
+  const Contract *findContract(const std::string &name)
+  {
+    for(int i = 0; i < kContractCount; ++i) {
+      if(name == kContracts[i].name)
+        return &kContracts[i];
+    }
+
+    return NULL;
+  }
+
   /// load an arbitrary plugin by id and drive it far enough to prove the contract any
   /// plugin has to meet, regardless of what it does: it resolves, describes, creates an
   /// instance exposing the clips its context guarantees, and completes a render pass.
   /// It asserts nothing about composition order or retained keys, which a read-only
-  /// plugin implements neither of
-  void checkGenericPlugin(Report &report,
-                          MyHost::MetadataHost &host,
-                          const std::string &pluginDir,
-                          const std::string &pluginId)
+  /// plugin implements neither of. Returns the number of checks the contract made, zero
+  /// if none was asked for or it never got as far as running
+  int checkGenericPlugin(Report &report,
+                         MyHost::MetadataHost &host,
+                         const std::string &pluginDir,
+                         const std::string &pluginId,
+                         const Contract *contract)
   {
     BuildTreePluginCache cache(pluginDir);
     OFX::Host::ImageEffect::PluginCache effectCache(host);
@@ -1105,14 +1628,14 @@ namespace {
     OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, pluginId, pluginDir);
 
     if(!plugin)
-      return;
+      return 0;
 
     const std::string context = chooseContext(*plugin);
 
     std::unique_ptr<OFX::Host::ImageEffect::Instance> instance = createPluginInstance(report, plugin, context);
 
     if(!instance.get())
-      return;
+      return 0;
 
     report.check(instance->getClip(kOfxImageEffectSimpleSourceClipName) != NULL,
                  "plugin clip=" kOfxImageEffectSimpleSourceClipName);
@@ -1120,6 +1643,19 @@ namespace {
                  "plugin clip=" kOfxImageEffectOutputClipName);
 
     checkRender(report, *instance);
+
+    if(!contract)
+      return 0;
+
+    const int before = report.mark();
+
+    contract->run(report, *instance);
+
+    const int ran = report.mark() - before;
+
+    report.ranAtLeast(before, contract->leastChecks, std::string("check=") + contract->name);
+
+    return ran;
   }
 
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
@@ -1145,12 +1681,12 @@ namespace {
       return;
 
     OFX::Host::ImageEffect::ClipInstance *output = instance->getClip(kOfxImageEffectOutputClipName);
-    MyHost::MyIntegerInstance *order =
-      dynamic_cast<MyHost::MyIntegerInstance *>(instance->getParam(kOrderParam));
+    std::string orderValue = "none";
 
     if(!report.check(output != NULL, "plugin clip=" kOfxImageEffectOutputClipName))
       return;
-    if(!report.check(order != NULL, std::string("plugin param=") + kOrderParam))
+    if(!report.check(getParamValue(*instance, kOrderParam, orderValue),
+                     std::string("plugin param=") + kOrderParam))
       return;
 
     checkParams(report, *instance);
@@ -1173,7 +1709,7 @@ namespace {
       os << "effect order=" << which;
       const std::string where = os.str();
 
-      report.check(order->set(which) == kOfxStatOK, where + " parameter set");
+      report.check(setParamValue(*instance, kOrderParam, formatInt(which)), where + " parameter set");
 
       // the metadata is derived from the effect's state, so the sets already cached
       // for the old value of the parameter have to go
@@ -1228,7 +1764,7 @@ namespace {
     checkRender(report, *instance);
   }
 
-  int runChecks(const std::string &pluginDir, const std::string &pluginId)
+  int runChecks(const std::string &pluginDir, const std::string &pluginId, const Contract *contract)
   {
     MyHost::MetadataHost host;
     OfxHost *handle = host.getHandle();
@@ -1248,11 +1784,15 @@ namespace {
 
     if(pluginId.empty()) {
       checkFixture(report);
+      checkComparators(report);
       checkClips(report);
       checkPlugin(report, host, pluginDir);
     }
     else {
-      checkGenericPlugin(report, host, pluginDir, pluginId);
+      const int ran = checkGenericPlugin(report, host, pluginDir, pluginId, contract);
+
+      if(contract)
+        report.check(ran > 0, std::string("check=") + contract->name + " ran");
     }
 
     std::cout << "metadataHost checks=" << report.getChecks()
@@ -1265,6 +1805,7 @@ namespace {
   void usage(std::ostream &os)
   {
     os << "usage: metadataHost [--list] [--plugin-dir <path>] [--plugin-id <id>]" << std::endl;
+    os << "                   [--check <name>]" << std::endl;
     os << "  --list              print the fixture table and exit" << std::endl;
     os << "  --plugin-dir <path> look for the plugin bundle in <path> rather than in"
        << std::endl;
@@ -1279,6 +1820,9 @@ namespace {
        << std::endl;
     os << "                      plugin's own composition order and retained-key checks"
        << std::endl;
+    os << "  --check <name>      hold the plugin --plugin-id names to the named contract"
+       << std::endl;
+    os << "                      as well as to those preconditions" << std::endl;
     os << "  with no arguments, publish the fixture through a host, read it back" << std::endl;
     os << "  through the metadata suite, then run it through the metadata plugin and" << std::endl;
     os << "  check what comes back" << std::endl;
@@ -1291,6 +1835,7 @@ int main(int argc, char **argv)
   bool list = false;
   std::string pluginDir(METADATA_PLUGIN_DIR);
   std::string pluginId;
+  std::string checkName;
 
   for(int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
@@ -1314,6 +1859,14 @@ int main(int argc, char **argv)
       }
       pluginId = argv[++i];
     }
+    else if(arg == "--check") {
+      if(i + 1 >= argc) {
+        std::cerr << "metadataHost --check needs a name" << std::endl;
+        usage(std::cerr);
+        return 2;
+      }
+      checkName = argv[++i];
+    }
     else if(arg == "--help" || arg == "-h") {
       usage(std::cout);
       return 0;
@@ -1325,10 +1878,28 @@ int main(int argc, char **argv)
     }
   }
 
+  const Contract *contract = NULL;
+
+  if(!checkName.empty()) {
+    if(pluginId.empty()) {
+      std::cerr << "metadataHost --check needs --plugin-id" << std::endl;
+      usage(std::cerr);
+      return 2;
+    }
+
+    contract = findContract(checkName);
+
+    if(!contract) {
+      std::cerr << "metadataHost unknown check " << checkName << std::endl;
+      usage(std::cerr);
+      return 2;
+    }
+  }
+
   if(list) {
     listFixture();
     return 0;
   }
 
-  return runChecks(pluginDir, pluginId);
+  return runChecks(pluginDir, pluginId, contract);
 }

@@ -1373,7 +1373,7 @@ namespace OFX {
   {   
     if(!OFX::Private::gMessageSuite){ throwHostMissingSuiteException("message"); }
     if(!OFX::Private::gMessageSuite->message){ throwHostMissingSuiteException("message"); }
-    OfxStatus stat = OFX::Private::gMessageSuite->message(_effectHandle, mapMessageTypeEnumToStr(type), id.c_str(), msg.c_str());
+    OfxStatus stat = OFX::Private::gMessageSuite->message(_effectHandle, mapMessageTypeEnumToStr(type), id.c_str(), "%s", msg.c_str());
     return mapToMessageReplyEnum(stat);
   }
 
@@ -1381,7 +1381,7 @@ namespace OFX {
   {   
     if(!OFX::Private::gMessageSuiteV2){ throwHostMissingSuiteException("setPersistentMessage"); }
     if(!OFX::Private::gMessageSuiteV2->setPersistentMessage){ throwHostMissingSuiteException("setPersistentMessage"); }
-    OfxStatus stat = OFX::Private::gMessageSuiteV2->setPersistentMessage(_effectHandle, mapMessageTypeEnumToStr(type), id.c_str(), msg.c_str());
+    OfxStatus stat = OFX::Private::gMessageSuiteV2->setPersistentMessage(_effectHandle, mapMessageTypeEnumToStr(type), id.c_str(), "%s", msg.c_str());
     return mapToMessageReplyEnum(stat);
   }
 

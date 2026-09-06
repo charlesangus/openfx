@@ -32,8 +32,9 @@ namespace MyHost {
 
   MyEffectInstance::MyEffectInstance(OFX::Host::ImageEffect::ImageEffectPlugin* plugin,
                                      OFX::Host::ImageEffect::Descriptor& desc,
-                                     const std::string& context) 
+                                     const std::string& context)
                                      : OFX::Host::ImageEffect::Instance(plugin,desc,context,false)
+                                     , _messageCapture(NULL)
   {
   }
 
@@ -63,6 +64,17 @@ namespace MyHost {
                                        const char* format,
                                        va_list args)
   {
+    if(_messageCapture) {
+      char buf[1024];
+      vsnprintf(buf, sizeof(buf), format, args);
+      *_messageCapture += type;
+      *_messageCapture += " ";
+      *_messageCapture += id;
+      *_messageCapture += " ";
+      *_messageCapture += buf;
+      return kOfxStatOK;
+    }
+
     printf("%s %s ",type,id);
     vprintf(format,args);
     return kOfxStatOK;
@@ -146,6 +158,8 @@ namespace MyHost {
       return new MyBooleanInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeChoice)
       return new MyChoiceInstance(this,name,descriptor);
+    else if(descriptor.getType()==kOfxParamTypeString)
+      return new MyStringInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeRGBA)
       return new MyRGBAInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeRGB)

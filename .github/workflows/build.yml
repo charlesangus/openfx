@@ -443,6 +443,8 @@ jobs:
             exit 1
           fi
           "$BIN"
+          echo "Testing metadataHost with generic plugin mode"
+          "$BIN" --plugin-id org.openfx.examples.metadataPlugin
 
       - name: Install with cmake
         env:

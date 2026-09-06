@@ -177,6 +177,13 @@ namespace {
     return os.str();
   }
 
+  std::string formatInt(int v)
+  {
+    std::ostringstream os;
+    os << v;
+    return os.str();
+  }
+
   std::string formatInts(const int *v, int n)
   {
     std::ostringstream os;
@@ -640,10 +647,21 @@ namespace {
 
   const char kPluginId[] = "org.openfx.examples.metadataPlugin";
 
-  /// the plugin's parameter, and the two values of it this checks
+  /// the plugin's composition order parameter, and the two values of it this checks
   const char kOrderParam[] = "compositionOrder";
   const int  kMaskOverSource = 0;
   const int  kSourceOverMask = 1;
+
+  /// the plugin's string and choice parameters, the defaults it declares for them and
+  /// the values this writes through them
+  const char kNoteParam[]   = "note";
+  const char kNoteDefault[] = "unset";
+  const char kNoteScalar[]  = "scalar";
+  const char kNoteAtTime[]  = "attime";
+  const char kDetailParam[] = "detail";
+  const int  kDetailDefault = 0;
+  const int  kDetailScalar  = 2;
+  const int  kDetailAtTime  = 1;
 
   /// the plugin cache has no way to replace the default search path, only to add to
   /// it, and this must load the plugin built alongside it rather than whatever the
@@ -837,6 +855,63 @@ namespace {
     return ok;
   }
 
+  /// write a value through the host's string and choice parameter instances and read it
+  /// straight back, in both the scalar and the at-a-time form. A host that dropped what
+  /// was written, or that answered with the declared default instead of it, fails these
+  void checkParams(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    MyHost::MyStringInstance *note =
+      dynamic_cast<MyHost::MyStringInstance *>(instance.getParam(kNoteParam));
+    MyHost::MyChoiceInstance *detail =
+      dynamic_cast<MyHost::MyChoiceInstance *>(instance.getParam(kDetailParam));
+
+    if(!report.check(note != NULL, std::string("plugin param=") + kNoteParam))
+      return;
+    if(!report.check(detail != NULL, std::string("plugin param=") + kDetailParam))
+      return;
+
+    const OfxTime time = MetadataFixture::kLastFrame;
+    const std::string noteWhere = std::string("param=") + kNoteParam;
+    const std::string noteAtTime = noteWhere + " time=" + formatTime(time);
+
+    std::string text = "none";
+    bool ok = note->get(text) == kOfxStatOK && text == kNoteDefault;
+    report.check(ok, noteWhere + " default=" + text);
+
+    report.check(note->set(kNoteScalar) == kOfxStatOK, noteWhere + " set=" + kNoteScalar);
+
+    text = "none";
+    ok = note->get(text) == kOfxStatOK && text == kNoteScalar;
+    report.check(ok, noteWhere + " value=" + text);
+
+    report.check(note->set(time, kNoteAtTime) == kOfxStatOK, noteAtTime + " set=" + kNoteAtTime);
+
+    text = "none";
+    ok = note->get(time, text) == kOfxStatOK && text == kNoteAtTime;
+    report.check(ok, noteAtTime + " value=" + text);
+
+    const std::string choiceWhere = std::string("param=") + kDetailParam;
+    const std::string choiceAtTime = choiceWhere + " time=" + formatTime(time);
+
+    int option = -1;
+    ok = detail->get(option) == kOfxStatOK && option == kDetailDefault;
+    report.check(ok, choiceWhere + " default=" + formatInt(option));
+
+    report.check(detail->set(kDetailScalar) == kOfxStatOK,
+                 choiceWhere + " set=" + formatInt(kDetailScalar));
+
+    option = -1;
+    ok = detail->get(option) == kOfxStatOK && option == kDetailScalar;
+    report.check(ok, choiceWhere + " value=" + formatInt(option));
+
+    report.check(detail->set(time, kDetailAtTime) == kOfxStatOK,
+                 choiceAtTime + " set=" + formatInt(kDetailAtTime));
+
+    option = -1;
+    ok = detail->get(time, option) == kOfxStatOK && option == kDetailAtTime;
+    report.check(ok, choiceAtTime + " value=" + formatInt(option));
+  }
+
   /// change what an input clip publishes, drop that one clip's cached sets, and check
   /// the effect's output clip, which holds copies derived from them, gives back the new
   /// value. A host whose reader reloads one input has only that clip to invalidate
@@ -890,7 +965,8 @@ namespace {
   /// suite instead of letting it land between the PASS/FAIL lines above
   void checkRender(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
-    report.check(instance.getClipPreferences(), "render clipprefs");
+    if(!report.check(instance.getClipPreferences(), "render clipprefs"))
+      return;
 
     MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(&instance);
     report.check(effect != NULL, "render effect instance");
@@ -915,35 +991,38 @@ namespace {
 
     OfxStatus stat = instance.beginRenderAction(first, last, 1.0, false, renderScale,
                                                 /*sequential=*/true, /*interactive=*/false);
-    report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render beginsequence");
 
-    int rendered = 0;
+    // a plugin that refused to begin the sequence must not then be issued the frames
+    // of one, or the end of one
+    if(report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render beginsequence")) {
+      int rendered = 0;
 
-    for(OfxTime time = first; time <= last; time += 1) {
-      if(gMessageSuite)
-        gMessageSuite->message(instance.getHandle(), kOfxMessageLog, "metadataHost",
-                               "metadataHost rendered frame %g", time);
+      for(OfxTime time = first; time <= last; time += 1) {
+        if(gMessageSuite)
+          gMessageSuite->message(instance.getHandle(), kOfxMessageLog, "metadataHost",
+                                 "metadataHost rendered frame %g", time);
 
-      std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
-      stat = instance.getRegionOfInterestAction(time, renderScale, roi, rois);
-      report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
-                   "render frame=" + formatTime(time) + " roi");
+        std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
+        stat = instance.getRegionOfInterestAction(time, renderScale, roi, rois);
+        report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
+                     "render frame=" + formatTime(time) + " roi");
 
-      stat = instance.renderAction(time, kOfxImageFieldBoth, renderWindow, renderScale,
-                                   /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
-      report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
-                   "render frame=" + formatTime(time));
+        stat = instance.renderAction(time, kOfxImageFieldBoth, renderWindow, renderScale,
+                                     /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
+        report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
+                     "render frame=" + formatTime(time));
 
-      rendered += 1;
+        rendered += 1;
+      }
+
+      stat = instance.endRenderAction(first, last, 1.0, false, renderScale,
+                                      /*sequential=*/true, /*interactive=*/false);
+      report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render endsequence");
+
+      std::ostringstream framesWhere;
+      framesWhere << "render framesrendered=" << rendered;
+      report.check(rendered == int(last - first + 1), framesWhere.str());
     }
-
-    stat = instance.endRenderAction(first, last, 1.0, false, renderScale,
-                                    /*sequential=*/true, /*interactive=*/false);
-    report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render endsequence");
-
-    std::ostringstream framesWhere;
-    framesWhere << "render framesrendered=" << rendered;
-    report.check(rendered == int(last - first + 1), framesWhere.str());
 
     if(effect)
       effect->setMessageCapture(NULL);
@@ -984,15 +1063,16 @@ namespace {
       return instance;
 
     const OfxStatus created = instance->createInstanceAction();
-    report.check(created == kOfxStatOK || created == kOfxStatReplyDefault, "plugin createinstance");
+
+    if(!report.check(created == kOfxStatOK || created == kOfxStatReplyDefault, "plugin createinstance"))
+      instance.reset();
 
     return instance;
   }
 
-  /// the context a plugin driven by --plugin-id is instantiated in: the one Filter
-  /// context read-only plugins are expected to declare, falling back to whatever the
-  /// plugin does declare so the scratch composition plugin, which predates that
-  /// convention and only declares General, can still be driven through this mode
+  /// the context a plugin driven by --plugin-id is instantiated in: Filter is preferred,
+  /// General is the fallback for a plugin that declares only it, and failing both,
+  /// whatever the plugin does declare
   std::string chooseContext(OFX::Host::ImageEffect::ImageEffectPlugin &plugin)
   {
     const std::set<std::string> &contexts = plugin.getContexts();
@@ -1072,6 +1152,8 @@ namespace {
       return;
     if(!report.check(order != NULL, std::string("plugin param=") + kOrderParam))
       return;
+
+    checkParams(report, *instance);
 
     std::vector<std::string> contested;
     contestedKeys(contested);

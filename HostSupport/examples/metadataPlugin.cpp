@@ -41,6 +41,13 @@ static const char kSourceClip[] = kOfxImageEffectSimpleSourceClipName;
 static const char kMaskClip[]   = "Mask";
 static const char kOrderParam[] = "compositionOrder";
 
+// nothing in this plugin reads these two: they are declared so that a host's string
+// and choice parameter instances are instantiated and can be driven
+static const char kNoteParam[]    = "note";
+static const char kNoteDefault[]  = "unset";
+static const char kDetailParam[]  = "detail";
+static const int  kDetailDefault  = 0;
+
 static OfxHost                      *gHost = 0;
 static const OfxImageEffectSuiteV1  *gEffectSuite = 0;
 static const OfxPropertySuiteV2     *gPropSuite = 0;
@@ -210,6 +217,21 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
   gPropSuite->propSetString(paramProps, kOfxPropLabel, 0, "Composition Order");
   gPropSuite->propSetString(paramProps, kOfxParamPropHint, 0,
                             "0 composes Mask over Source, 1 composes Source over Mask");
+
+  if(gParamSuite->paramDefine(paramSet, kOfxParamTypeString, kNoteParam, &paramProps) != kOfxStatOK)
+    return kOfxStatFailed;
+
+  gPropSuite->propSetString(paramProps, kOfxParamPropDefault, 0, kNoteDefault);
+  gPropSuite->propSetString(paramProps, kOfxPropLabel, 0, "Note");
+
+  if(gParamSuite->paramDefine(paramSet, kOfxParamTypeChoice, kDetailParam, &paramProps) != kOfxStatOK)
+    return kOfxStatFailed;
+
+  gPropSuite->propSetInt(paramProps, kOfxParamPropDefault, 0, kDetailDefault);
+  gPropSuite->propSetString(paramProps, kOfxParamPropChoiceOption, 0, "terse");
+  gPropSuite->propSetString(paramProps, kOfxParamPropChoiceOption, 1, "verbose");
+  gPropSuite->propSetString(paramProps, kOfxParamPropChoiceOption, 2, "full");
+  gPropSuite->propSetString(paramProps, kOfxPropLabel, 0, "Detail");
 
   return kOfxStatOK;
 }

@@ -9,6 +9,7 @@
 
 #include "ofxCore.h"
 #include "ofxImageEffect.h"
+#include "ofxMessage.h"
 #include "ofxParam.h"
 #include "ofxProperty.h"
 #include "ofxMetadata.h"
@@ -32,6 +33,12 @@
 // knowledge of which keys its inputs carry: it enumerates them and reads each one
 // back by the type the host reports for it, which is what a plugin that means to
 // pass metadata through has to do.
+//
+// It also writes a handful of keys of its own into the set the host hands it, which
+// the host has to put over whatever the same key inherited. One value of its
+// 'compositionOrder' parameter makes it write into everything the action can write
+// into and then report the action untrapped, which a host has to ignore in full, and
+// another makes it nominate no source clip at all.
 
 // the host composes this property's name by post pending the clip's name, and the
 // api defines the prefix in prose rather than as a macro
@@ -41,10 +48,35 @@ static const char kSourceClip[] = kOfxImageEffectSimpleSourceClipName;
 static const char kMaskClip[]   = "Mask";
 static const char kOrderParam[] = "compositionOrder";
 
-// nothing in this plugin reads these two: they are declared so that a host's string
-// and choice parameter instances are instantiated and can be driven
+// the value of the composition order parameter which selects the path that writes and
+// then reports the action untrapped
+static const int kOrderUntrapped = 2;
+
+// the value which selects the path nominating no source clip at all
+static const int kOrderNoSource = 3;
+
+// the keys the plugin writes into the set it is handed, under its own reverse DNS prefix
+// as the standard requires of a key it does not define itself. The frame rate is one the
+// plugin also retains from Source, so that the host putting one over the other is
+// observable, and the last is named after the property the host reads the composition
+// order out of, which lives in the action's out args and so cannot be confused with a key
+// of that name
+static const char   kContributedNoteKey[]    = "org.openfx.examples.metadataPlugin.note";
+static const char   kContributedGainKey[]    = "org.openfx.examples.metadataPlugin.gain";
+static const char   kContributedPassesKey[]  = "org.openfx.examples.metadataPlugin.passes";
+static const char   kContributedWindowKey[]  = "org.openfx.examples.metadataPlugin.window";
+
+static const double kContributedGain         = 1.75;
+static const int    kContributedPasses       = 5;
+static const int    kContributedWindow[]     = {12, 24, 1908, 1056};
+static const double kContributedFrameRate    = 48.0;
+static const char   kContributedSourceClip[] = "contributed";
+
 static const char kNoteParam[]    = "note";
 static const char kNoteDefault[]  = "unset";
+
+// nothing in this plugin reads this one: it is declared so that a host's choice parameter
+// instance is instantiated and can be driven
 static const char kDetailParam[]  = "detail";
 static const int  kDetailDefault  = 0;
 
@@ -53,6 +85,7 @@ static const OfxImageEffectSuiteV1  *gEffectSuite = 0;
 static const OfxPropertySuiteV2     *gPropSuite = 0;
 static const OfxParameterSuiteV1    *gParamSuite = 0;
 static const OfxMetadataSuiteV1     *gMetadataSuite = 0;
+static const OfxMessageSuiteV2      *gMessageSuite = 0;
 
 static OfxStatus collectKey(const char *key, void *userData)
 {
@@ -164,9 +197,26 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
   if(gPropSuite->propGetDouble(inArgs, kOfxPropTime, 0, &time) != kOfxStatOK)
     return kOfxStatFailed;
 
+  void *vended = 0;
+
+  if(gPropSuite->propGetPointer(inArgs, kOfxImageEffectPropMetadataSet, 0, &vended) != kOfxStatOK || !vended)
+    return kOfxStatFailed;
+
+  std::vector<std::string> written;
+
+  if(gMetadataSuite->metadataEnumerate((OfxPropertySetHandle) vended, collectKey, &written) != kOfxStatOK)
+    return kOfxStatFailed;
+
+  // the set arrives empty, and the log line is how a host driving this plugin sees that
+  // it did
+  gMessageSuite->message(effect, kOfxMessageLog, "metadataPlugin",
+                         "metadataPlugin metadataset present keys=%d", int(written.size()));
+
   OfxParamSetHandle paramSet = 0;
   OfxParamHandle order = 0;
+  OfxParamHandle noteParam = 0;
   int reversed = 0;
+  char *note = 0;
 
   if(gEffectSuite->getParamSet(effect, &paramSet) != kOfxStatOK)
     return kOfxStatFailed;
@@ -174,6 +224,48 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
     return kOfxStatFailed;
   if(gParamSuite->paramGetValueAtTime(order, time, &reversed) != kOfxStatOK)
     return kOfxStatFailed;
+  if(gParamSuite->paramGetHandle(paramSet, kNoteParam, &noteParam, 0) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gParamSuite->paramGetValueAtTime(noteParam, time, &note) != kOfxStatOK || !note)
+    return kOfxStatFailed;
+
+  OfxPropertySetHandle contribution = (OfxPropertySetHandle) vended;
+  const int window = int(sizeof(kContributedWindow) / sizeof(kContributedWindow[0]));
+
+  if(gMetadataSuite->metadataSetString(contribution, kContributedNoteKey, note) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetDouble(contribution, kContributedGainKey, kContributedGain) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetInt(contribution, kContributedPassesKey, kContributedPasses) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetIntN(contribution, kContributedWindowKey, window, kContributedWindow) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetDouble(contribution, kOfxMetadataKeyFrameRate, kContributedFrameRate) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetString(contribution, kOfxImageEffectPropMetadataSourceClip,
+                                       kContributedSourceClip) != kOfxStatOK)
+    return kOfxStatFailed;
+
+  // none of what this path writes is what the host arrives at on its own: it nominates
+  // the clip the host does not default to and drops the keys retained from the one it
+  // does, on top of the keys already contributed above, and then reports the action
+  // untrapped so that every one of those writes has to be ignored
+  if(reversed == kOrderUntrapped) {
+    const char *nominated = kMaskClip;
+    const std::string retained = std::string(kRetainedKeysPropPrefix) + kSourceClip;
+
+    if(gPropSuite->propSetStringN(outArgs, kOfxImageEffectPropMetadataSourceClip, 1, &nominated) != kOfxStatOK)
+      return kOfxStatFailed;
+    if(gPropSuite->propSetStringN(outArgs, retained.c_str(), 0, 0) != kOfxStatOK)
+      return kOfxStatFailed;
+
+    return kOfxStatReplyDefault;
+  }
+
+  // nominating no clip at all leaves the output nothing to inherit, so it carries only
+  // what was contributed above
+  if(reversed == kOrderNoSource)
+    return gPropSuite->propSetStringN(outArgs, kOfxImageEffectPropMetadataSourceClip, 0, 0);
 
   // the list is read in increasing precedence, so the clip named last wins
   const char *sources[2];
@@ -216,7 +308,9 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
   gPropSuite->propSetInt(paramProps, kOfxParamPropDefault, 0, 0);
   gPropSuite->propSetString(paramProps, kOfxPropLabel, 0, "Composition Order");
   gPropSuite->propSetString(paramProps, kOfxParamPropHint, 0,
-                            "0 composes Mask over Source, 1 composes Source over Mask");
+                            "0 composes Mask over Source, 1 composes Source over Mask, "
+                            "2 writes and then reports the action untrapped, "
+                            "3 nominates no source clip at all");
 
   if(gParamSuite->paramDefine(paramSet, kOfxParamTypeString, kNoteParam, &paramProps) != kOfxStatOK)
     return kOfxStatFailed;
@@ -262,8 +356,9 @@ static OfxStatus onLoad(void)
   gPropSuite     = (const OfxPropertySuiteV2 *)    gHost->fetchSuite(gHost->host, kOfxPropertySuite, 2);
   gParamSuite    = (const OfxParameterSuiteV1 *)   gHost->fetchSuite(gHost->host, kOfxParameterSuite, 1);
   gMetadataSuite = (const OfxMetadataSuiteV1 *)    gHost->fetchSuite(gHost->host, kOfxMetadataSuite, 1);
+  gMessageSuite  = (const OfxMessageSuiteV2 *)     gHost->fetchSuite(gHost->host, kOfxMessageSuite, 2);
 
-  if(!gEffectSuite || !gPropSuite || !gParamSuite || !gMetadataSuite)
+  if(!gEffectSuite || !gPropSuite || !gParamSuite || !gMetadataSuite || !gMessageSuite)
     return kOfxStatErrMissingHostFeature;
 
   return kOfxStatOK;

@@ -733,7 +733,8 @@ static inline const std::map<std::array<std::string_view, 2>, std::vector<const 
   { "OfxImageEffectPropFrameRange" } },
 // OfxImageEffectActionGetMetadata.inArgs
 { { "OfxImageEffectActionGetMetadata", "inArgs" },
-  { "OfxPropTime" } },
+  { "OfxImageEffectPropMetadataSet",
+    "OfxPropTime" } },
 // OfxImageEffectActionGetMetadata.outArgs
 { { "OfxImageEffectActionGetMetadata", "outArgs" },
   { "OfxImageEffectPropMetadataSourceClip" } },

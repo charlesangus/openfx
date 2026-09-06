@@ -463,9 +463,11 @@ namespace OFX {
       // MetadataSet
       //
 
-      MetadataSet::MetadataSet()
+      MetadataSet::MetadataSet(bool writable, bool pluginOwned)
         : Property::Set()
         , _referenceCount(1)
+        , _writable(writable)
+        , _pluginOwned(pluginOwned)
       {
       }
 

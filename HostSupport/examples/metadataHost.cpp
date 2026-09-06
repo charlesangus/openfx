@@ -334,52 +334,76 @@ namespace {
     return kOfxStatOK;
   }
 
-  /// read a key back the way a plugin has to, by asking the host what type it is rather
-  /// than by knowing in advance
-  bool readValue(OfxPropertySetHandle metadata, const char *key, std::string &type, std::string &value)
+  /// read a key back the way a plugin has to, by asking the host what type and dimension
+  /// it has rather than by knowing in advance
+  bool readValueN(OfxPropertySetHandle metadata,
+                  const char *key,
+                  std::string &type,
+                  int &dimension,
+                  std::string &value)
   {
     OfxPropDataType dataType = kOfxPropDataTypeNone;
-    int dimension = 0;
+
+    dimension = 0;
+    value.clear();
 
     if(gPropSuite->propGetType(metadata, key, &dataType) != kOfxStatOK)
       return false;
 
-    if(gPropSuite->propGetDimension(metadata, key, &dimension) != kOfxStatOK)
+    if(gPropSuite->propGetDimension(metadata, key, &dimension) != kOfxStatOK || dimension < 1)
       return false;
 
     switch(dataType) {
     case kOfxPropDataTypeString : {
-      char *v = NULL;
-      if(dimension != 1 || gPropSuite->propGetString(metadata, key, 0, &v) != kOfxStatOK || !v)
+      std::vector<char *> v(dimension, (char *) NULL);
+      if(gPropSuite->propGetStringN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
       type = "string";
-      value = v;
+      for(int i = 0; i < dimension; ++i) {
+        if(!v[i])
+          return false;
+        value += (i ? "," : "");
+        value += v[i];
+      }
       return true;
     }
 
     case kOfxPropDataTypeDouble : {
-      double v = 0;
-      if(dimension != 1 || gPropSuite->propGetDouble(metadata, key, 0, &v) != kOfxStatOK)
+      std::vector<double> v(dimension, 0.0);
+      if(gPropSuite->propGetDoubleN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
       type = "double";
-      value = formatDouble(v);
+      for(int i = 0; i < dimension; ++i) {
+        value += (i ? "," : "");
+        value += formatDouble(v[i]);
+      }
       return true;
     }
 
     case kOfxPropDataTypeInteger : {
-      int v[MetadataFixture::kMaxInts];
-      if(dimension < 1 || dimension > MetadataFixture::kMaxInts)
-        return false;
-      if(gPropSuite->propGetIntN(metadata, key, dimension, v) != kOfxStatOK)
+      std::vector<int> v(dimension, 0);
+      if(gPropSuite->propGetIntN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
       type = "int";
-      value = formatInts(v, dimension);
+      value = formatInts(&v[0], dimension);
       return true;
     }
 
     default :
       return false;
     }
+  }
+
+  /// read a key the fixture describes, which is a single value unless it is an array of
+  /// at most kMaxInts ints
+  bool readValue(OfxPropertySetHandle metadata, const char *key, std::string &type, std::string &value)
+  {
+    int dimension = 0;
+
+    if(!readValueN(metadata, key, type, dimension, value))
+      return false;
+
+    return type == "int" ? dimension <= MetadataFixture::kMaxInts : dimension == 1;
   }
 
 #endif // OFX_SUPPORTS_METADATA
@@ -1026,6 +1050,200 @@ namespace {
   }
 
   ////////////////////////////////////////////////////////////////////////////////
+  // the write path
+
+  /// the keys this writes, in a namespace of the harness's own since the standard
+  /// prefix is reserved for the standard vocabulary
+  const char kWrittenString[]  = "org.openfx.metadataHost/string";
+  const char kWrittenDouble[]  = "org.openfx.metadataHost/double";
+  const char kWrittenInt[]     = "org.openfx.metadataHost/int";
+  const char kWrittenStringN[] = "org.openfx.metadataHost/stringn";
+  const char kWrittenDoubleN[] = "org.openfx.metadataHost/doublen";
+  const char kWrittenIntN[]    = "org.openfx.metadataHost/intn";
+  const char kWrittenNever[]   = "org.openfx.metadataHost/never";
+
+  /// the values the writes in here write
+  const char *const kWriteStrings[] = {"one", "two", "three"};
+  const double      kWriteDoubles[] = {1.25, 2.5};
+  const int         kWriteInts[]    = {11, 22, 33, 44};
+
+  /// the six metadataSet entry points, in the order callSetter takes them
+  const char *const kSetterNames[] = {"string", "double", "int", "stringn", "doublen", "intn"};
+  const int kSetterCount = int(sizeof(kSetterNames) / sizeof(kSetterNames[0]));
+
+  /// call one metadataSet entry point with arguments which are valid in themselves, so
+  /// that what the call reports is down to the handle and the key it is given
+  OfxStatus callSetter(int which, OfxPropertySetHandle metadata, const char *key)
+  {
+    switch(which) {
+    case 0 : return gMetadataSuite->metadataSetString(metadata, key, kWriteStrings[0]);
+    case 1 : return gMetadataSuite->metadataSetDouble(metadata, key, kWriteDoubles[0]);
+    case 2 : return gMetadataSuite->metadataSetInt(metadata, key, kWriteInts[0]);
+    case 3 : return gMetadataSuite->metadataSetStringN(metadata, key, 3, kWriteStrings);
+    case 4 : return gMetadataSuite->metadataSetDoubleN(metadata, key, 2, kWriteDoubles);
+    case 5 : return gMetadataSuite->metadataSetIntN(metadata, key, 4, kWriteInts);
+    }
+
+    return kOfxStatFailed;
+  }
+
+  /// the status every one of the six gives for a handle and a key, one check each
+  void checkSetters(Report &report,
+                    OfxPropertySetHandle metadata,
+                    const char *key,
+                    OfxStatus expected,
+                    const std::string &where)
+  {
+    for(int i = 0; i < kSetterCount; ++i) {
+      const OfxStatus st = callSetter(i, metadata, key);
+
+      report.check(st == expected, where + " set=" + kSetterNames[i]
+                   + " status=" + formatInt(st) + " expected=" + formatInt(expected));
+    }
+  }
+
+  /// what one write reported, and what the key holds once it has been made
+  void checkWritten(Report &report,
+                    OfxPropertySetHandle metadata,
+                    const char *key,
+                    OfxStatus st,
+                    const std::string &type,
+                    int dimension,
+                    const std::string &expected)
+  {
+    const std::string where = std::string("write key=") + key;
+
+    if(!report.check(st == kOfxStatOK, where + " written status=" + formatInt(st)))
+      return;
+
+    std::string readType;
+    std::string value;
+    int readDimension = 0;
+    const bool ok = readValueN(metadata, key, readType, readDimension, value);
+
+    std::ostringstream os;
+    os << where << " type=" << readType << " dim=" << readDimension << " value=" << value
+       << " expected " << type << " dim=" << dimension << " value=" << expected;
+
+    report.check(ok && readType == type && readDimension == dimension && value == expected, os.str());
+  }
+
+  /// drive the six metadataSet entry points and the statuses they owe against sets the
+  /// harness makes itself, since a plugin sees a writable set only inside the get
+  /// metadata action and would have to misbehave to reach the cases which must fail
+  void checkMetadataWrites(Report &report)
+  {
+    OFX::Host::ImageEffect::MetadataSet *set = new OFX::Host::ImageEffect::MetadataSet(true, false);
+    OfxPropertySetHandle writable = set->getPropHandle();
+
+    checkWritten(report, writable, kWrittenString,
+                 gMetadataSuite->metadataSetString(writable, kWrittenString, kWriteStrings[0]),
+                 "string", 1, "one");
+
+    checkWritten(report, writable, kWrittenDouble,
+                 gMetadataSuite->metadataSetDouble(writable, kWrittenDouble, kWriteDoubles[0]),
+                 "double", 1, "1.25");
+
+    checkWritten(report, writable, kWrittenInt,
+                 gMetadataSuite->metadataSetInt(writable, kWrittenInt, kWriteInts[0]),
+                 "int", 1, "11");
+
+    checkWritten(report, writable, kWrittenStringN,
+                 gMetadataSuite->metadataSetStringN(writable, kWrittenStringN, 3, kWriteStrings),
+                 "string", 3, "one,two,three");
+
+    checkWritten(report, writable, kWrittenDoubleN,
+                 gMetadataSuite->metadataSetDoubleN(writable, kWrittenDoubleN, 2, kWriteDoubles),
+                 "double", 2, "1.25,2.5");
+
+    checkWritten(report, writable, kWrittenIntN,
+                 gMetadataSuite->metadataSetIntN(writable, kWrittenIntN, 4, kWriteInts),
+                 "int", 4, "11,22,33,44");
+
+    // a key written again takes the dimension it is written with, whatever it had before
+    checkWritten(report, writable, kWrittenIntN,
+                 gMetadataSuite->metadataSetIntN(writable, kWrittenIntN, 2, kWriteInts),
+                 "int", 2, "11,22");
+
+    // a set a clip vends is read only, and refuses every one of them
+    OFX::Host::ImageEffect::ClipDescriptor descriptor(MetadataFixture::kInputClips[0]);
+    MyHost::MetadataClipInstance clip(&descriptor);
+    OfxPropertySetHandle readOnly = NULL;
+    const OfxStatus fetched = gMetadataSuite->clipGetMetadata(clip.getHandle(),
+                                                              MetadataFixture::kFirstFrame,
+                                                              &readOnly);
+
+    if(report.check(fetched == kOfxStatOK && readOnly, "write readonly fetched")) {
+      checkSetters(report, readOnly, kWrittenString, kOfxStatErrValue, "write readonly");
+      gMetadataSuite->metadataRelease(readOnly);
+    }
+
+    // a property set which is not a metadata set at all is a bad handle, as is no key
+    OFX::Host::Property::Set plain;
+
+    checkSetters(report, plain.getHandle(), kWrittenString, kOfxStatErrBadHandle, "write plainset");
+    checkSetters(report, writable, NULL, kOfxStatErrBadHandle, "write nullkey");
+    checkSetters(report, writable, "", kOfxStatErrValue, "write emptykey");
+
+    report.check(gMetadataSuite->metadataSetStringN(writable, kWrittenStringN, 0, kWriteStrings) == kOfxStatErrValue,
+                 "write nocount set=stringn");
+    report.check(gMetadataSuite->metadataSetDoubleN(writable, kWrittenDoubleN, 0, kWriteDoubles) == kOfxStatErrValue,
+                 "write nocount set=doublen");
+    report.check(gMetadataSuite->metadataSetIntN(writable, kWrittenIntN, 0, kWriteInts) == kOfxStatErrValue,
+                 "write nocount set=intn");
+
+    report.check(gMetadataSuite->metadataSetStringN(writable, kWrittenStringN, 3, NULL) == kOfxStatErrValue,
+                 "write novalues set=stringn");
+    report.check(gMetadataSuite->metadataSetDoubleN(writable, kWrittenDoubleN, 2, NULL) == kOfxStatErrValue,
+                 "write novalues set=doublen");
+    report.check(gMetadataSuite->metadataSetIntN(writable, kWrittenIntN, 4, NULL) == kOfxStatErrValue,
+                 "write novalues set=intn");
+
+    // a NULL string is refused rather than dereferenced, and a refused write leaves the
+    // key as it was, whether it was there or not
+    const char *const nulled[] = {"one", NULL, "three"};
+
+    report.check(gMetadataSuite->metadataSetString(writable, kWrittenNever, NULL) == kOfxStatErrValue,
+                 "write nullstring set=string");
+    report.check(gMetadataSuite->metadataSetStringN(writable, kWrittenNever, 3, nulled) == kOfxStatErrValue,
+                 "write nullstring set=stringn");
+
+    std::string neverType;
+    std::string neverValue;
+    int neverDimension = 0;
+
+    report.check(!readValueN(writable, kWrittenNever, neverType, neverDimension, neverValue),
+                 std::string("write nullstring absent key=") + kWrittenNever);
+
+    report.check(gMetadataSuite->metadataSetStringN(writable, kWrittenStringN, 3, nulled) == kOfxStatErrValue,
+                 "write nullstring set=stringn existing");
+
+    std::string keptType;
+    std::string keptValue;
+    int keptDimension = 0;
+    const bool kept = readValueN(writable, kWrittenStringN, keptType, keptDimension, keptValue);
+
+    report.check(kept && keptType == "string" && keptDimension == 3 && keptValue == "one,two,three",
+                 std::string("write nullstring unchanged key=") + kWrittenStringN
+                 + " type=" + keptType + " value=" + keptValue);
+
+    // the host owns this one, so a plugin releasing it is refused and the set it is
+    // about to read is still there
+    report.check(gMetadataSuite->metadataRelease(writable) == kOfxStatErrValue, "write release refused");
+
+    std::string type;
+    std::string value;
+    int dimension = 0;
+    const bool readable = readValueN(writable, kWrittenString, type, dimension, value);
+
+    report.check(readable && type == "string" && dimension == 1 && value == "one",
+                 std::string("write release readable key=") + kWrittenString
+                 + " type=" + type + " value=" + value);
+
+    set->releaseReference();
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
   // the checks that need the plugin
 
   const char kPluginId[] = "org.openfx.examples.metadataPlugin";
@@ -1034,6 +1252,14 @@ namespace {
   const char kOrderParam[] = "compositionOrder";
   const int  kMaskOverSource = 0;
   const int  kSourceOverMask = 1;
+
+  /// the value of that parameter which makes the plugin write into everything the action
+  /// can write into and then report the action untrapped
+  const int  kUntrappedOrder = 2;
+
+  /// the value which makes it nominate no source clip at all, so that there is nothing to
+  /// inherit and the output carries only what it contributed
+  const int  kNoSourceOrder = 3;
 
   /// the plugin's string and choice parameters, the defaults it declares for them and
   /// the values this writes through them
@@ -1045,6 +1271,62 @@ namespace {
   const int  kDetailDefault = 0;
   const int  kDetailScalar  = 2;
   const int  kDetailAtTime  = 1;
+
+  /// the keys the plugin writes under its own reverse DNS prefix, and the values it
+  /// writes into them, the string one being whatever the note parameter holds
+  const char kContributedNote[]   = "org.openfx.examples.metadataPlugin.note";
+  const char kContributedGain[]   = "org.openfx.examples.metadataPlugin.gain";
+  const char kContributedPasses[] = "org.openfx.examples.metadataPlugin.passes";
+  const char kContributedWindow[] = "org.openfx.examples.metadataPlugin.window";
+
+  const double kContributedGainValue     = 1.75;
+  const int    kContributedPassesValue   = 5;
+  const int    kContributedWindowValue[] = {12, 24, 1908, 1056};
+  const int    kContributedWindowCount   =
+    int(sizeof(kContributedWindowValue) / sizeof(kContributedWindowValue[0]));
+
+  /// the value it writes into the one key it also retains from Source, and into the one
+  /// named after the property the composition order is nominated in
+  const double kContributedFrameRate    = 48.0;
+  const char   kContributedSourceClip[] = "contributed";
+
+  /// a key the plugin writes into the set the host hands it, and what it has to read
+  /// back as on the output clip once the host has put it over what was inherited
+  struct Contributed {
+    std::string key;
+    std::string type;
+    int         dimension;
+    std::string value;
+  };
+
+  void addContributed(std::vector<Contributed> &contributed,
+                      const std::string &key,
+                      const std::string &type,
+                      int dimension,
+                      const std::string &value)
+  {
+    Contributed one;
+
+    one.key = key;
+    one.type = type;
+    one.dimension = dimension;
+    one.value = value;
+
+    contributed.push_back(one);
+  }
+
+  /// everything the plugin contributes when the note parameter holds the given value,
+  /// composed the way the fixture's own entries are rather than written out as literals
+  void contributedKeys(const std::string &note, std::vector<Contributed> &contributed)
+  {
+    addContributed(contributed, kContributedNote, "string", 1, note);
+    addContributed(contributed, kContributedGain, "double", 1, formatDouble(kContributedGainValue));
+    addContributed(contributed, kContributedPasses, "int", 1, formatInt(kContributedPassesValue));
+    addContributed(contributed, kContributedWindow, "int", kContributedWindowCount,
+                   formatInts(kContributedWindowValue, kContributedWindowCount));
+    addContributed(contributed, kOfxMetadataKeyFrameRate, "double", 1, formatDouble(kContributedFrameRate));
+    addContributed(contributed, kOfxImageEffectPropMetadataSourceClip, "string", 1, kContributedSourceClip);
+  }
 
   /// the plugin retains only the keys of the standard vocabulary, so this is the one
   /// thing the harness has to know about it beyond the order it composes in
@@ -1061,25 +1343,51 @@ namespace {
   }
 
   /// what composing the fixture in that order, retaining only the standard keys, should
-  /// leave on the effect's output clip
+  /// leave on the effect's output clip. In the order the plugin does not trap the action
+  /// in, what the host offered it stands instead
   void expectedOutput(int order,
                       OfxTime time,
+                      const std::string &note,
                       std::map<std::string, std::string> &values,
                       std::map<std::string, std::string> &types)
   {
-    std::vector<std::string> clips;
-    sourceClips(order, clips);
-
-    for(size_t c = 0; c < clips.size(); ++c) {
+    if(order == kUntrappedOrder) {
       for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
         const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
 
-        if(!entryAppliesAt(entry, clips[c], time) || !isStandardKey(entry.key))
+        if(!entryAppliesAt(entry, MetadataFixture::kInputClips[0], time))
           continue;
 
         values[entry.key] = entryValue(entry);
         types[entry.key] = typeName(entry.type);
       }
+
+      return;
+    }
+
+    if(order != kNoSourceOrder) {
+      std::vector<std::string> clips;
+      sourceClips(order, clips);
+
+      for(size_t c = 0; c < clips.size(); ++c) {
+        for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+          const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
+
+          if(!entryAppliesAt(entry, clips[c], time) || !isStandardKey(entry.key))
+            continue;
+
+          values[entry.key] = entryValue(entry);
+          types[entry.key] = typeName(entry.type);
+        }
+      }
+    }
+
+    std::vector<Contributed> contributed;
+    contributedKeys(note, contributed);
+
+    for(size_t c = 0; c < contributed.size(); ++c) {
+      values[contributed[c].key] = contributed[c].value;
+      types[contributed[c].key] = contributed[c].type;
     }
   }
 
@@ -1089,6 +1397,7 @@ namespace {
                    OFX::Host::ImageEffect::ClipInstance &output,
                    int order,
                    OfxTime time,
+                   const std::string &note,
                    std::map<std::string, std::string> &read)
   {
     std::ostringstream os;
@@ -1103,7 +1412,7 @@ namespace {
 
     std::map<std::string, std::string> values;
     std::map<std::string, std::string> types;
-    expectedOutput(order, time, values, types);
+    expectedOutput(order, time, note, values, types);
 
     std::set<std::string> expected;
     for(std::map<std::string, std::string>::const_iterator it = values.begin(); it != values.end(); ++it)
@@ -1131,6 +1440,29 @@ namespace {
 
     for(std::map<std::string, std::string>::const_iterator it = values.begin(); it != values.end(); ++it)
       report.check(found.count(it->first) != 0, where + " key=" + it->first + " present");
+
+    // in the order the plugin does not trap the action in there is nothing of what it
+    // contributed to read back, and the key set checked above is what says so
+    if(order != kUntrappedOrder) {
+      std::vector<Contributed> contributed;
+      contributedKeys(note, contributed);
+
+      for(size_t c = 0; c < contributed.size(); ++c) {
+        const Contributed &one = contributed[c];
+
+        std::string type = "none";
+        std::string value = "none";
+        int dimension = 0;
+
+        const bool ok = readValueN(metadata, one.key.c_str(), type, dimension, value)
+                        && type == one.type
+                        && dimension == one.dimension
+                        && value == one.value;
+
+        report.check(ok, where + " contributed=" + one.key + " type=" + type
+                     + " dimension=" + formatInt(dimension) + " value=" + value);
+      }
+    }
 
     report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
   }
@@ -1167,7 +1499,7 @@ namespace {
   /// the keys whose composed value the fixture changes at every frame of its range, in
   /// the given order. A host that derived the output's metadata once and kept it, rather
   /// than per frame, would hand back the same value for these at every frame
-  void composedPerFrameKeys(int order, std::vector<std::string> &keys)
+  void composedPerFrameKeys(int order, const std::string &note, std::vector<std::string> &keys)
   {
     std::map<std::string, std::set<std::string> > seen;
     int frames = 0;
@@ -1175,7 +1507,7 @@ namespace {
     for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
       std::map<std::string, std::string> values;
       std::map<std::string, std::string> types;
-      expectedOutput(order, time, values, types);
+      expectedOutput(order, time, note, values, types);
 
       for(std::map<std::string, std::string>::const_iterator it = values.begin(); it != values.end(); ++it)
         seen[it->first].insert(it->second);
@@ -2019,6 +2351,20 @@ namespace {
 
 #ifdef OFX_SUPPORTS_METADATA
 
+  /// the number of non overlapping occurrences of what in text
+  int countOccurrences(const std::string &text, const std::string &what)
+  {
+    int found = 0;
+    std::string::size_type at = text.find(what);
+
+    while(at != std::string::npos) {
+      found += 1;
+      at = text.find(what, at + what.size());
+    }
+
+    return found;
+  }
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -2052,6 +2398,25 @@ namespace {
 
     checkParams(report, *instance);
 
+    // the plugin derives one of the keys it contributes from this, so what it holds now
+    // is what the output has to come back carrying
+    std::string note = "none";
+    const bool noted = getParamValue(*instance, kNoteParam, note) && !note.empty();
+
+    report.check(noted, std::string("effect param=") + kNoteParam + " contributed=" + note);
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    const int defaultOrder = kMaskOverSource;
+    report.check(orderValue == formatInt(defaultOrder),
+                 std::string("plugin param=") + kOrderParam + " default=" + orderValue);
+
+    // nothing has touched the instance yet, so this is the composition a param change
+    // later on has to be shown moving the output away from
+    std::map<std::string, std::string> baseline;
+    checkOutput(report, *output, defaultOrder, MetadataFixture::kFirstFrame, note, baseline);
+
     std::vector<std::string> contested;
     contestedKeys(contested);
     report.check(!contested.empty(), "fixture contestedkeys=" + joinKeys(std::set<std::string>(contested.begin(), contested.end())));
@@ -2063,6 +2428,85 @@ namespace {
     const int orders[] = {kMaskOverSource, kSourceOverMask};
     std::map<int, std::map<std::string, std::string> > atFirstFrame;
 
+    // what the plugin logs about the set it was handed to write into, which is the only
+    // way back from inside the action
+    MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(instance.get());
+    std::string captured;
+    int actions = 0;
+
+    if(effect)
+      effect->setMessageCapture(&captured);
+
+    // in this order the plugin writes into everything the action can write into and then
+    // reports the action untrapped, so the output has to carry what the host offered it
+    // and nothing of what was written
+    report.check(setParamValue(*instance, kOrderParam, formatInt(kUntrappedOrder)),
+                 "effect order=" + formatInt(kUntrappedOrder) + " parameter set");
+
+    instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+    instance->paramInstanceChangedAction(kOrderParam, kOfxChangeUserEdited, MetadataFixture::kFirstFrame, renderScale);
+    instance->endInstanceChangedAction(kOfxChangeUserEdited);
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      std::map<std::string, std::string> read;
+      checkOutput(report, *output, kUntrappedOrder, time, note, read);
+      actions += 1;
+
+      if(time == MetadataFixture::kFirstFrame)
+        atFirstFrame[kUntrappedOrder] = read;
+    }
+
+    // do not add a manual invalidateMetadata() call above: it would make the check
+    // below pass regardless of whether the changed action itself invalidated anything
+    bool movedFromDefault = baseline.size() != atFirstFrame[kUntrappedOrder].size();
+
+    for(std::map<std::string, std::string>::const_iterator it = baseline.begin();
+        it != baseline.end() && !movedFromDefault; ++it) {
+      std::map<std::string, std::string>::const_iterator found = atFirstFrame[kUntrappedOrder].find(it->first);
+      movedFromDefault = found == atFirstFrame[kUntrappedOrder].end() || found->second != it->second;
+    }
+
+    report.check(movedFromDefault,
+                 "effect param=" + std::string(kOrderParam) + " order=" + formatInt(kUntrappedOrder)
+                 + " composition=updated withoutmanualinvalidate=true");
+
+    // in this one the plugin nominates no clip at all, so there is nothing to inherit and
+    // the output has to carry the keys it contributed and none besides
+    report.check(setParamValue(*instance, kOrderParam, formatInt(kNoSourceOrder)),
+                 "effect order=" + formatInt(kNoSourceOrder) + " parameter set");
+
+    instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+    instance->paramInstanceChangedAction(kOrderParam, kOfxChangeUserEdited, MetadataFixture::kFirstFrame, renderScale);
+    instance->endInstanceChangedAction(kOfxChangeUserEdited);
+
+    std::vector<Contributed> contributed;
+    contributedKeys(note, contributed);
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      std::map<std::string, std::string> read;
+      checkOutput(report, *output, kNoSourceOrder, time, note, read);
+      actions += 1;
+
+      int inherited = 0;
+
+      for(std::map<std::string, std::string>::const_iterator it = read.begin(); it != read.end(); ++it) {
+        bool contributes = false;
+
+        for(size_t c = 0; c < contributed.size(); ++c)
+          contributes = contributes || contributed[c].key == it->first;
+
+        if(!contributes)
+          inherited += 1;
+      }
+
+      std::ostringstream ns;
+      ns << "effect order=" << kNoSourceOrder << " time=" << formatTime(time)
+         << " keys=" << read.size() << " contributed=" << contributed.size()
+         << " inherited=" << inherited;
+
+      report.check(read.size() == contributed.size() && inherited == 0, ns.str());
+    }
+
     for(size_t o = 0; o < sizeof(orders) / sizeof(orders[0]); ++o) {
       const int which = orders[o];
 
@@ -2072,12 +2516,12 @@ namespace {
 
       report.check(setParamValue(*instance, kOrderParam, formatInt(which)), where + " parameter set");
 
-      // the metadata is derived from the effect's state, so the sets already cached
-      // for the old value of the parameter have to go
-      instance->invalidateMetadata();
+      instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+      instance->paramInstanceChangedAction(kOrderParam, kOfxChangeUserEdited, MetadataFixture::kFirstFrame, renderScale);
+      instance->endInstanceChangedAction(kOfxChangeUserEdited);
 
       std::vector<std::string> perFrame;
-      composedPerFrameKeys(which, perFrame);
+      composedPerFrameKeys(which, note, perFrame);
       report.check(!perFrame.empty(),
                    where + " perframekeys=" + joinKeys(std::set<std::string>(perFrame.begin(), perFrame.end())));
 
@@ -2086,7 +2530,8 @@ namespace {
 
       for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
         std::map<std::string, std::string> read;
-        checkOutput(report, *output, which, time, read);
+        checkOutput(report, *output, which, time, note, read);
+        actions += 1;
 
         if(time == MetadataFixture::kFirstFrame)
           atFirstFrame[which] = read;
@@ -2109,6 +2554,20 @@ namespace {
                      where + " dropped=" + dropped[k]);
       }
     }
+
+    if(effect)
+      effect->setMessageCapture(NULL);
+
+    const int handed = countOccurrences(captured, "metadataPlugin metadataset present");
+    const int emptied = countOccurrences(captured, "metadataPlugin metadataset present keys=0");
+
+    std::ostringstream hs;
+    hs << "effect metadataset handed=" << handed << " actions=" << actions;
+    report.check(actions > 0 && handed == actions, hs.str());
+
+    std::ostringstream es;
+    es << "effect metadataset empty=" << emptied << " handed=" << handed;
+    report.check(handed > 0 && emptied == handed, es.str());
 
     // the same key composed the other way round must give the other clip's value
     for(size_t k = 0; k < contested.size(); ++k) {
@@ -2156,6 +2615,7 @@ namespace {
       checkFixture(report);
       checkComparators(report);
       checkClips(report);
+      checkMetadataWrites(report);
       checkPlugin(report, host, pluginDir);
 #else
       std::cerr << "metadataHost this build has no metadata suite, so --plugin-id is required"

@@ -1000,6 +1000,10 @@ public:
         return props_.get<PropId::OfxPropTime>(0, error_if_missing);
     }
 
+    void* metadataSet(bool error_if_missing = true) const {
+        return props_.get<PropId::OfxImageEffectPropMetadataSet>(0, error_if_missing);
+    }
+
 };
 
 // Property set accessor for: ImageEffectActionGetMetadata_OutArgs

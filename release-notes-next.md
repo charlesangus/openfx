@@ -15,7 +15,7 @@ This is version NEXT of the OpenFX API.
 - **Obsolete plugins**: Added `kOfxImageEffectPluginPropObsolete` so a plugin bundle can mark a plugin as obsolete: available for use in old projects but not offered to users for new use (issue #221).
 - **Windows ARM64 packaging**: Defined plugin install locations for Windows on ARM, including the new normative `Win-arm64ec` folder for Arm64EC/Arm64X plug-ins, with most-specific-first DLL search order (issue #160).
 - **Project-load semantics**: Hosts are now required to send the `instanceChanged` action with `kOfxPropChangeReason` = `kOfxChangePluginEdited` when a clip or parameter was changed while loading a project (issue #184).
-- **Metadata suite**: Added `ofxMetadata.h` defining a metadata suite, the `kOfxImageEffectActionGetMetadata` action, and `kOfxImageEffectPropMetadataSourceClip` for an effect to contribute and inherit metadata across clips, plus a standard `ofx/` key vocabulary; also added a new `OfxPropertySuiteV2` with `propGetType` (issue #142).
+- **Metadata suite**: Added `ofxMetadata.h` defining a metadata suite, the `kOfxImageEffectActionGetMetadata` action, and `kOfxImageEffectPropMetadataSourceClip` for an effect to contribute and inherit metadata across clips, plus a standard `ofx/` key vocabulary; an effect writes the metadata it contributes into the new `kOfxImageEffectPropMetadataSet` property using the suite's six `metadataSetString`/`metadataSetDouble`/`metadataSetInt`/`metadataSetStringN`/`metadataSetDoubleN`/`metadataSetIntN` entry points; also added a new `OfxPropertySuiteV2` with `propGetType` (issue #142).
 
 ## Fixes in OpenFX Version NEXT:
 

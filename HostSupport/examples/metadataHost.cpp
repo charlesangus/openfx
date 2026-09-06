@@ -20,6 +20,7 @@
 #include "ofxCore.h"
 #include "ofxProperty.h"
 #include "ofxImageEffect.h"
+#include "ofxMessage.h"
 #include "ofxPixels.h"
 #include "ofxMetadata.h"
 
@@ -163,6 +164,7 @@ namespace {
   const OfxPropertySuiteV2    *gPropSuite = NULL;
   const OfxMetadataSuiteV1    *gMetadataSuite = NULL;
   const OfxImageEffectSuiteV1 *gEffectSuite = NULL;
+  const OfxMessageSuiteV2     *gMessageSuite = NULL;
 
   ////////////////////////////////////////////////////////////////////////////////
   // formatting, shared by the fixture listing and the values read back so that the
@@ -883,6 +885,77 @@ namespace {
                  "invalidation after value=" + is + " expected=" + expectedAfter);
   }
 
+  /// render every frame of the fixture range through the plugin, the way a host that
+  /// meant to produce output would, and capture anything logged through the message
+  /// suite instead of letting it land between the PASS/FAIL lines above
+  void checkRender(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    report.check(instance.getClipPreferences(), "render clipprefs");
+
+    MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(&instance);
+    report.check(effect != NULL, "render effect instance");
+
+    std::string captured;
+    if(effect)
+      effect->setMessageCapture(&captured);
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    OfxRectI renderWindow;
+    renderWindow.x1 = renderWindow.y1 = 0;
+    renderWindow.x2 = renderWindow.y2 = 4;
+
+    OfxRectD roi;
+    roi.x1 = roi.y1 = 0;
+    roi.x2 = roi.y2 = 4;
+
+    const OfxTime first = MetadataFixture::kFirstFrame;
+    const OfxTime last  = MetadataFixture::kLastFrame;
+
+    OfxStatus stat = instance.beginRenderAction(first, last, 1.0, false, renderScale,
+                                                /*sequential=*/true, /*interactive=*/false);
+    report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render beginsequence");
+
+    int rendered = 0;
+
+    for(OfxTime time = first; time <= last; time += 1) {
+      if(gMessageSuite)
+        gMessageSuite->message(instance.getHandle(), kOfxMessageLog, "metadataHost",
+                               "metadataHost rendered frame %g", time);
+
+      std::map<OFX::Host::ImageEffect::ClipInstance *, OfxRectD> rois;
+      stat = instance.getRegionOfInterestAction(time, renderScale, roi, rois);
+      report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
+                   "render frame=" + formatTime(time) + " roi");
+
+      stat = instance.renderAction(time, kOfxImageFieldBoth, renderWindow, renderScale,
+                                   /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
+      report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
+                   "render frame=" + formatTime(time));
+
+      rendered += 1;
+    }
+
+    stat = instance.endRenderAction(first, last, 1.0, false, renderScale,
+                                    /*sequential=*/true, /*interactive=*/false);
+    report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault, "render endsequence");
+
+    std::ostringstream framesWhere;
+    framesWhere << "render framesrendered=" << rendered;
+    report.check(rendered == int(last - first + 1), framesWhere.str());
+
+    if(effect)
+      effect->setMessageCapture(NULL);
+
+    std::cout << "metadataHost captured messages begin" << std::endl;
+    std::cout << captured;
+    std::cout << "metadataHost captured messages end" << std::endl;
+
+    report.check(captured.find("metadataHost rendered frame") != std::string::npos,
+                 "render messagecapture");
+  }
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -986,6 +1059,8 @@ namespace {
     }
 
     checkInvalidation(report, *instance);
+
+    checkRender(report, *instance);
   }
 
   int runChecks(const std::string &pluginDir)
@@ -996,8 +1071,9 @@ namespace {
     gPropSuite = (const OfxPropertySuiteV2 *) handle->fetchSuite(handle->host, kOfxPropertySuite, 2);
     gMetadataSuite = (const OfxMetadataSuiteV1 *) handle->fetchSuite(handle->host, kOfxMetadataSuite, 1);
     gEffectSuite = (const OfxImageEffectSuiteV1 *) handle->fetchSuite(handle->host, kOfxImageEffectSuite, 1);
+    gMessageSuite = (const OfxMessageSuiteV2 *) handle->fetchSuite(handle->host, kOfxMessageSuite, 2);
 
-    if(!gPropSuite || !gMetadataSuite || !gEffectSuite) {
+    if(!gPropSuite || !gMetadataSuite || !gEffectSuite || !gMessageSuite) {
       std::cout << "metadataHost the host does not vend the suites this needs" << std::endl;
       std::cout << "RESULT FAIL" << std::endl;
       return 1;

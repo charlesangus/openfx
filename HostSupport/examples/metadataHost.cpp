@@ -39,6 +39,7 @@
 #include "hostDemoHostDescriptor.h"
 #include "hostDemoEffectInstance.h"
 #include "hostDemoClipInstance.h"
+#include "hostDemoParamInstance.h"
 
 #include "metadataHostFixture.h"
 
@@ -86,27 +87,7 @@ namespace MyHost {
     virtual void fetchMetadata(OfxTime time, OFX::Host::Property::Set &metadata);
   };
 
-  /// the integer parameter the metadata plugin reads its composition order from. The
-  /// demo host's integer parameter answers kOfxStatErrMissingHostFeature to everything,
-  /// so it cannot carry a value the plugin can act on
-  class MetadataIntegerInstance : public OFX::Host::Param::IntegerInstance {
-    int _value;
-
-  public :
-    MetadataIntegerInstance(OFX::Host::Param::Descriptor &descriptor,
-                            OFX::Host::Param::SetInstance *instance)
-      : OFX::Host::Param::IntegerInstance(descriptor, instance)
-      , _value(descriptor.getProperties().getIntProperty(kOfxParamPropDefault))
-    {
-    }
-
-    virtual OfxStatus get(int &v) {v = _value; return kOfxStatOK;}
-    virtual OfxStatus get(OfxTime, int &v) {v = _value; return kOfxStatOK;}
-    virtual OfxStatus set(int v) {_value = v; return kOfxStatOK;}
-    virtual OfxStatus set(OfxTime, int v) {_value = v; return kOfxStatOK;}
-  };
-
-  /// an effect whose clips publish the fixture and whose integer parameters hold a value
+  /// an effect whose clips publish the fixture
   class MetadataEffectInstance : public MyEffectInstance {
   public :
     MetadataEffectInstance(OFX::Host::ImageEffect::ImageEffectPlugin *plugin,
@@ -121,14 +102,6 @@ namespace MyHost {
                                                                   int)
     {
       return new MetadataClipInstance(descriptor, this);
-    }
-
-    virtual OFX::Host::Param::Instance *newParam(const std::string &name,
-                                                 OFX::Host::Param::Descriptor &descriptor)
-    {
-      if(descriptor.getType() == kOfxParamTypeInteger)
-        return new MetadataIntegerInstance(descriptor, this);
-      return MyEffectInstance::newParam(name, descriptor);
     }
   };
 
@@ -936,8 +909,8 @@ namespace {
     report.check(created == kOfxStatOK || created == kOfxStatReplyDefault, "plugin createinstance");
 
     OFX::Host::ImageEffect::ClipInstance *output = instance->getClip(kOfxImageEffectOutputClipName);
-    MyHost::MetadataIntegerInstance *order =
-      dynamic_cast<MyHost::MetadataIntegerInstance *>(instance->getParam(kOrderParam));
+    MyHost::MyIntegerInstance *order =
+      dynamic_cast<MyHost::MyIntegerInstance *>(instance->getParam(kOrderParam));
 
     if(!report.check(output != NULL, "plugin clip=" kOfxImageEffectOutputClipName))
       return;

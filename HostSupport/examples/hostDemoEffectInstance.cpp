@@ -146,6 +146,8 @@ namespace MyHost {
       return new MyBooleanInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeChoice)
       return new MyChoiceInstance(this,name,descriptor);
+    else if(descriptor.getType()==kOfxParamTypeString)
+      return new MyStringInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeRGBA)
       return new MyRGBAInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeRGB)

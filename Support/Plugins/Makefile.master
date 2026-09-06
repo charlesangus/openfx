@@ -40,7 +40,8 @@ SUPPORTOBJECTS = $(PATHTOROOT)/Library/$(OBJECTPATH)/ofxsMultiThread.o \
 		 $(PATHTOROOT)/Library/$(OBJECTPATH)/ofxsCore.o \
 		 $(PATHTOROOT)/Library/$(OBJECTPATH)/ofxsPropertyValidation.o \
 		 $(PATHTOROOT)/Library/$(OBJECTPATH)/ofxsImageEffect.o \
-		 $(PATHTOROOT)/Library/$(OBJECTPATH)/ofxsParams.o
+		 $(PATHTOROOT)/Library/$(OBJECTPATH)/ofxsParams.o \
+		 $(PATHTOROOT)/Library/$(OBJECTPATH)/ofxsMetadata.o
 
 
 all: $(OBJECTPATH)/$(PLUGINNAME).ofx.bundle

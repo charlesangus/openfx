@@ -1,11 +1,13 @@
-# metadataHost.cpp #errors out if OFX_SUPPORTS_METADATA isn't defined, since
-# it has nothing to exercise without it.
+# metadataHost builds in both configurations: without OFX_SUPPORTS_METADATA only the
+# fixture publication, the clip and image metadata reads and the composition checks
+# are compiled out of it.
+set(METADATA_PLUGIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugins")
+
 if(OFX_SUPPORTS_METADATA)
 	# metadataPlugin is a test fixture, not a shipped example: it is laid out as a
 	# bundle in the build tree for metadataHost to load and is deliberately not
 	# installed, so add_ofx_plugin, which installs into PLUGIN_INSTALLDIR, is not
 	# used here.
-	set(METADATA_PLUGIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 	set(METADATA_PLUGIN_BINDIR
 		"${METADATA_PLUGIN_DIR}/metadataPlugin.ofx.bundle/Contents/${ARCHDIR}")
 
@@ -33,22 +35,24 @@ if(OFX_SUPPORTS_METADATA)
 			LIBRARY_OUTPUT_DIRECTORY_${CONFIG} "${METADATA_PLUGIN_BINDIR}"
 			RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${METADATA_PLUGIN_BINDIR}")
 	endforeach()
+endif()
 
-	add_executable(metadataHost
-		metadataHost.cpp
-		hostDemoClipInstance.cpp
-		hostDemoEffectInstance.cpp
-		hostDemoHostDescriptor.cpp
-		hostDemoParamInstance.cpp)
-	target_link_libraries(metadataHost PRIVATE OfxHost)
-	target_compile_definitions(metadataHost
-		PRIVATE METADATA_PLUGIN_DIR="${METADATA_PLUGIN_DIR}")
+add_executable(metadataHost
+	metadataHost.cpp
+	hostDemoClipInstance.cpp
+	hostDemoEffectInstance.cpp
+	hostDemoHostDescriptor.cpp
+	hostDemoParamInstance.cpp)
+target_link_libraries(metadataHost PRIVATE OfxHost)
+target_compile_definitions(metadataHost
+	PRIVATE METADATA_PLUGIN_DIR="${METADATA_PLUGIN_DIR}")
+if(OFX_SUPPORTS_METADATA)
 	add_dependencies(metadataHost metadataPlugin)
-	if(APPLE)
-		# expat is single-arch here, so this executable can't be linked universal
-		set_target_properties(metadataHost PROPERTIES
-			OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
-	endif()
+endif()
+if(APPLE)
+	# expat is single-arch here, so this executable can't be linked universal
+	set_target_properties(metadataHost PROPERTIES
+		OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
 endif()
 
 add_executable(hostDemo

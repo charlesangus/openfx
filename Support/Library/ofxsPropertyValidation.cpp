@@ -667,6 +667,24 @@ namespace OFX {
       gGetClipPreferencesOutArgProps, sizeof(gGetClipPreferencesOutArgProps)/sizeof(PropertyDescription),
       NULLPTR);
 
+    /** @brief kOfxImageEffectActionGetMetadata action's outargs properties
+
+    The retained-keys property, OfxImageClipPropMetadataRetainedKeys_<clip>, is not described
+    here: its name depends on the attached clip and so cannot appear in a static table. The
+    per-clip names are built descriptor-side by ImageEffectDescriptor::defineClip into
+    _clipMetadataRetainedKeysPropNames, exposed via getClipMetadataRetainedKeysPropNames(); using
+    them here would require passing the descriptor into validateActionArgumentsProperties, which
+    it does not currently take. */
+    static PropertyDescription gGetMetadataActionOutArgProps[ ] =
+    {
+      PropertyDescription(kOfxImageEffectPropMetadataSourceClip, OFX::eString, -1, eDescFinished),
+    };
+
+    /** @brief kOfxImageEffectActionGetMetadata property set */
+    static PropertySetDescription gGetMetadataActionOutArgPropSet(kOfxImageEffectActionGetMetadata " out argument",
+      gGetMetadataActionOutArgProps, sizeof(gGetMetadataActionOutArgProps)/sizeof(PropertyDescription),
+      NULLPTR);
+
     /** @brief kOfxActionInstanceChanged action's inargs properties */
     static PropertyDescription gInstanceChangedInArgProps[ ] =
     {
@@ -1171,6 +1189,9 @@ namespace OFX {
       }
       else if(action == kOfxImageEffectActionGetClipPreferences) {
         gGetClipPreferencesOutArgPropSet.validate(outArgs);
+      }
+      else if(action == kOfxImageEffectActionGetMetadata) {
+        gGetMetadataActionOutArgPropSet.validate(outArgs);
       }
       else if(action == kOfxImageEffectActionIsIdentity) {
         gIsIdentityActionInArgPropSet.validate(inArgs);

@@ -773,6 +773,7 @@ namespace OFX {
     _clipPARPropNames[name] = std::string("OfxImageClipPropPAR_") + name;
     _clipROIPropNames[name] = std::string("OfxImageClipPropRoI_") + name;
     _clipFrameRangePropNames[name] = std::string("OfxImageClipPropFrameRange_") + name;
+    _clipMetadataRetainedKeysPropNames[name] = std::string("OfxImageClipPropMetadataRetainedKeys_") + name;
     return clip;
   }
 
@@ -1530,6 +1531,12 @@ namespace OFX {
     // fa niente
   }
 
+  /** @brief get the metadata this effect contributes to its output, and the metadata it inherits from its inputs */
+  bool ImageEffect::getMetadata(const MetadataArguments &/*args*/, MetadataSetBuilder &/*metadata*/, MetadataInheritanceSetter &/*inheritance*/)
+  {
+    return false; // by default, we do not override the host's metadata handling
+  }
+
   /** @brief the effect is about to be actively edited by a user, called when the first user interface is opened on an instance */
   void ImageEffect::beginEdit(void)
   {
@@ -1786,6 +1793,67 @@ namespace OFX {
     case eFieldSingle : outArgs_.propSetString(kOfxImageClipPropFieldOrder, kOfxImageFieldSingle, 0, false); break;
     case eFieldDoubled : outArgs_.propSetString(kOfxImageClipPropFieldOrder, kOfxImageFieldDoubled, 0, false); break;
     }
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  // Class used to set the source-clip selection and per-clip retained metadata keys
+
+  const std::string& MetadataInheritanceSetter::extractValueForName(const StringStringMap& m, const std::string& name) const
+  {
+    StringStringMap::const_iterator it = m.find(name);
+    if(it==m.end())
+      throw(Exception::PropertyUnknownToHost(name.c_str()));
+    return it->second;
+  }
+
+  /** @brief, force the host to treat \em clips as the ordered list of input clips whose metadata the effect inherits */
+  void MetadataInheritanceSetter::setSourceClips(const std::vector<std::string> &clips)
+  {
+    didSomething_ = true;
+
+    // a variable-dimension property only ever grows when written index by index, so writing
+    // fewer entries than the host pre-populated it with leaves the surplus ones behind unless
+    // it is reset to zero dimension first
+    outArgs_.propReset(kOfxImageEffectPropMetadataSourceClip);
+
+    int n = 0;
+    for(std::vector<std::string>::const_iterator it = clips.begin(); it != clips.end(); ++it)
+      outArgs_.propSetString(kOfxImageEffectPropMetadataSourceClip, *it, n++);
+  }
+
+  /** @brief convenience overload of setSourceClips for a single source clip */
+  void MetadataInheritanceSetter::setSourceClips(const std::string &clip)
+  {
+    setSourceClips(std::vector<std::string>(1, clip));
+  }
+
+  /** @brief the current source-clip list, as last set by setSourceClips or, if it has not been called, as defaulted by the host */
+  std::vector<std::string> MetadataInheritanceSetter::getSourceClips() const
+  {
+    std::list<std::string> raw = outArgs_.propGetNString(kOfxImageEffectPropMetadataSourceClip);
+    return std::vector<std::string>(raw.begin(), raw.end());
+  }
+
+  /** @brief, force the host to retain only \em keys of \em clip's metadata when composing the metadata the effect inherits from that clip */
+  void MetadataInheritanceSetter::setRetainedKeys(const Clip &clip, const std::vector<std::string> &keys)
+  {
+    didSomething_ = true;
+    const std::string& propName = extractValueForName(clipMetadataRetainedKeysPropNames_, clip.name());
+
+    // see the comment in setSourceClips: the reset is what makes a shrinking write actually shrink
+    outArgs_.propReset(propName.c_str());
+
+    int n = 0;
+    for(std::vector<std::string>::const_iterator it = keys.begin(); it != keys.end(); ++it)
+      outArgs_.propSetString(propName.c_str(), *it, n++);
+  }
+
+  /** @brief the current retained-keys list for \em clip, as last set by setRetainedKeys or, if it has not been called, as defaulted by the host */
+  std::vector<std::string> MetadataInheritanceSetter::getRetainedKeys(const Clip &clip) const
+  {
+    const std::string& propName = extractValueForName(clipMetadataRetainedKeysPropNames_, clip.name());
+    std::list<std::string> raw = outArgs_.propGetNString(propName.c_str());
+    return std::vector<std::string>(raw.begin(), raw.end());
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -2506,9 +2574,36 @@ namespace OFX {
       effectInstance->getClipPreferences(prefs);
 
       // did we do anything ?
-      if(prefs.didSomething()) 
+      if(prefs.didSomething())
         return true;
       return false;
+    }
+
+    /** @brief Library side get metadata function */
+    static
+    bool
+      metadataAction(OfxImageEffectHandle handle, OFX::PropertySet inArgs, OFX::PropertySet &outArgs, const char* plugname)
+    {
+      // fetch our effect pointer
+      ImageEffect *effectInstance = retrieveImageEffectPointer(handle);
+      MetadataArguments args;
+
+      args.time = inArgs.propGetDouble(kOfxPropTime);
+
+      OfxPropertySetHandle metadataSetHandle = (OfxPropertySetHandle) inArgs.propGetPointer(kOfxImageEffectPropMetadataSet);
+
+      // set up our metadata and inheritance setters
+      MetadataSetBuilder metadata(metadataSetHandle);
+      ImageEffectDescriptor* desc = gEffectDescriptors[plugname][effectInstance->getContext()];
+      MetadataInheritanceSetter inheritance(outArgs, desc->getClipMetadataRetainedKeysPropNames());
+
+      // and call the plug-in client code
+      bool v = effectInstance->getMetadata(args, metadata, inheritance);
+
+      // kOfxStatReplyDefault makes the host discard outArgs and the contributed metadata set
+      // alike, so a plugin that wrote to either but forgot to return true would otherwise
+      // lose its contribution silently
+      return v || metadata.didSomething() || inheritance.didSomething();
     }
 
     /** @brief Library side begin instance changed action */
@@ -2756,6 +2851,13 @@ namespace OFX {
 
           // call the frames needed action, return OK if it does something
           if(clipPreferencesAction(handle, outArgs, plugname))
+            stat = kOfxStatOK;
+        }
+        else if(action == kOfxImageEffectActionGetMetadata) {
+          checkMainHandles(actionRaw, handleRaw, inArgsRaw, outArgsRaw, false, false, false);
+
+          // call the metadata action, return OK if it does something
+          if(metadataAction(handle, inArgs, outArgs, plugname))
             stat = kOfxStatOK;
         }
         else if(action == kOfxActionPurgeCaches) {

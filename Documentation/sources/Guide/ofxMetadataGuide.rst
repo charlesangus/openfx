@@ -1,20 +1,26 @@
 .. SPDX-License-Identifier: CC-BY-4.0
 .. _metadataGuide:
 
-This guide covers the read side of the OFX metadata API: how a plugin
-finds out whether a host can supply metadata at all, how it fetches the
-metadata attached to a clip or an image, and how it enumerates and reads
-the values once it has them. It uses the ``C++`` support wrapper,
-:c:type:`OfxMetadataSuiteV1` and ``OFX::MetadataSet``, declared in
-`ofxsMetadata.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsMetadata.h>`_,
+This guide covers the OFX metadata API: how a plugin finds out whether
+a host can supply metadata at all, how it fetches metadata attached to a
+clip or an image, reads the values once it has them, and contributes
+its own metadata to its output. It uses the ``C++`` support wrappers,
+:c:type:`OfxMetadataSuiteV1`, ``OFX::MetadataSet``,
+``OFX::MetadataSetBuilder`` and ``OFX::MetadataInheritanceSetter``,
+declared in
+`ofxsMetadata.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsMetadata.h>`_ and
+`ofxsImageEffect.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsImageEffect.h>`_,
 rather than the raw suite, since that is what almost every plugin should
-use. Two complete, worked examples live in the repository and are
+use. Three complete, worked examples live in the repository and are
 referred to throughout: `MetadataPrint
 <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataPrint/metadataPrint.cpp>`_,
 which logs every key a clip carries, and `MetadataView
 <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataView/metadataView.cpp>`_,
 which filters that same metadata into a parameter for display in a
-host's UI.
+host's UI, and `MetadataContribute
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataContribute/metadataContribute.cpp>`_,
+which contributes keys of every supported type to its output and can
+drop a key from what it inherits.
 
 Metadata belongs to an image, not a clip
 =========================================
@@ -199,6 +205,166 @@ every key it filters the entries against a string parameter and writes
 the matching ones into a display parameter, so a host's UI can show a
 user the metadata of whatever clip is connected — a good pattern to
 follow for anything beyond a debug log.
+
+Contributing metadata
+=======================
+
+Everything so far has been about reading metadata a host already has. A
+plugin that wants to add its own keys, or control what its output
+inherits from its inputs, overrides ``getMetadata``:
+
+.. code:: c++
+
+    virtual bool getMetadata(const OFX::MetadataArguments &args,
+                              OFX::MetadataSetBuilder &metadata,
+                              OFX::MetadataInheritanceSetter &inheritance);
+
+The default implementation returns false and traps nothing, so a plugin
+that never overrides it is unaffected: the host falls through to its own
+inheritance rules exactly as if the metadata action did not exist.
+``OFX::MetadataArguments`` carries only ``time``, since, as established
+above, metadata is a property of an image and this action is always
+time-parameterised.
+
+Unlike every read call covered so far, contributing metadata means
+writing to two separate property sets, and the support classes for them
+are not interchangeable:
+
+- the keys a plugin contributes go into a metadata property set owned by
+  the host, arriving in the action's ``inArgs`` under
+  :c:macro:`kOfxImageEffectPropMetadataSet`, and a plugin writes to it
+  through the ``metadata`` argument, an ``OFX::MetadataSetBuilder``;
+- which source clips the output inherits from, and which of each
+  clip's keys are retained, are set in the action's ``outArgs``, through
+  the ``inheritance`` argument, an ``OFX::MetadataInheritanceSetter``.
+
+A plugin using the support library never fetches either property set
+itself: the two arguments already wrap them by the time ``getMetadata``
+is called.
+
+Contributing keys with ``MetadataSetBuilder``
+-----------------------------------------------
+
+``metadata`` arrives empty, and is the only metadata property set an
+effect may write to. It offers ``setString``, ``setDouble``, ``setInt``
+and the ``N``-suffixed forms ``setStringN``, ``setDoubleN`` and
+``setIntN`` for writing every value of a key at once, plus ``copyFrom``
+for re-emitting the entries of a ``MetadataSet`` wholesale, the usual
+shape for a plugin that wants to pass an input's metadata through
+untouched under a different key. There is no indexed setter to match
+``MetadataSet``'s indexed getters: a key that does not already exist has
+no dimension to index into, and a key cannot be created through the
+generic Property Suite, which fails on a property it has never heard of.
+Every setter therefore replaces a key's value and dimension as a whole
+rather than writing part of it, whether the key is being created or
+already exists.
+
+.. code:: c++
+
+    metadata.setString(kOfxMetadataKeyCreator, "My Plugin");
+    metadata.setDoubleN("com.example.myplugin.weights",
+                         std::vector<double>({1.0, 0.5, 0.25}));
+
+``didSomething()`` reports whether any call on the builder has yet
+succeeded, which matters because returning false from ``getMetadata``
+discards everything written to it — see below.
+
+Choosing what the output inherits with ``MetadataInheritanceSetter``
+------------------------------------------------------------------------
+
+Contributed keys and inherited keys are not the same thing, and they do
+not merge inside ``metadata``: an effect's output metadata is the
+inherited metadata composed first, then everything the effect wrote
+through ``metadata`` layered on top, so a key an effect contributes
+always wins over the same key inherited from a source clip. The
+inherited half of that composition is entirely what ``inheritance``
+describes.
+
+``setSourceClips`` nominates which of the effect's input clips the
+output's metadata is composed from, and in what order: the list is read
+in increasing precedence, so the last clip named wins wherever two
+clips in the list carry the same key. A single-input effect normally has
+nothing to do here — the host already defaults the list to that one
+clip — but a multi-input effect, for example one with a ``Source`` and
+a ``Mask``, has to call ``setSourceClips`` to say which of them, and in
+which order, the output should inherit from. Passing an empty list is
+how an effect declares that its output inherits no metadata at all, from
+any clip.
+
+Within a clip that is in the source list, ``setRetainedKeys`` selects
+which of that clip's keys survive into the inherited metadata; a key
+left off the list is dropped from that clip exactly as if the clip
+never carried it. This is also the only way to delete an inherited key
+— there is no removal call on ``metadata``, because ``metadata`` holds
+only what the effect itself contributes, not what it inherits. Deleting
+something the effect does not want passed through is entirely the
+retained-keys list's job:
+
+.. code:: c++
+
+    const std::vector<std::string> retained = inheritance.getRetainedKeys(*srcClip_);
+    std::vector<std::string> kept;
+
+    for(size_t i = 0; i < retained.size(); i++) {
+      if(retained[i] != dropKey)
+        kept.push_back(retained[i]);
+    }
+
+    inheritance.setRetainedKeys(*srcClip_, kept);
+
+Calling ``getRetainedKeys`` first, as above, and then calling
+``setRetainedKeys`` with that same list minus the one key to drop, is
+the pattern to reach for: it starts from the host's default rather than
+from an assumption about what that default is. The retained-keys
+property itself has no C identifier to name it with, because its
+property name is composed at the time the effect is described, one
+property per attached input clip, by appending that clip's name to
+``OfxImageClipPropMetadataRetainedKeys_`` — precisely the composition
+``MetadataInheritanceSetter`` exists to hide, so a plugin calls
+``setRetainedKeys(clip, keys)`` and never needs to know the resulting
+property's name at all.
+
+``setRetainedKeys`` throws ``OFX::Exception::PropertyUnknownToHost`` if
+asked for a clip the effect never defined.
+
+Returning true, and why there is no invalidation property
+--------------------------------------------------------------
+
+``getMetadata`` has to return true for anything written to either
+``metadata`` or ``inheritance`` to take effect. Returning false is not
+a no-op: it tells the host the action was not trapped, so the host
+discards both property sets, whatever they contain, and falls through
+to composing the output's metadata under its own default rules. A
+plugin that contributes keys or narrows what it inherits and then
+forgets to return true loses all of it silently, with no error to
+signal that anything was ignored.
+
+There is no property to say when a previous answer from this action has
+gone stale. The host does not need one: it re-calls
+:c:macro:`kOfxImageEffectActionGetMetadata` whenever the effect's
+parameter or input state changes, using the same hash it already
+maintains for its render cache, so there is nothing for a plugin to
+invalidate by hand.
+
+Finally, the handle backing both ``metadata`` and ``inheritance`` is
+owned by the host for the duration of the action only. As with a
+``MetadataSet``, it must never be released by the plugin, but unlike a
+``MetadataSet`` there is no RAII wrapper doing that for you because
+there is nothing to release: the host makes the handle behind
+``metadata`` reject an explicit release outright, and the handle behind
+``inheritance`` is simply dead the moment the action returns, so neither
+argument should be kept, copied out of, or referred to again after
+``getMetadata`` has returned.
+
+The `MetadataContribute
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataContribute/metadataContribute.cpp>`_
+example plugin ties this together: it contributes a handful of its own
+keys unconditionally, then, depending on a mode parameter, either leaves
+its source clip's inheritance untouched, calls ``getRetainedKeys`` and
+``setRetainedKeys`` to drop one named key from it, or calls
+``setSourceClips`` with an empty list to inherit nothing at all — and
+returns true in every one of those branches, since even the modes that
+inherit nothing still contributed keys through ``metadata``.
 
 .. _metadataNukeInterop:
 

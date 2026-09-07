@@ -989,7 +989,8 @@ namespace OFX {
     bool didSomething(void) const {return didSomething_;}
 
     /** @brief, force the host to treat \em clips as the ordered list of input clips whose
-    metadata the effect inherits, most preferred first.
+    metadata the effect inherits, read in increasing precedence: where two clips named in the
+    list carry the same key, the value from the later entry wins.
 
     See the OFX API documentation for the default value of this.
     */

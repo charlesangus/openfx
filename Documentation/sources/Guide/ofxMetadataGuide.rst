@@ -249,15 +249,19 @@ Contributing keys with ``MetadataSetBuilder``
 effect may write to. It offers ``setString``, ``setDouble``, ``setInt``
 and the ``N``-suffixed forms ``setStringN``, ``setDoubleN`` and
 ``setIntN`` for writing every value of a key at once, plus ``copyFrom``
-for re-emitting the entries of a ``MetadataSet`` wholesale, the usual
-shape for a plugin that wants to pass an input's metadata through
-untouched under a different key. There is no indexed setter to match
-``MetadataSet``'s indexed getters: a key that does not already exist has
-no dimension to index into, and a key cannot be created through the
-generic Property Suite, which fails on a property it has never heard of.
-Every setter therefore replaces a key's value and dimension as a whole
-rather than writing part of it, whether the key is being created or
-already exists.
+for re-emitting every entry of a ``MetadataSet`` into the contribution
+set under its own original key; it takes no destination key, so it is
+not a way to rename a key while copying it. Ordinary pass-through of
+an input's metadata is not done by copying keys into ``metadata`` at
+all — it is the host's default behaviour, steered through
+``MetadataInheritanceSetter`` and covered below in "Choosing what the
+output inherits with ``MetadataInheritanceSetter``". There is no
+indexed setter to match ``MetadataSet``'s indexed getters: a key that
+does not already exist has no dimension to index into, and a key
+cannot be created through the generic Property Suite, which fails on
+a property it has never heard of. Every setter therefore replaces a
+key's value and dimension as a whole rather than writing part of it,
+whether the key is being created or already exists.
 
 .. code:: c++
 

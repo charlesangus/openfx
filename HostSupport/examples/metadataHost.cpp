@@ -2467,10 +2467,8 @@ namespace {
   /// every frame of the fixture range, with the image still passed through untouched.
   /// The parameters are driven through the instance changed actions rather than by
   /// invalidating the metadata by hand, so a host which does not invalidate what a
-  /// parameter change composed fails these. There is no degraded twin: on a host with no
-  /// metadata suite there is nothing a contribution can be observed through beyond that
-  /// pass through, which the generic preconditions already check, so the contract holds
-  /// such a host to the suite instead and fails it there
+  /// parameter change composed fails these, exercising the host's invalidation path
+  /// alongside the contribution itself
   void checkMetadataContribute(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
     const std::string contract = "metadata-contribute";

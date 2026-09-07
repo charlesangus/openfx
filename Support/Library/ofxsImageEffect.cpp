@@ -1531,6 +1531,12 @@ namespace OFX {
     // fa niente
   }
 
+  /** @brief get the metadata this effect contributes to its output, and the metadata it inherits from its inputs */
+  bool ImageEffect::getMetadata(const MetadataArguments &/*args*/, MetadataSetBuilder &/*metadata*/, MetadataInheritanceSetter &/*inheritance*/)
+  {
+    return false; // by default, we do not override the host's metadata handling
+  }
+
   /** @brief the effect is about to be actively edited by a user, called when the first user interface is opened on an instance */
   void ImageEffect::beginEdit(void)
   {
@@ -2568,9 +2574,36 @@ namespace OFX {
       effectInstance->getClipPreferences(prefs);
 
       // did we do anything ?
-      if(prefs.didSomething()) 
+      if(prefs.didSomething())
         return true;
       return false;
+    }
+
+    /** @brief Library side get metadata function */
+    static
+    bool
+      metadataAction(OfxImageEffectHandle handle, OFX::PropertySet inArgs, OFX::PropertySet &outArgs, const char* plugname)
+    {
+      // fetch our effect pointer
+      ImageEffect *effectInstance = retrieveImageEffectPointer(handle);
+      MetadataArguments args;
+
+      args.time = inArgs.propGetDouble(kOfxPropTime);
+
+      OfxPropertySetHandle metadataSetHandle = (OfxPropertySetHandle) inArgs.propGetPointer(kOfxImageEffectPropMetadataSet);
+
+      // set up our metadata and inheritance setters
+      MetadataSetBuilder metadata(metadataSetHandle);
+      ImageEffectDescriptor* desc = gEffectDescriptors[plugname][effectInstance->getContext()];
+      MetadataInheritanceSetter inheritance(outArgs, desc->getClipMetadataRetainedKeysPropNames());
+
+      // and call the plug-in client code
+      bool v = effectInstance->getMetadata(args, metadata, inheritance);
+
+      // kOfxStatReplyDefault makes the host discard outArgs and the contributed metadata set
+      // alike, so a plugin that wrote to either but forgot to return true would otherwise
+      // lose its contribution silently
+      return v || metadata.didSomething() || inheritance.didSomething();
     }
 
     /** @brief Library side begin instance changed action */
@@ -2818,6 +2851,13 @@ namespace OFX {
 
           // call the frames needed action, return OK if it does something
           if(clipPreferencesAction(handle, outArgs, plugname))
+            stat = kOfxStatOK;
+        }
+        else if(action == kOfxImageEffectActionGetMetadata) {
+          checkMainHandles(actionRaw, handleRaw, inArgsRaw, outArgsRaw, false, false, false);
+
+          // call the metadata action, return OK if it does something
+          if(metadataAction(handle, inArgs, outArgs, plugname))
             stat = kOfxStatOK;
         }
         else if(action == kOfxActionPurgeCaches) {

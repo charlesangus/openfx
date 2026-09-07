@@ -868,6 +868,11 @@ namespace OFX {
     double    time;
   };
 
+  /** @brief POD struct to pass arguments into @ref OFX::ImageEffect::getMetadata */
+  struct MetadataArguments {
+    double    time;
+  };
+
   /** @brief Class used to set the frames needed to render a single frame of a clip in @ref OFX::ImageEffect::getFramesNeeded
 
   This is a base class, the actual class is private and you don't need to see the glue involved.
@@ -1200,7 +1205,14 @@ namespace OFX {
 
     /** @brief get the clip preferences */
     virtual void getClipPreferences(ClipPreferencesSetter &clipPreferences);
-      
+
+    /** @brief get the metadata this effect contributes to its output, and the metadata it inherits from its inputs
+
+    Returns false if the effect does not want to override the host's default metadata handling,
+    in which case the host falls through to its own inheritance rules.
+    */
+    virtual bool getMetadata(const MetadataArguments &args, MetadataSetBuilder &metadata, MetadataInheritanceSetter &inheritance);
+
     /** @brief the effect is about to be actively edited by a user, called when the first user interface is opened on an instance */
     virtual void beginEdit(void);
 

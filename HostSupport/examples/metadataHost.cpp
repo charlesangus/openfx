@@ -207,6 +207,28 @@ namespace {
     return os.str();
   }
 
+  std::string formatDoubles(const double *v, int n)
+  {
+    std::ostringstream os;
+    for(int i = 0; i < n; ++i) {
+      if(i)
+        os << ',';
+      os << formatDouble(v[i]);
+    }
+    return os.str();
+  }
+
+  std::string formatStrings(const char *const *v, int n)
+  {
+    std::ostringstream os;
+    for(int i = 0; i < n; ++i) {
+      if(i)
+        os << ',';
+      os << v[i];
+    }
+    return os.str();
+  }
+
   std::string formatTime(OfxTime time)
   {
     if(time == MetadataFixture::kAnyTime)
@@ -326,8 +348,6 @@ namespace {
     return joined;
   }
 
-#ifdef OFX_SUPPORTS_METADATA
-
   OfxStatus collectKey(const char *key, void *userData)
   {
     ((std::set<std::string> *) userData)->insert(key);
@@ -405,8 +425,6 @@ namespace {
 
     return type == "int" ? dimension <= MetadataFixture::kMaxInts : dimension == 1;
   }
-
-#endif // OFX_SUPPORTS_METADATA
 
   ////////////////////////////////////////////////////////////////////////////////
   // what a plugin logs, and the pixels it renders
@@ -638,8 +656,6 @@ namespace {
     return true;
   }
 
-#ifdef OFX_SUPPORTS_METADATA
-
   /// the value the fixture gives for one key of a clip at a time, false if it gives none
   bool fixtureValue(const std::string &clip, const std::string &key, OfxTime time, std::string &value)
   {
@@ -654,6 +670,33 @@ namespace {
 
     return false;
   }
+
+  /// a key a plugin writes into the set the host hands it, and what it has to read back
+  /// as on the output clip once the host has put it over what was inherited
+  struct Contributed {
+    std::string key;
+    std::string type;
+    int         dimension;
+    std::string value;
+  };
+
+  void addContributed(std::vector<Contributed> &contributed,
+                      const std::string &key,
+                      const std::string &type,
+                      int dimension,
+                      const std::string &value)
+  {
+    Contributed one;
+
+    one.key = key;
+    one.type = type;
+    one.dimension = dimension;
+    one.value = value;
+
+    contributed.push_back(one);
+  }
+
+#ifdef OFX_SUPPORTS_METADATA
 
   /// check that a metadata set holds exactly the keys, types and values the fixture
   /// gives for this clip at this time, and return what was read for each key
@@ -1289,31 +1332,6 @@ namespace {
   /// named after the property the composition order is nominated in
   const double kContributedFrameRate    = 48.0;
   const char   kContributedSourceClip[] = "contributed";
-
-  /// a key the plugin writes into the set the host hands it, and what it has to read
-  /// back as on the output clip once the host has put it over what was inherited
-  struct Contributed {
-    std::string key;
-    std::string type;
-    int         dimension;
-    std::string value;
-  };
-
-  void addContributed(std::vector<Contributed> &contributed,
-                      const std::string &key,
-                      const std::string &type,
-                      int dimension,
-                      const std::string &value)
-  {
-    Contributed one;
-
-    one.key = key;
-    one.type = type;
-    one.dimension = dimension;
-    one.value = value;
-
-    contributed.push_back(one);
-  }
 
   /// everything the plugin contributes when the note parameter holds the given value,
   /// composed the way the fixture's own entries are rather than written out as literals
@@ -1973,16 +1991,22 @@ namespace {
   /// the frames of the fixture range, which is what the contract below counts in
   const int kFixtureFrames = int(MetadataFixture::kLastFrame - MetadataFixture::kFirstFrame) + 1;
 
+  /// the keys the fixture gives a clip at a time
+  void fixtureKeySet(const std::string &clip, OfxTime time, std::set<std::string> &keys)
+  {
+    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+      if(entryAppliesAt(MetadataFixture::kEntries[i], clip, time))
+        keys.insert(MetadataFixture::kEntries[i].key);
+    }
+  }
+
   /// the keys the fixture gives a clip at a time, joined in the ascending order a plugin
   /// enumerating them has to impose before it logs them
   std::string fixtureKeys(const std::string &clip, OfxTime time)
   {
     std::set<std::string> keys;
 
-    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
-      if(entryAppliesAt(MetadataFixture::kEntries[i], clip, time))
-        keys.insert(MetadataFixture::kEntries[i].key);
-    }
+    fixtureKeySet(clip, time, keys);
 
     return joinKeys(keys);
   }
@@ -2273,6 +2297,243 @@ namespace {
     checkMetadataDisplay(report, instance, /*degraded=*/true);
   }
 
+  /// the parameters a plugin which contributes metadata has to expose for the contract
+  /// below to drive it, and the values of its mode
+  const char kContributeNoteParam[]    = "note";
+  const char kContributeModeParam[]    = "mode";
+  const char kContributeDropKeyParam[] = "dropKey";
+
+  enum MetadataModeEnum {
+    eMetadataModeInheritAll,
+    eMetadataModeDropOneKey,
+    eMetadataModeInheritNothing,
+    eMetadataModeCount
+  };
+
+  /// the note the contract drives through the note parameter, which the plugin has to
+  /// come back carrying under its own note key
+  const char kContributeNote[] = "contributed";
+
+  /// the reverse DNS prefix the plugin namespaces every key of its own under, and the
+  /// values it writes into them
+  const char kContributePrefix[] = "org.openfx.examples.metadataContribute.";
+
+  const int         kContributeRevision       = 1;
+  const double      kContributeQuality        = 0.75;
+  const char *const kContributeTags[]         = {"reviewed", "approved"};
+  const int         kContributeRenderRegion[] = {0, 0, 1280, 720};
+  const double      kContributeWeights[]      = {1.0, 0.5, 0.25};
+
+  const int kContributeTagsCount =
+    int(sizeof(kContributeTags) / sizeof(kContributeTags[0]));
+  const int kContributeRenderRegionCount =
+    int(sizeof(kContributeRenderRegion) / sizeof(kContributeRenderRegion[0]));
+  const int kContributeWeightsCount =
+    int(sizeof(kContributeWeights) / sizeof(kContributeWeights[0]));
+
+  /// the value it writes into the one standard key it contributes, which the fixture
+  /// also gives Source, so that the two are told apart on the output clip
+  const double kContributeFrameRate = 30.0;
+
+  /// everything the plugin contributes when the note parameter holds the given value,
+  /// composed the way the fixture's own entries are rather than written out as literals
+  void contributeKeys(const std::string &note, std::vector<Contributed> &contributed)
+  {
+    addContributed(contributed, std::string(kContributePrefix) + "note", "string", 1, note);
+    addContributed(contributed, std::string(kContributePrefix) + "revision", "int", 1,
+                   formatInt(kContributeRevision));
+    addContributed(contributed, std::string(kContributePrefix) + "quality", "double", 1,
+                   formatDouble(kContributeQuality));
+    addContributed(contributed, std::string(kContributePrefix) + "tags", "string", kContributeTagsCount,
+                   formatStrings(kContributeTags, kContributeTagsCount));
+    addContributed(contributed, std::string(kContributePrefix) + "renderRegion", "int", kContributeRenderRegionCount,
+                   formatInts(kContributeRenderRegion, kContributeRenderRegionCount));
+    addContributed(contributed, std::string(kContributePrefix) + "weights", "double", kContributeWeightsCount,
+                   formatDoubles(kContributeWeights, kContributeWeightsCount));
+    addContributed(contributed, kOfxMetadataKeyFrameRate, "double", 1, formatDouble(kContributeFrameRate));
+  }
+
+  /// how many keys that is, which is what the contract's least check count is composed
+  /// from and which the contract holds the table above to
+  const int kContributedKeyCount = 7;
+
+  /// the key the contract makes the plugin drop from what it inherits: the last key, in
+  /// ascending order, the fixture gives Source at every frame of its range and which is
+  /// not the frame rate, since the plugin contributes a frame rate of its own which
+  /// would mask a dropped one. The last rather than any other because a plugin writes
+  /// its retained keys index by index over the list the host offered it in that same
+  /// order, so a write which does not shrink the property first leaves only that final
+  /// entry behind, and dropping anything else leaves a harmless duplicate instead
+  std::string contributeDropKey()
+  {
+    std::set<std::string> keys;
+    std::string dropKey;
+
+    fixtureKeySet(MetadataFixture::kInputClips[0], MetadataFixture::kFirstFrame, keys);
+
+    for(std::set<std::string>::const_iterator it = keys.begin(); it != keys.end(); ++it) {
+      if(*it == kOfxMetadataKeyFrameRate)
+        continue;
+
+      bool everywhere = true;
+
+      for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+        std::set<std::string> at;
+        fixtureKeySet(MetadataFixture::kInputClips[0], time, at);
+        everywhere = everywhere && at.count(*it) != 0;
+      }
+
+      if(everywhere)
+        dropKey = *it;
+    }
+
+    return dropKey;
+  }
+
+  /// read the effect's output clip at one frame and check it carries what the plugin
+  /// contributes over whatever the mode leaves it inheriting from Source
+  void checkContributed(Report &report,
+                        OFX::Host::ImageEffect::ClipInstance &output,
+                        int mode,
+                        OfxTime time,
+                        const std::string &dropKey,
+                        const std::vector<Contributed> &contributed,
+                        const std::string &prefix)
+  {
+    const std::string clip = kOfxImageEffectSimpleSourceClipName;
+    const std::string where = prefix + " time=" + formatTime(time);
+
+    OfxPropertySetHandle metadata = NULL;
+
+    if(!report.check(gMetadataSuite->clipGetMetadata(output.getHandle(), time, &metadata) == kOfxStatOK && metadata,
+                     where + " fetched"))
+      return;
+
+    std::set<std::string> expected;
+
+    if(mode != eMetadataModeInheritNothing) {
+      fixtureKeySet(clip, time, expected);
+
+      if(mode == eMetadataModeDropOneKey)
+        expected.erase(dropKey);
+    }
+
+    for(size_t c = 0; c < contributed.size(); ++c)
+      expected.insert(contributed[c].key);
+
+    std::set<std::string> found;
+    const OfxStatus st = gMetadataSuite->metadataEnumerate(metadata, collectKey, &found);
+
+    report.check(st == kOfxStatOK && found == expected, where + " keys=" + joinKeys(found));
+
+    for(size_t c = 0; c < contributed.size(); ++c) {
+      const Contributed &one = contributed[c];
+
+      std::string type = "none";
+      std::string value = "none";
+      int dimension = 0;
+
+      const bool ok = readValueN(metadata, one.key.c_str(), type, dimension, value)
+                      && type == one.type
+                      && dimension == one.dimension
+                      && value == one.value;
+
+      report.check(ok, where + " contributed=" + one.key + " type=" + type
+                   + " dimension=" + formatInt(dimension) + " value=" + value
+                   + " expected=" + one.value);
+    }
+
+    // the fixture gives Source a frame rate of its own, so this one key says which of
+    // the two the host put on top
+    std::string inherited = "none";
+    std::string type = "none";
+    std::string value = "none";
+
+    const bool distinguishes =
+      fixtureValue(clip, kOfxMetadataKeyFrameRate, time, inherited)
+      && inherited != formatDouble(kContributeFrameRate)
+      && readValue(metadata, kOfxMetadataKeyFrameRate, type, value)
+      && type == "double"
+      && value == formatDouble(kContributeFrameRate);
+
+    report.check(distinguishes, where + " " kOfxMetadataKeyFrameRate " value=" + value
+                 + " contributed=" + formatDouble(kContributeFrameRate) + " inherited=" + inherited);
+
+    report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
+  }
+
+  /// hold a plugin which contributes metadata of its own to what its output clip comes
+  /// back carrying, over every mode it inherits its source clip's metadata under and
+  /// every frame of the fixture range, with the image still passed through untouched.
+  /// The parameters are driven through the instance changed actions rather than by
+  /// invalidating the metadata by hand, so a host which does not invalidate what a
+  /// parameter change composed fails these. There is no degraded twin: on a host with no
+  /// metadata suite there is nothing a contribution can be observed through beyond that
+  /// pass through, which the generic preconditions already check, so the contract holds
+  /// such a host to the suite instead and fails it there
+  void checkMetadataContribute(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::string contract = "metadata-contribute";
+
+    if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
+      return;
+
+    OFX::Host::ImageEffect::ClipInstance *output = instance.getClip(kOfxImageEffectOutputClipName);
+
+    if(!report.check(output != NULL, contract + " clip=" kOfxImageEffectOutputClipName))
+      return;
+
+    const std::string dropKey = contributeDropKey();
+
+    if(!report.check(!dropKey.empty(), contract + " fixture dropkey=" + dropKey))
+      return;
+
+    std::vector<Contributed> contributed;
+    contributeKeys(kContributeNote, contributed);
+
+    report.check(int(contributed.size()) == kContributedKeyCount,
+                 contract + " contributedkeys=" + formatInt(int(contributed.size())));
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    for(int mode = 0; mode < eMetadataModeCount; ++mode) {
+      std::ostringstream os;
+      os << contract << " mode=" << mode;
+      const std::string where = os.str();
+
+      const bool driven = setParamValue(instance, kContributeNoteParam, kContributeNote)
+                          && setParamValue(instance, kContributeModeParam, formatInt(mode))
+                          && setParamValue(instance, kContributeDropKeyParam, dropKey);
+
+      if(!report.check(driven, where + " parameters set"))
+        continue;
+
+      instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+      instance.paramInstanceChangedAction(kContributeNoteParam, kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
+      instance.paramInstanceChangedAction(kContributeModeParam, kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
+      instance.paramInstanceChangedAction(kContributeDropKeyParam, kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
+      instance.endInstanceChangedAction(kOfxChangeUserEdited);
+
+      for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1)
+        checkContributed(report, *output, mode, time, dropKey, contributed, where);
+
+      RenderPass pass;
+      checkRender(report, instance, &pass);
+
+      std::ostringstream pixels;
+      pixels << where << " passthrough frames=" << pass.framesRendered
+             << " identical=" << pass.framesPassedThrough;
+
+      report.check(pass.framesRendered == kFixtureFrames
+                   && pass.framesPassedThrough == pass.framesRendered,
+                   pixels.str());
+    }
+  }
+
   /// the degraded contracts are registered in both builds on purpose: each pair is held
   /// to a host which cannot meet it in the build the other pair passes in, which is what
   /// shows either of them is able to fail at all
@@ -2280,7 +2541,10 @@ namespace {
     {"metadata-log", kFixtureFrames + 3, checkMetadataLogSupported},
     {"metadata-log-degraded", kFixtureFrames + 2, checkMetadataLogDegraded},
     {"metadata-display", eFilterModeCount * kDisplayFilterCount * 2 + 1, checkMetadataDisplaySupported},
-    {"metadata-display-degraded", eFilterModeCount * kDisplayFilterCount * 2, checkMetadataDisplayDegraded}
+    {"metadata-display-degraded", eFilterModeCount * kDisplayFilterCount * 2, checkMetadataDisplayDegraded},
+    {"metadata-contribute",
+     eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + eMetadataModeCount + 1,
+     checkMetadataContribute}
   };
 
   const Contract *const kContracts = kContractTable;
@@ -2673,6 +2937,12 @@ namespace {
     os << "                        metadata-display-degraded  the same plugin on a host"
        << std::endl;
     os << "                                                   with no metadata suite"
+       << std::endl;
+    os << "                        metadata-contribute        a plugin which contributes"
+       << std::endl;
+    os << "                                                   metadata of its own to its"
+       << std::endl;
+    os << "                                                   output clip"
        << std::endl;
     os << "  with no arguments, publish the fixture through a host, read it back" << std::endl;
     os << "  through the metadata suite, then run it through the metadata plugin and" << std::endl;

@@ -455,6 +455,9 @@ jobs:
           echo "Testing the metadata-display contract against MetadataView"
           "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataView --check metadata-display
+          echo "Testing the metadata-contribute contract against MetadataContribute"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataContribute --check metadata-contribute
           echo "Testing that the metadata-log contract fails a plugin which logs nothing"
           if "$BIN" --plugin-id org.openfx.examples.metadataPlugin --check metadata-log; then
             echo "metadata-log passed a plugin which renders and logs nothing" >&2
@@ -470,6 +473,12 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataView --check metadata-display-degraded; then
             echo "metadata-display-degraded passed a plugin which reads and displays metadata" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-contribute contract fails a plugin which contributes nothing"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataPrint --check metadata-contribute; then
+            echo "metadata-contribute passed a plugin which contributes nothing" >&2
             exit 1
           fi
 
@@ -503,6 +512,12 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataPrint --check metadata-log; then
             echo "metadata-log passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-contribute contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataContribute --check metadata-contribute; then
+            echo "metadata-contribute passed on a host with no metadata suite" >&2
             exit 1
           fi
 

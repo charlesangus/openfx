@@ -371,6 +371,7 @@ namespace OFX {
     std::map<std::string, std::string> _clipPARPropNames;
     std::map<std::string, std::string> _clipROIPropNames;
     std::map<std::string, std::string> _clipFrameRangePropNames;
+    std::map<std::string, std::string> _clipMetadataRetainedKeysPropNames;
 
     std::unique_ptr<EffectOverlayDescriptor> _overlayDescriptor;
   public :
@@ -476,6 +477,7 @@ namespace OFX {
     const std::map<std::string, std::string>& getClipPARPropNames() const { return _clipPARPropNames; }
     const std::map<std::string, std::string>& getClipROIPropNames() const { return _clipROIPropNames; }
     const std::map<std::string, std::string>& getClipFrameRangePropNames() const { return _clipFrameRangePropNames; }
+    const std::map<std::string, std::string>& getClipMetadataRetainedKeysPropNames() const { return _clipMetadataRetainedKeysPropNames; }
 
     /** @brief override this to create an interact for the effect */
     virtual void setOverlayInteractDescriptor(EffectOverlayDescriptor* desc);
@@ -960,6 +962,54 @@ namespace OFX {
     - eFieldUpper  
     */
     void setOutputFielding(FieldEnum v);
+  };
+
+  /** @brief Class used to set the source-clip selection and per-clip retained metadata keys
+  the host uses to compose the metadata an effect inherits, in the outArgs of the metadata action.
+  */
+  class MetadataInheritanceSetter {
+    OFX::PropertySet outArgs_;
+    bool didSomething_;
+    typedef std::map<std::string, std::string> StringStringMap;
+    const StringStringMap& clipMetadataRetainedKeysPropNames_;
+    const std::string& extractValueForName(const StringStringMap& m, const std::string& name) const;
+  public :
+    MetadataInheritanceSetter( OFX::PropertySet props,
+      const StringStringMap& metadataRetainedKeysPropNames)
+      : outArgs_(props)
+      , didSomething_(false)
+      , clipMetadataRetainedKeysPropNames_(metadataRetainedKeysPropNames)
+    {}
+
+    bool didSomething(void) const {return didSomething_;}
+
+    /** @brief, force the host to treat \em clips as the ordered list of input clips whose
+    metadata the effect inherits, most preferred first.
+
+    See the OFX API documentation for the default value of this.
+    */
+    void setSourceClips(const std::vector<std::string> &clips);
+
+    /** @brief convenience overload of setSourceClips for a single source clip */
+    void setSourceClips(const std::string &clip);
+
+    /** @brief the current source-clip list, as last set by setSourceClips or, if it has
+    not been called, as defaulted by the host
+    */
+    std::vector<std::string> getSourceClips() const;
+
+    /** @brief, force the host to retain only \em keys of \em clip's metadata when composing
+    the metadata the effect inherits from that clip.
+
+    Only callable on a clip the effect has defined. Call getRetainedKeys first to see the
+    host's default list before dropping or reordering entries in it.
+    */
+    void setRetainedKeys(const Clip &clip, const std::vector<std::string> &keys);
+
+    /** @brief the current retained-keys list for \em clip, as last set by setRetainedKeys
+    or, if it has not been called, as defaulted by the host
+    */
+    std::vector<std::string> getRetainedKeys(const Clip &clip) const;
   };
 
   /** @brief POD data structure passing in the instance changed args */

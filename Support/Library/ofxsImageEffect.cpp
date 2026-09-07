@@ -773,6 +773,7 @@ namespace OFX {
     _clipPARPropNames[name] = std::string("OfxImageClipPropPAR_") + name;
     _clipROIPropNames[name] = std::string("OfxImageClipPropRoI_") + name;
     _clipFrameRangePropNames[name] = std::string("OfxImageClipPropFrameRange_") + name;
+    _clipMetadataRetainedKeysPropNames[name] = std::string("OfxImageClipPropMetadataRetainedKeys_") + name;
     return clip;
   }
 
@@ -1786,6 +1787,67 @@ namespace OFX {
     case eFieldSingle : outArgs_.propSetString(kOfxImageClipPropFieldOrder, kOfxImageFieldSingle, 0, false); break;
     case eFieldDoubled : outArgs_.propSetString(kOfxImageClipPropFieldOrder, kOfxImageFieldDoubled, 0, false); break;
     }
+  }
+
+  ////////////////////////////////////////////////////////////////////////////////
+  // Class used to set the source-clip selection and per-clip retained metadata keys
+
+  const std::string& MetadataInheritanceSetter::extractValueForName(const StringStringMap& m, const std::string& name) const
+  {
+    StringStringMap::const_iterator it = m.find(name);
+    if(it==m.end())
+      throw(Exception::PropertyUnknownToHost(name.c_str()));
+    return it->second;
+  }
+
+  /** @brief, force the host to treat \em clips as the ordered list of input clips whose metadata the effect inherits */
+  void MetadataInheritanceSetter::setSourceClips(const std::vector<std::string> &clips)
+  {
+    didSomething_ = true;
+
+    // a variable-dimension property only ever grows when written index by index, so writing
+    // fewer entries than the host pre-populated it with leaves the surplus ones behind unless
+    // it is reset to zero dimension first
+    outArgs_.propReset(kOfxImageEffectPropMetadataSourceClip);
+
+    int n = 0;
+    for(std::vector<std::string>::const_iterator it = clips.begin(); it != clips.end(); ++it)
+      outArgs_.propSetString(kOfxImageEffectPropMetadataSourceClip, *it, n++);
+  }
+
+  /** @brief convenience overload of setSourceClips for a single source clip */
+  void MetadataInheritanceSetter::setSourceClips(const std::string &clip)
+  {
+    setSourceClips(std::vector<std::string>(1, clip));
+  }
+
+  /** @brief the current source-clip list, as last set by setSourceClips or, if it has not been called, as defaulted by the host */
+  std::vector<std::string> MetadataInheritanceSetter::getSourceClips() const
+  {
+    std::list<std::string> raw = outArgs_.propGetNString(kOfxImageEffectPropMetadataSourceClip);
+    return std::vector<std::string>(raw.begin(), raw.end());
+  }
+
+  /** @brief, force the host to retain only \em keys of \em clip's metadata when composing the metadata the effect inherits from that clip */
+  void MetadataInheritanceSetter::setRetainedKeys(const Clip &clip, const std::vector<std::string> &keys)
+  {
+    didSomething_ = true;
+    const std::string& propName = extractValueForName(clipMetadataRetainedKeysPropNames_, clip.name());
+
+    // see the comment in setSourceClips: the reset is what makes a shrinking write actually shrink
+    outArgs_.propReset(propName.c_str());
+
+    int n = 0;
+    for(std::vector<std::string>::const_iterator it = keys.begin(); it != keys.end(); ++it)
+      outArgs_.propSetString(propName.c_str(), *it, n++);
+  }
+
+  /** @brief the current retained-keys list for \em clip, as last set by setRetainedKeys or, if it has not been called, as defaulted by the host */
+  std::vector<std::string> MetadataInheritanceSetter::getRetainedKeys(const Clip &clip) const
+  {
+    const std::string& propName = extractValueForName(clipMetadataRetainedKeysPropNames_, clip.name());
+    std::list<std::string> raw = outArgs_.propGetNString(propName.c_str());
+    return std::vector<std::string>(raw.begin(), raw.end());
   }
 
   ////////////////////////////////////////////////////////////////////////////////

@@ -424,4 +424,113 @@ namespace OFX {
     return keys;
   }
 
+  MetadataSetBuilder::MetadataSetBuilder(OfxPropertySetHandle handle)
+    : _metadataHandle(handle)
+    , _didSomething(false)
+  {
+  }
+
+  void MetadataSetBuilder::setString(const std::string &key, const std::string &value)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    OfxStatus stat = gMetadataSuite->metadataSetString(_metadataHandle, key.c_str(), value.c_str());
+    Log::error(stat != kOfxStatOK, "Failed to set metadata key %s, host returned status %s.", key.c_str(), mapStatusToString(stat));
+
+    if(stat == kOfxStatOK)
+      _didSomething = true;
+  }
+
+  void MetadataSetBuilder::setDouble(const std::string &key, double value)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    OfxStatus stat = gMetadataSuite->metadataSetDouble(_metadataHandle, key.c_str(), value);
+    Log::error(stat != kOfxStatOK, "Failed to set metadata key %s, host returned status %s.", key.c_str(), mapStatusToString(stat));
+
+    if(stat == kOfxStatOK)
+      _didSomething = true;
+  }
+
+  void MetadataSetBuilder::setInt(const std::string &key, int value)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    OfxStatus stat = gMetadataSuite->metadataSetInt(_metadataHandle, key.c_str(), value);
+    Log::error(stat != kOfxStatOK, "Failed to set metadata key %s, host returned status %s.", key.c_str(), mapStatusToString(stat));
+
+    if(stat == kOfxStatOK)
+      _didSomething = true;
+  }
+
+  void MetadataSetBuilder::setStringN(const std::string &key, const std::vector<std::string> &values)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    std::vector<const char *> raw;
+    raw.reserve(values.size());
+    for(size_t i = 0; i < values.size(); ++i)
+      raw.push_back(values[i].c_str());
+
+    OfxStatus stat = gMetadataSuite->metadataSetStringN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), raw.data());
+    Log::error(stat != kOfxStatOK, "Failed to set metadata key %s, host returned status %s.", key.c_str(), mapStatusToString(stat));
+
+    if(stat == kOfxStatOK)
+      _didSomething = true;
+  }
+
+  void MetadataSetBuilder::setDoubleN(const std::string &key, const std::vector<double> &values)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    OfxStatus stat = gMetadataSuite->metadataSetDoubleN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), values.data());
+    Log::error(stat != kOfxStatOK, "Failed to set metadata key %s, host returned status %s.", key.c_str(), mapStatusToString(stat));
+
+    if(stat == kOfxStatOK)
+      _didSomething = true;
+  }
+
+  void MetadataSetBuilder::setIntN(const std::string &key, const std::vector<int> &values)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    OfxStatus stat = gMetadataSuite->metadataSetIntN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), values.data());
+    Log::error(stat != kOfxStatOK, "Failed to set metadata key %s, host returned status %s.", key.c_str(), mapStatusToString(stat));
+
+    if(stat == kOfxStatOK)
+      _didSomething = true;
+  }
+
+  void MetadataSetBuilder::copyFrom(const MetadataSet &source)
+  {
+    const std::vector<MetadataEntry> allEntries = source.entries();
+
+    for(size_t i = 0; i < allEntries.size(); ++i) {
+      const MetadataEntry &entry = allEntries[i];
+
+      switch(entry.type) {
+      case eMetadataTypeString :
+        setStringN(entry.key, source.getStringN(entry.key));
+        break;
+
+      case eMetadataTypeDouble :
+        setDoubleN(entry.key, source.getDoubleN(entry.key));
+        break;
+
+      case eMetadataTypeInt :
+        setIntN(entry.key, source.getIntN(entry.key));
+        break;
+
+      case eMetadataTypeNone :
+        break;
+      }
+    }
+  }
+
 };

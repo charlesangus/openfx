@@ -157,8 +157,6 @@ namespace MyHost {
 
         set->releaseReference();
 
-        // a connected clip carries what the effect upstream of it emits, not what the
-        // fixture publishes for a clip of that name
         return;
       }
     }
@@ -1654,7 +1652,7 @@ namespace {
 
     if(MyHost::MyBooleanInstance *flag = dynamic_cast<MyHost::MyBooleanInstance *>(param)) {
       int v = 0;
-      return parseInt(value, v) && flag->set(v != 0) == kOfxStatOK;
+      return parseInt(value, v) && (v == 0 || v == 1) && flag->set(v != 0) == kOfxStatOK;
     }
 
     int number = 0;
@@ -1688,7 +1686,7 @@ namespace {
 
     if(MyHost::MyBooleanInstance *flag = dynamic_cast<MyHost::MyBooleanInstance *>(param)) {
       int v = 0;
-      return parseInt(value, v) && flag->set(time, v != 0) == kOfxStatOK;
+      return parseInt(value, v) && (v == 0 || v == 1) && flag->set(time, v != 0) == kOfxStatOK;
     }
 
     int number = 0;
@@ -2716,7 +2714,7 @@ namespace {
                    + " expected=" + formatDouble(kContributeFrameRate));
 
       if(fetched)
-        gMetadataSuite->metadataRelease(metadata);
+        report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
     }
 
     OfxPointD renderScale;
@@ -2736,19 +2734,28 @@ namespace {
     OfxPropertySetHandle revised = NULL;
     std::string type = "none";
     std::string value = "none";
+    const std::string noteKey = std::string(kContributePrefix) + "note";
+
+    const Contributed *note = NULL;
+    for(size_t c = 0; c < contributed.size() && !note; ++c) {
+      if(contributed[c].key == noteKey)
+        note = &contributed[c];
+    }
 
     const bool sees = driven
+                      && note != NULL
                       && gMetadataSuite->clipGetMetadata(output->getHandle(), MetadataFixture::kFirstFrame,
                                                          &revised) == kOfxStatOK
                       && revised
-                      && readValue(revised, contributed.front().key.c_str(), type, value)
-                      && type == contributed.front().type
-                      && value == contributed.front().value;
+                      && readValue(revised, note->key.c_str(), type, value)
+                      && type == note->type
+                      && value == note->value;
 
-    report.check(sees, contract + " downstream note=" + value + " expected=" + contributed.front().value);
+    report.check(sees, contract + " downstream note=" + value
+                 + " expected=" + (note ? note->value : "none"));
 
     if(revised)
-      gMetadataSuite->metadataRelease(revised);
+      report.check(gMetadataSuite->metadataRelease(revised) == kOfxStatOK, contract + " downstream released");
 #   else
     (void) instance;
 #   endif // OFX_SUPPORTS_METADATA
@@ -2796,10 +2803,9 @@ namespace {
     }
 
     /// take ownership of a node, which must be downstream of every node held already
-    void append(std::unique_ptr<OFX::Host::ImageEffect::Instance> &node)
+    void append(std::unique_ptr<OFX::Host::ImageEffect::Instance> node)
     {
-      _nodes.push_back(std::unique_ptr<OFX::Host::ImageEffect::Instance>());
-      _nodes.back().swap(node);
+      _nodes.push_back(std::move(node));
     }
 
     size_t size() const {return _nodes.size();}
@@ -2823,7 +2829,8 @@ namespace {
     MyHost::MetadataEffectInstance *effect = dynamic_cast<MyHost::MetadataEffectInstance *>(&instance);
 
     if(!report.check(effect != NULL
-                     && instance.getClip(kOfxImageEffectSimpleSourceClipName) != NULL,
+                     && instance.getClip(kOfxImageEffectSimpleSourceClipName) != NULL
+                     && upstream->getClip(kOfxImageEffectOutputClipName) != NULL,
                      "chain id=" + pluginId + " clip=" kOfxImageEffectSimpleSourceClipName))
       return false;
 
@@ -2859,7 +2866,7 @@ namespace {
       if(chain.tail() && !connectUpstream(report, *node, chain.tail(), upstreamIds[i]))
         return false;
 
-      chain.append(node);
+      chain.append(std::move(node));
     }
 
     return true;
@@ -2896,7 +2903,8 @@ namespace {
       return 0;
 #   else
     if(!upstreamIds.empty())
-      report.check(false, "chain unsupported id=" + upstreamIds.front());
+      report.check(false, "chain unsupported id="
+                   + joinKeys(std::set<std::string>(upstreamIds.begin(), upstreamIds.end())));
 #   endif // OFX_SUPPORTS_METADATA
 
     OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, pluginId, pluginDir);
@@ -2925,8 +2933,8 @@ namespace {
 
     gChain.push_back(instance.get());
 
-    // a node's clip preferences were derived before it was connected to the one ahead
-    // of it, so nothing derived before the chain was whole survives it
+    // the chain is only whole from here, so anything a node may have derived or
+    // cached before it was connected is dropped rather than trusted
     invalidateChain();
 #   endif // OFX_SUPPORTS_METADATA
 

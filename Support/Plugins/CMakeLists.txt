@@ -8,6 +8,7 @@ set(PLUGINS
 	GPUGain
 	Invert
 	MetadataContribute
+	MetadataModify
 	MetadataPrint
 	MetadataView
 	MultiBundle

@@ -1589,6 +1589,16 @@ namespace {
     if(MyHost::MyStringInstance *text = dynamic_cast<MyHost::MyStringInstance *>(param))
       return text->set(value.c_str()) == kOfxStatOK;
 
+    if(MyHost::MyDoubleInstance *dbl = dynamic_cast<MyHost::MyDoubleInstance *>(param)) {
+      double v = 0.0;
+      return parseDouble(value, v) && dbl->set(v) == kOfxStatOK;
+    }
+
+    if(MyHost::MyBooleanInstance *flag = dynamic_cast<MyHost::MyBooleanInstance *>(param)) {
+      int v = 0;
+      return parseInt(value, v) && flag->set(v != 0) == kOfxStatOK;
+    }
+
     int number = 0;
 
     if(!parseInt(value, number))
@@ -1613,6 +1623,16 @@ namespace {
     if(MyHost::MyStringInstance *text = dynamic_cast<MyHost::MyStringInstance *>(param))
       return text->set(time, value.c_str()) == kOfxStatOK;
 
+    if(MyHost::MyDoubleInstance *dbl = dynamic_cast<MyHost::MyDoubleInstance *>(param)) {
+      double v = 0.0;
+      return parseDouble(value, v) && dbl->set(time, v) == kOfxStatOK;
+    }
+
+    if(MyHost::MyBooleanInstance *flag = dynamic_cast<MyHost::MyBooleanInstance *>(param)) {
+      int v = 0;
+      return parseInt(value, v) && flag->set(time, v != 0) == kOfxStatOK;
+    }
+
     int number = 0;
 
     if(!parseInt(value, number))
@@ -1636,6 +1656,22 @@ namespace {
 
     if(MyHost::MyStringInstance *text = dynamic_cast<MyHost::MyStringInstance *>(param))
       return text->get(value) == kOfxStatOK;
+
+    if(MyHost::MyDoubleInstance *dbl = dynamic_cast<MyHost::MyDoubleInstance *>(param)) {
+      double v = 0.0;
+      if(dbl->get(v) != kOfxStatOK)
+        return false;
+      value = formatDouble(v);
+      return true;
+    }
+
+    if(MyHost::MyBooleanInstance *flag = dynamic_cast<MyHost::MyBooleanInstance *>(param)) {
+      bool v = false;
+      if(flag->get(v) != kOfxStatOK)
+        return false;
+      value = formatInt(v ? 1 : 0);
+      return true;
+    }
 
     int number = 0;
 
@@ -1666,6 +1702,22 @@ namespace {
 
     if(MyHost::MyStringInstance *text = dynamic_cast<MyHost::MyStringInstance *>(param))
       return text->get(time, value) == kOfxStatOK;
+
+    if(MyHost::MyDoubleInstance *dbl = dynamic_cast<MyHost::MyDoubleInstance *>(param)) {
+      double v = 0.0;
+      if(dbl->get(time, v) != kOfxStatOK)
+        return false;
+      value = formatDouble(v);
+      return true;
+    }
+
+    if(MyHost::MyBooleanInstance *flag = dynamic_cast<MyHost::MyBooleanInstance *>(param)) {
+      bool v = false;
+      if(flag->get(time, v) != kOfxStatOK)
+        return false;
+      value = formatInt(v ? 1 : 0);
+      return true;
+    }
 
     int number = 0;
 

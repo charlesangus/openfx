@@ -10,6 +10,7 @@ set(PLUGINS
 	MetadataContribute
 	MetadataModify
 	MetadataPrint
+	MetadataTimeCode
 	MetadataView
 	MultiBundle
 	Retimer

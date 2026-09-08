@@ -481,6 +481,23 @@ jobs:
             echo "metadata-contribute passed a plugin which contributes nothing" >&2
             exit 1
           fi
+          echo "Testing the metadata-chain contract against MetadataView downstream of MetadataContribute"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView \
+                 --upstream org.openfx.examples.metadataContribute --check metadata-chain
+          echo "Testing that the metadata-chain contract fails without --upstream"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView --check metadata-chain; then
+            echo "metadata-chain passed with no chain built ahead of the plugin" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-chain contract fails a head which contributes nothing"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView \
+                 --upstream org.openfx.examples.metadataPrint --check metadata-chain; then
+            echo "metadata-chain passed a head which contributes nothing" >&2
+            exit 1
+          fi
 
       - name: Configure NoMetadata build with cmake
         if: matrix.check_metadata_off == true
@@ -518,6 +535,13 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataContribute --check metadata-contribute; then
             echo "metadata-contribute passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-chain contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataView \
+                 --upstream org.openfx.examples.metadataContribute --check metadata-chain; then
+            echo "metadata-chain passed on a host with no metadata suite" >&2
             exit 1
           fi
 

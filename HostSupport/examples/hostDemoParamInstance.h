@@ -30,6 +30,7 @@ namespace MyHost {
   protected:
     MyEffectInstance*   _effect;
     OFX::Host::Param::Descriptor& _descriptor;
+    double _value;
   public:
     MyDoubleInstance(MyEffectInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor);
     OfxStatus get(double&);
@@ -44,6 +45,7 @@ namespace MyHost {
   protected:
     MyEffectInstance*   _effect;
     OFX::Host::Param::Descriptor& _descriptor;
+    bool _value;
   public:
     MyBooleanInstance(MyEffectInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor);
     OfxStatus get(bool&);

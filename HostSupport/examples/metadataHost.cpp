@@ -2761,6 +2761,234 @@ namespace {
 #   endif // OFX_SUPPORTS_METADATA
   }
 
+  /// the parameter a plugin which edits inherited metadata has to expose for the
+  /// contract below to drive it, one 'set <key> <value>' or 'remove <key>' operation
+  /// per line
+  const char kModifyOperationsParam[] = "operations";
+
+  /// a key the fixture does not carry, so the case which sets it can only be satisfied
+  /// by the plugin actually contributing it
+  const char kModifyNewKey[]   = "org.openfx.examples.metadataModify.added";
+  const char kModifyNewValue[] = "custom-value";
+
+  /// the value the case which sets an inherited key writes into it, distinct from the
+  /// fixture's own frame rate of 24.0 so a check of it cannot be satisfied by whatever
+  /// the plugin left inherited instead of set
+  const char kModifyFrameRateValue[] = "48.0";
+
+  /// the value the case which sets then removes the same key writes before removing it;
+  /// never itself checked
+  const char kModifySetThenRemoveValue[] = "temporary";
+
+  enum ModifyCaseEnum {
+    eModifyCaseSetNew,
+    eModifyCaseSetInherited,
+    eModifyCaseRemoveInherited,
+    eModifyCaseSetThenRemove
+  };
+
+  const int kModifyCaseCount = 4;
+
+  /// the key the contract removes: the last key, in ascending order, the fixture gives
+  /// Source at every frame of its range. The host pre-populates a clip's retained-keys
+  /// property in that same ascending order, so a setRetainedKeys which writes a shorter
+  /// list without resetting the property first leaves that property's own prior final
+  /// entry behind - and that stale entry is the dropped key itself only when the dropped
+  /// key was the last one, which is the only choice a missing reset cannot hide from
+  std::string modifyDropKey()
+  {
+    std::set<std::string> keys;
+    std::string dropKey;
+
+    fixtureKeySet(MetadataFixture::kInputClips[0], MetadataFixture::kFirstFrame, keys);
+
+    for(std::set<std::string>::const_iterator it = keys.begin(); it != keys.end(); ++it) {
+      bool everywhere = true;
+
+      for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+        std::set<std::string> at;
+        fixtureKeySet(MetadataFixture::kInputClips[0], time, at);
+        everywhere = everywhere && at.count(*it) != 0;
+      }
+
+      if(everywhere)
+        dropKey = *it;
+    }
+
+    return dropKey;
+  }
+
+  /// what one case of the sweep below drives the plugin's operations parameter with,
+  /// and what its own touched key has to come back as
+  struct ModifyCase {
+    std::string name;
+    std::string operations;
+    std::string key;
+    bool        keyIsNew;
+    bool        keyRemoved;
+    std::string value;
+  };
+
+  /// the four operation lists the contract sweeps, each chosen to isolate one rule of
+  /// the plugin's own hint: a set of a key not otherwise carried, a set which has to win
+  /// over what the same key inherits, a remove of an inherited key, and a set followed
+  /// by a remove of that same key, which only the last case reaches
+  ModifyCase modifyCase(int index, const std::string &dropKey)
+  {
+    ModifyCase one;
+
+    switch(index) {
+    case eModifyCaseSetNew :
+      one.name       = "set-new";
+      one.operations = std::string("set ") + kModifyNewKey + " " + kModifyNewValue;
+      one.key        = kModifyNewKey;
+      one.keyIsNew   = true;
+      one.keyRemoved = false;
+      one.value      = kModifyNewValue;
+      break;
+
+    case eModifyCaseSetInherited :
+      one.name       = "set-inherited";
+      one.operations = std::string("set ") + kOfxMetadataKeyFrameRate + " " + kModifyFrameRateValue;
+      one.key        = kOfxMetadataKeyFrameRate;
+      one.keyIsNew   = false;
+      one.keyRemoved = false;
+      one.value      = kModifyFrameRateValue;
+      break;
+
+    case eModifyCaseRemoveInherited :
+      one.name       = "remove-inherited";
+      one.operations = std::string("remove ") + dropKey;
+      one.key        = dropKey;
+      one.keyIsNew   = false;
+      one.keyRemoved = true;
+      one.value      = "";
+      break;
+
+    case eModifyCaseSetThenRemove :
+    default :
+      one.name       = "set-then-remove";
+      one.operations = std::string("set ") + dropKey + " " + kModifySetThenRemoveValue
+                       + "\nremove " + dropKey;
+      one.key        = dropKey;
+      one.keyIsNew   = false;
+      one.keyRemoved = true;
+      one.value      = "";
+      break;
+    }
+
+    return one;
+  }
+
+  /// read the effect's output clip at one frame and check it carries the case's touched
+  /// key the way the case expects, over the fixture's own keys adjusted by it
+  void checkModified(Report &report,
+                     OFX::Host::ImageEffect::ClipInstance &output,
+                     const ModifyCase &one,
+                     OfxTime time,
+                     const std::string &prefix)
+  {
+    const std::string clip = kOfxImageEffectSimpleSourceClipName;
+    const std::string where = prefix + " time=" + formatTime(time);
+
+    OfxPropertySetHandle metadata = NULL;
+
+    if(!report.check(gMetadataSuite->clipGetMetadata(output.getHandle(), time, &metadata) == kOfxStatOK && metadata,
+                     where + " fetched"))
+      return;
+
+    std::set<std::string> expected;
+    fixtureKeySet(clip, time, expected);
+
+    if(one.keyRemoved)
+      expected.erase(one.key);
+    if(one.keyIsNew)
+      expected.insert(one.key);
+
+    std::set<std::string> found;
+    const OfxStatus st = gMetadataSuite->metadataEnumerate(metadata, collectKey, &found);
+
+    report.check(st == kOfxStatOK && found == expected, where + " keys=" + joinKeys(found));
+
+    std::string type = "none";
+    std::string value = "none";
+
+    if(one.keyRemoved) {
+      int dimension = 0;
+      const bool absent = !readValueN(metadata, one.key.c_str(), type, dimension, value);
+
+      report.check(absent, where + " " + one.key + " absent value=" + value);
+    }
+    else {
+      const bool ok = readValue(metadata, one.key.c_str(), type, value)
+                      && type == "string"
+                      && value == one.value;
+
+      report.check(ok, where + " " + one.key + " value=" + value + " expected=" + one.value);
+    }
+
+    report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
+  }
+
+  /// hold a plugin which edits the metadata it inherits from its source clip to every
+  /// case of the sweep above, over every frame of the fixture range, with the image
+  /// still passed through untouched. The operations parameter is driven through the
+  /// instance changed action rather than by invalidating the metadata by hand, so a
+  /// host which does not invalidate what a parameter change composed fails these. There
+  /// is no degraded twin: with no metadata suite there is nothing left for a plugin
+  /// which only ever edits what it reads through that suite to be judged on, beyond the
+  /// pass-through the generic preconditions already check
+  void checkMetadataModify(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::string contract = "metadata-modify";
+
+    if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
+      return;
+
+    OFX::Host::ImageEffect::ClipInstance *output = instance.getClip(kOfxImageEffectOutputClipName);
+
+    if(!report.check(output != NULL, contract + " clip=" kOfxImageEffectOutputClipName))
+      return;
+
+    const std::string dropKey = modifyDropKey();
+
+    if(!report.check(!dropKey.empty(), contract + " fixture dropkey=" + dropKey))
+      return;
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    for(int index = 0; index < kModifyCaseCount; ++index) {
+      const ModifyCase one = modifyCase(index, dropKey);
+
+      const std::string where = contract + " case=" + one.name;
+
+      const bool driven = setParamValue(instance, kModifyOperationsParam, one.operations);
+
+      if(!report.check(driven, where + " parameters set"))
+        continue;
+
+      instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+      instance.paramInstanceChangedAction(kModifyOperationsParam, kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
+      instance.endInstanceChangedAction(kOfxChangeUserEdited);
+
+      for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1)
+        checkModified(report, *output, one, time, where);
+
+      RenderPass pass;
+      checkRender(report, instance, &pass);
+
+      std::ostringstream pixels;
+      pixels << where << " passthrough frames=" << pass.framesRendered
+             << " identical=" << pass.framesPassedThrough;
+
+      report.check(pass.framesRendered == kFixtureFrames
+                   && pass.framesPassedThrough == pass.framesRendered,
+                   pixels.str());
+    }
+  }
+
   /// the degraded contracts are registered in both builds on purpose: each pair is held
   /// to a host which cannot meet it in the build the other pair passes in, which is what
   /// shows either of them is able to fail at all
@@ -2772,6 +3000,7 @@ namespace {
     {"metadata-contribute",
      eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + eMetadataModeCount + 1,
      checkMetadataContribute},
+    {"metadata-modify", kModifyCaseCount * (kFixtureFrames * 2 + 1) + 1, checkMetadataModify},
     {"metadata-chain", kFixtureFrames * 2 + 4, checkMetadataChain}
   };
 
@@ -3301,6 +3530,12 @@ namespace {
     os << "                                                   metadata of its own to its"
        << std::endl;
     os << "                                                   output clip"
+       << std::endl;
+    os << "                        metadata-modify            a plugin which edits the"
+       << std::endl;
+    os << "                                                   metadata it inherits from"
+       << std::endl;
+    os << "                                                   its source clip"
        << std::endl;
     os << "                        metadata-chain             a two node --upstream chain,"
        << std::endl;

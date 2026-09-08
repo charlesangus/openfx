@@ -103,6 +103,25 @@ namespace MyHost {
     {
       return new MetadataClipInstance(descriptor, this);
     }
+
+    /// make the named input clip carry what the output clip of 'upstream' emits, rather
+    /// than what the fixture publishes for it
+    void connect(const std::string &inputClip, OFX::Host::ImageEffect::Instance *upstream)
+    {
+      _upstream[inputClip] = upstream;
+    }
+
+    /// the effect bound to the named input clip, NULL if there is none
+    OFX::Host::ImageEffect::Instance *getUpstream(const std::string &inputClip) const
+    {
+      const std::map<std::string, OFX::Host::ImageEffect::Instance *>::const_iterator it =
+        _upstream.find(inputClip);
+
+      return it == _upstream.end() ? NULL : it->second;
+    }
+
+  private :
+    std::map<std::string, OFX::Host::ImageEffect::Instance *> _upstream; ///< what each input clip is connected to
   };
 
   class MetadataHost : public Host {
@@ -122,6 +141,27 @@ namespace MyHost {
     MyClipInstance::fetchMetadata(time, metadata);
 
     const std::string &clip = getName();
+
+    if(!isOutput()) {
+      MetadataEffectInstance *effect = dynamic_cast<MetadataEffectInstance *>(_effectInstance);
+      OFX::Host::ImageEffect::Instance *upstream = effect ? effect->getUpstream(clip) : NULL;
+      OFX::Host::ImageEffect::ClipInstance *emitted =
+        upstream ? upstream->getClip(kOfxImageEffectOutputClipName) : NULL;
+
+      if(emitted) {
+        OFX::Host::ImageEffect::MetadataSet *set = emitted->getMetadata(time);
+        const OFX::Host::Property::PropertyMap &props = set->getProperties();
+
+        for(OFX::Host::Property::PropertyMap::const_iterator it = props.begin(); it != props.end(); ++it)
+          metadata.addProperty(it->second->deepCopy());
+
+        set->releaseReference();
+
+        // a connected clip carries what the effect upstream of it emits, not what the
+        // fixture publishes for a clip of that name
+        return;
+      }
+    }
 
     for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
       const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
@@ -176,6 +216,24 @@ namespace {
   const bool kMetadataSuiteExpected = true;
 #else
   const bool kMetadataSuiteExpected = false;
+#endif // OFX_SUPPORTS_METADATA
+
+#ifdef OFX_SUPPORTS_METADATA
+
+  /// the effects --upstream chains ahead of the plugin --plugin-id names, head first
+  /// with that plugin last, which is how a contract handed one instance reaches the
+  /// effects upstream of it
+  std::vector<OFX::Host::ImageEffect::Instance *> gChain;
+
+  /// drop what every effect in the chain has derived. An input clip caches what the
+  /// effect upstream of it derived, and nothing in HostSupport reaches across effects,
+  /// so a contract which changes what an upstream effect emits has to call this
+  void invalidateChain()
+  {
+    for(size_t i = 0; i < gChain.size(); ++i)
+      gChain[i]->invalidateMetadata();
+  }
+
 #endif // OFX_SUPPORTS_METADATA
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -2611,16 +2669,104 @@ namespace {
     return NULL;
   }
 
+#ifdef OFX_SUPPORTS_METADATA
+
+  /// the effects --upstream builds ahead of the plugin under test, head first
+  class ChainNodes {
+  public :
+    ~ChainNodes()
+    {
+      // a node holds a raw pointer to the one upstream of it, and std::vector says
+      // nothing about the order it destroys its elements in, so this goes tail first
+      while(!_nodes.empty())
+        _nodes.pop_back();
+    }
+
+    /// take ownership of a node, which must be downstream of every node held already
+    void append(std::unique_ptr<OFX::Host::ImageEffect::Instance> &node)
+    {
+      _nodes.push_back(std::unique_ptr<OFX::Host::ImageEffect::Instance>());
+      _nodes.back().swap(node);
+    }
+
+    size_t size() const {return _nodes.size();}
+
+    OFX::Host::ImageEffect::Instance *node(size_t i) const {return _nodes[i].get();}
+
+    /// the node the next one added is downstream of, NULL if there is none yet
+    OFX::Host::ImageEffect::Instance *tail() const {return _nodes.empty() ? NULL : _nodes.back().get();}
+
+  private :
+    std::vector<std::unique_ptr<OFX::Host::ImageEffect::Instance> > _nodes;
+  };
+
+  /// make the source clip of 'instance' carry what 'upstream' emits, reporting the one
+  /// precondition an effect downstream of another has to meet
+  bool connectUpstream(Report &report,
+                       OFX::Host::ImageEffect::Instance &instance,
+                       OFX::Host::ImageEffect::Instance *upstream,
+                       const std::string &pluginId)
+  {
+    MyHost::MetadataEffectInstance *effect = dynamic_cast<MyHost::MetadataEffectInstance *>(&instance);
+
+    if(!report.check(effect != NULL
+                     && instance.getClip(kOfxImageEffectSimpleSourceClipName) != NULL,
+                     "chain id=" + pluginId + " clip=" kOfxImageEffectSimpleSourceClipName))
+      return false;
+
+    effect->connect(kOfxImageEffectSimpleSourceClipName, upstream);
+
+    return true;
+  }
+
+  /// build the effects --upstream names, head first, each one's source clip carrying
+  /// what the one before it emits, and report the preconditions each has to meet
+  bool buildChain(Report &report,
+                  OFX::Host::ImageEffect::PluginCache &effectCache,
+                  const std::string &pluginDir,
+                  const std::vector<std::string> &upstreamIds,
+                  ChainNodes &chain)
+  {
+    for(size_t i = 0; i < upstreamIds.size(); ++i) {
+      OFX::Host::ImageEffect::ImageEffectPlugin *plugin =
+        findPlugin(report, effectCache, upstreamIds[i], pluginDir);
+
+      if(!plugin)
+        return false;
+
+      std::unique_ptr<OFX::Host::ImageEffect::Instance> node =
+        createPluginInstance(report, plugin, chooseContext(*plugin));
+
+      if(!node.get())
+        return false;
+
+      if(!report.check(node->getClipPreferences(), "chain id=" + upstreamIds[i] + " clipprefs"))
+        return false;
+
+      if(chain.tail() && !connectUpstream(report, *node, chain.tail(), upstreamIds[i]))
+        return false;
+
+      chain.append(node);
+    }
+
+    return true;
+  }
+
+#endif // OFX_SUPPORTS_METADATA
+
   /// load an arbitrary plugin by id and drive it far enough to prove the contract any
   /// plugin has to meet, regardless of what it does: it resolves, describes, creates an
   /// instance exposing the clips its context guarantees, and completes a render pass.
   /// It asserts nothing about composition order or retained keys, which a read-only
-  /// plugin implements neither of. Returns the number of checks the contract made, zero
-  /// if none was asked for or it never got as far as running
+  /// plugin implements neither of. The effects --upstream names are built ahead of it,
+  /// so that its source clip carries what the last of them emits. Returns the number of
+  /// checks the contract made, zero if none was asked for or it never got as far as
+  /// running
   int checkGenericPlugin(Report &report,
                          MyHost::MetadataHost &host,
                          const std::string &pluginDir,
                          const std::string &pluginId,
+                         const std::vector<std::string> &upstreamIds,
                          const Contract *contract)
   {
     BuildTreePluginCache cache(pluginDir);
@@ -2629,6 +2775,16 @@ namespace {
     cache.setCacheVersion("metadataHostV1");
     effectCache.registerInCache(cache);
     cache.scanPluginFiles();
+
+#   ifdef OFX_SUPPORTS_METADATA
+    ChainNodes chain;
+
+    if(!buildChain(report, effectCache, pluginDir, upstreamIds, chain))
+      return 0;
+#   else
+    if(!upstreamIds.empty())
+      report.check(false, "chain unsupported id=" + upstreamIds.front());
+#   endif // OFX_SUPPORTS_METADATA
 
     OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, pluginId, pluginDir);
 
@@ -2647,18 +2803,37 @@ namespace {
     report.check(instance->getClip(kOfxImageEffectOutputClipName) != NULL,
                  "plugin clip=" kOfxImageEffectOutputClipName);
 
-    checkRender(report, *instance);
-
-    if(!contract)
+#   ifdef OFX_SUPPORTS_METADATA
+    if(chain.tail() && !connectUpstream(report, *instance, chain.tail(), pluginId))
       return 0;
 
-    const int before = report.mark();
+    for(size_t i = 0; i < chain.size(); ++i)
+      gChain.push_back(chain.node(i));
 
-    contract->run(report, *instance);
+    gChain.push_back(instance.get());
 
-    const int ran = report.mark() - before;
+    // a node's clip preferences were derived before it was connected to the one ahead
+    // of it, so nothing derived before the chain was whole survives it
+    invalidateChain();
+#   endif // OFX_SUPPORTS_METADATA
 
-    report.ranAtLeast(before, contract->leastChecks, std::string("check=") + contract->name);
+    checkRender(report, *instance);
+
+    int ran = 0;
+
+    if(contract) {
+      const int before = report.mark();
+
+      contract->run(report, *instance);
+
+      ran = report.mark() - before;
+
+      report.ranAtLeast(before, contract->leastChecks, std::string("check=") + contract->name);
+    }
+
+#   ifdef OFX_SUPPORTS_METADATA
+    gChain.clear();
+#   endif // OFX_SUPPORTS_METADATA
 
     return ran;
   }
@@ -2900,7 +3075,10 @@ namespace {
 
 #endif // OFX_SUPPORTS_METADATA
 
-  int runChecks(const std::string &pluginDir, const std::string &pluginId, const Contract *contract)
+  int runChecks(const std::string &pluginDir,
+                const std::string &pluginId,
+                const std::vector<std::string> &upstreamIds,
+                const Contract *contract)
   {
     MyHost::MetadataHost host;
     OfxHost *handle = host.getHandle();
@@ -2938,7 +3116,7 @@ namespace {
 #endif // OFX_SUPPORTS_METADATA
     }
     else {
-      const int ran = checkGenericPlugin(report, host, pluginDir, pluginId, contract);
+      const int ran = checkGenericPlugin(report, host, pluginDir, pluginId, upstreamIds, contract);
 
       if(contract)
         report.check(ran > 0, std::string("check=") + contract->name + " ran");
@@ -2954,7 +3132,7 @@ namespace {
   void usage(std::ostream &os)
   {
     os << "usage: metadataHost [--list] [--plugin-dir <path>] [--plugin-id <id>]" << std::endl;
-    os << "                   [--check <name>]" << std::endl;
+    os << "                   [--upstream <id>]... [--check <name>]" << std::endl;
     os << "  --list              print the fixture table and exit" << std::endl;
     os << "  --plugin-dir <path> look for the plugin bundle in <path> rather than in"
        << std::endl;
@@ -2969,6 +3147,15 @@ namespace {
        << std::endl;
     os << "                      plugin's own composition order and retained-key checks"
        << std::endl;
+    os << "  --upstream <id>     load <id> from --plugin-dir and chain it ahead of the"
+       << std::endl;
+    os << "                      plugin --plugin-id names, so that plugin's source clip"
+       << std::endl;
+    os << "                      carries the metadata <id> emits rather than the"
+       << std::endl;
+    os << "                      fixture's own. Repeat it to build a longer chain, head"
+       << std::endl;
+    os << "                      first, with --plugin-id as the tail" << std::endl;
     os << "  --check <name>      hold the plugin --plugin-id names to the named contract"
        << std::endl;
     os << "                      as well as to those preconditions, one of:" << std::endl;
@@ -3006,6 +3193,7 @@ int main(int argc, char **argv)
   bool list = false;
   std::string pluginDir(METADATA_PLUGIN_DIR);
   std::string pluginId;
+  std::vector<std::string> upstreamIds;
   std::string checkName;
 
   for(int i = 1; i < argc; ++i) {
@@ -3030,6 +3218,14 @@ int main(int argc, char **argv)
       }
       pluginId = argv[++i];
     }
+    else if(arg == "--upstream") {
+      if(i + 1 >= argc) {
+        std::cerr << "metadataHost --upstream needs an id" << std::endl;
+        usage(std::cerr);
+        return 2;
+      }
+      upstreamIds.push_back(argv[++i]);
+    }
     else if(arg == "--check") {
       if(i + 1 >= argc) {
         std::cerr << "metadataHost --check needs a name" << std::endl;
@@ -3050,6 +3246,12 @@ int main(int argc, char **argv)
   }
 
   const Contract *contract = NULL;
+
+  if(!upstreamIds.empty() && pluginId.empty()) {
+    std::cerr << "metadataHost --upstream needs --plugin-id" << std::endl;
+    usage(std::cerr);
+    return 2;
+  }
 
   if(!checkName.empty()) {
     if(pluginId.empty()) {
@@ -3072,5 +3274,5 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  return runChecks(pluginDir, pluginId, contract);
+  return runChecks(pluginDir, pluginId, upstreamIds, contract);
 }

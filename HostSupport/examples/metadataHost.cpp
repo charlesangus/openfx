@@ -2642,6 +2642,118 @@ namespace {
     }
   }
 
+  /// the two nodes a metadata-chain contract expects --upstream and --plugin-id to have
+  /// built, proven by identifier so a mistyped invocation cannot pass vacuously
+  const char kChainHeadId[] = "org.openfx.examples.metadataContribute";
+  const char kChainTailId[] = "org.openfx.examples.metadataView";
+
+  /// the note the contract drives through the head once the initial read is checked,
+  /// distinct from metadata-contribute's own note so a chain check cannot be satisfied
+  /// by a value the two contracts happen to share
+  const char kChainNote[] = "chained";
+
+  /// hold a two node --upstream chain to what a node downstream of another has to see:
+  /// the tail's output clip carrying the union of what the fixture publishes for its
+  /// source and what the head contributes, the head's contributed values winning over
+  /// the fixture's own, and a change to the head reaching the tail only once the chain
+  /// has been invalidated
+  void checkMetadataChain(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::string contract = "metadata-chain";
+
+    if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
+      return;
+
+#   ifdef OFX_SUPPORTS_METADATA
+    if(!report.check(gChain.size() == 2, contract + " nodes=" + formatInt(int(gChain.size()))))
+      return;
+
+    OFX::Host::ImageEffect::Instance *head = gChain[0];
+
+    report.check(head->getPlugin()->getIdentifier() == kChainHeadId,
+                 contract + " head id=" + head->getPlugin()->getIdentifier());
+    report.check(gChain[1]->getPlugin()->getIdentifier() == kChainTailId,
+                 contract + " tail id=" + gChain[1]->getPlugin()->getIdentifier());
+
+    OFX::Host::ImageEffect::ClipInstance *output = instance.getClip(kOfxImageEffectOutputClipName);
+
+    if(!report.check(output != NULL, contract + " clip=" kOfxImageEffectOutputClipName))
+      return;
+
+    std::vector<Contributed> contributed;
+    contributeKeys(kChainNote, contributed);
+
+    std::set<std::string> contributedKeys;
+    for(size_t c = 0; c < contributed.size(); ++c)
+      contributedKeys.insert(contributed[c].key);
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      const std::string where = contract + " time=" + formatTime(time);
+
+      std::set<std::string> expected;
+      fixtureKeySet(kOfxImageEffectSimpleSourceClipName, time, expected);
+      expected.insert(contributedKeys.begin(), contributedKeys.end());
+
+      OfxPropertySetHandle metadata = NULL;
+      const bool fetched =
+        gMetadataSuite->clipGetMetadata(output->getHandle(), time, &metadata) == kOfxStatOK && metadata;
+
+      std::set<std::string> found;
+      if(fetched)
+        gMetadataSuite->metadataEnumerate(metadata, collectKey, &found);
+
+      report.check(fetched && found == expected, where + " keys=" + joinKeys(found));
+
+      std::string type = "none";
+      std::string value = "none";
+
+      const bool crossed = fetched
+                           && readValue(metadata, kOfxMetadataKeyFrameRate, type, value)
+                           && type == "double"
+                           && value == formatDouble(kContributeFrameRate);
+
+      report.check(crossed, where + " " kOfxMetadataKeyFrameRate " value=" + value
+                   + " expected=" + formatDouble(kContributeFrameRate));
+
+      if(fetched)
+        gMetadataSuite->metadataRelease(metadata);
+    }
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    const bool driven = setParamValue(*head, kContributeNoteParam, kChainNote);
+
+    if(driven) {
+      head->beginInstanceChangedAction(kOfxChangeUserEdited);
+      head->paramInstanceChangedAction(kContributeNoteParam, kOfxChangeUserEdited,
+                                       MetadataFixture::kFirstFrame, renderScale);
+      head->endInstanceChangedAction(kOfxChangeUserEdited);
+
+      invalidateChain();
+    }
+
+    OfxPropertySetHandle revised = NULL;
+    std::string type = "none";
+    std::string value = "none";
+
+    const bool sees = driven
+                      && gMetadataSuite->clipGetMetadata(output->getHandle(), MetadataFixture::kFirstFrame,
+                                                         &revised) == kOfxStatOK
+                      && revised
+                      && readValue(revised, contributed.front().key.c_str(), type, value)
+                      && type == contributed.front().type
+                      && value == contributed.front().value;
+
+    report.check(sees, contract + " downstream note=" + value + " expected=" + contributed.front().value);
+
+    if(revised)
+      gMetadataSuite->metadataRelease(revised);
+#   else
+    (void) instance;
+#   endif // OFX_SUPPORTS_METADATA
+  }
+
   /// the degraded contracts are registered in both builds on purpose: each pair is held
   /// to a host which cannot meet it in the build the other pair passes in, which is what
   /// shows either of them is able to fail at all
@@ -2652,7 +2764,8 @@ namespace {
     {"metadata-display-degraded", eFilterModeCount * kDisplayFilterCount * 2, checkMetadataDisplayDegraded},
     {"metadata-contribute",
      eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + eMetadataModeCount + 1,
-     checkMetadataContribute}
+     checkMetadataContribute},
+    {"metadata-chain", kFixtureFrames * 2 + 4, checkMetadataChain}
   };
 
   const Contract *const kContracts = kContractTable;
@@ -3180,6 +3293,12 @@ namespace {
     os << "                                                   metadata of its own to its"
        << std::endl;
     os << "                                                   output clip"
+       << std::endl;
+    os << "                        metadata-chain             a two node --upstream chain,"
+       << std::endl;
+    os << "                                                   proving what the tail sees"
+       << std::endl;
+    os << "                                                   of what the head contributes"
        << std::endl;
     os << "  with no arguments, publish the fixture through a host, read it back" << std::endl;
     os << "  through the metadata suite, then run it through the metadata plugin and" << std::endl;

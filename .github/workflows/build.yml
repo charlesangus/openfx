@@ -461,6 +461,9 @@ jobs:
           echo "Testing the metadata-modify contract against MetadataModify"
           "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataModify --check metadata-modify
+          echo "Testing the metadata-timecode contract against MetadataTimeCode"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataTimeCode --check metadata-timecode
           echo "Testing that the metadata-log contract fails a plugin which logs nothing"
           if "$BIN" --plugin-id org.openfx.examples.metadataPlugin --check metadata-log; then
             echo "metadata-log passed a plugin which renders and logs nothing" >&2
@@ -488,6 +491,12 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataPrint --check metadata-modify; then
             echo "metadata-modify passed a plugin which edits nothing" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-timecode contract fails a plugin which contributes no timecode"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataContribute --check metadata-timecode; then
+            echo "metadata-timecode passed a plugin which contributes no timecode" >&2
             exit 1
           fi
           echo "Testing the metadata-chain contract against MetadataView downstream of MetadataContribute"
@@ -550,6 +559,12 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataModify --check metadata-modify; then
             echo "metadata-modify passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-timecode contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataTimeCode --check metadata-timecode; then
+            echo "metadata-timecode passed on a host with no metadata suite" >&2
             exit 1
           fi
           echo "Testing that the metadata-chain contract fails on the OFF build"

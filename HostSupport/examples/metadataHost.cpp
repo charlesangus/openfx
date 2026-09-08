@@ -2989,6 +2989,307 @@ namespace {
     }
   }
 
+  /// the parameters a plugin computing a timecode has to expose for the contract below
+  /// to drive it
+  const char kTimecodeStartParam[]            = "startTimecode";
+  const char kTimecodeRateParam[]             = "rate";
+  const char kTimecodeRateFromMetadataParam[] = "rateFromMetadata";
+
+  /// driven in place of the plugin's own default: at 24fps from frame 1 the default
+  /// start code reproduces the fixture's own 01:00:00:00 / 01:00:00:01 / 01:00:00:02
+  /// byte for byte, so a contract left on it could not tell a contributed timecode from
+  /// an inherited one
+  const char kTimecodeStart[] = "10:00:00:00";
+
+  /// the wrap needs a start code of its own rather than the sweep's: only a start code
+  /// one frame short of the day boundary rolls over to 00:00:00:00 on the very next frame
+  const char kTimecodeWrapStart[] = "23:59:59:23";
+
+  /// the frame the plugin's own start code lands on with useStartFrame left off, which
+  /// this contract never turns on
+  const OfxTime kTimecodeOrigin = 1;
+
+  /// the rate driven into the plugin's rate parameter, distinct from the fixture's 24.0
+  /// so a readback of it can only be satisfied by the parameter path rather than by
+  /// whatever the metadata path would have left behind
+  const double kTimecodeParamRate = 30.0;
+
+  enum TimecodeCellEnum {
+    eTimecodeCellFromMetadata,
+    eTimecodeCellFromParam,
+    eTimecodeCellCount
+  };
+
+  const int kTimecodeCellCount = eTimecodeCellCount;
+
+  /// one cell of the sweep below: whether the rate is taken from Source's metadata or
+  /// from the rate parameter, and what the frame rate key has to read back as
+  struct TimecodeCell {
+    std::string name;
+    bool        rateFromMetadata;
+    double      expectedRate;
+  };
+
+  TimecodeCell timecodeCell(int index)
+  {
+    TimecodeCell one;
+
+    switch(index) {
+    case eTimecodeCellFromMetadata :
+      one.name             = "from-metadata";
+      one.rateFromMetadata = true;
+      one.expectedRate     = 24.0;
+      break;
+
+    case eTimecodeCellFromParam :
+    default :
+      one.name             = "from-param";
+      one.rateFromMetadata = false;
+      one.expectedRate     = kTimecodeParamRate;
+      break;
+    }
+
+    return one;
+  }
+
+  enum TimecodeExtraTimeEnum {
+    eTimecodeExtraSecond,
+    eTimecodeExtraFourSecond,
+    eTimecodeExtraMinute,
+    eTimecodeExtraDayWrap,
+    eTimecodeExtraTimeCount
+  };
+
+  const int kTimecodeExtraTimeCount = eTimecodeExtraTimeCount;
+
+  /// one time the sweep checks the plugin at, and the start code driving it. Every
+  /// entry but the wrap carries the sweep's own start code, so the wrap - the one
+  /// exception - can carry its own without touching what any other time is checked
+  /// against
+  struct TimecodeTime {
+    OfxTime     time;
+    const char *startTimecode;
+  };
+
+  TimecodeTime timecodeTime(int index)
+  {
+    TimecodeTime one;
+
+    if(index < kFixtureFrames) {
+      one.time          = MetadataFixture::kFirstFrame + index;
+      one.startTimecode = kTimecodeStart;
+      return one;
+    }
+
+    switch(index - kFixtureFrames) {
+    case eTimecodeExtraSecond :
+      one.time          = 25;
+      one.startTimecode = kTimecodeStart;
+      break;
+
+    case eTimecodeExtraFourSecond :
+      one.time          = 100;
+      one.startTimecode = kTimecodeStart;
+      break;
+
+    case eTimecodeExtraMinute :
+      one.time          = 1441;
+      one.startTimecode = kTimecodeStart;
+      break;
+
+    case eTimecodeExtraDayWrap :
+    default :
+      one.time          = MetadataFixture::kFirstFrame + 1;
+      one.startTimecode = kTimecodeWrapStart;
+      break;
+    }
+
+    return one;
+  }
+
+  /// this contract's own reading of a start code's four fields, composed independently
+  /// of the plugin's own hand rolled parser so a mistake shared between the two could
+  /// not cancel out
+  bool timecodeContractFields(const std::string &code, int fields[4])
+  {
+    std::istringstream is(code);
+    char sep = 0;
+
+    fields[0] = fields[1] = fields[2] = fields[3] = 0;
+
+    is >> fields[0] >> sep >> fields[1] >> sep >> fields[2] >> sep >> fields[3];
+
+    return !is.fail();
+  }
+
+  long long timecodeContractFrames(const std::string &code, int rate)
+  {
+    int fields[4];
+
+    timecodeContractFields(code, fields);
+
+    return (((long long) fields[0] * 60 + fields[1]) * 60 + fields[2]) * rate + fields[3];
+  }
+
+  /// the non drop frame HH:MM:SS:FF a frame count stands for, wrapped into the twenty
+  /// four hours a timecode can express
+  std::string timecodeContractFormat(long long frames, int rate)
+  {
+    const long long day = 24LL * 3600 * rate;
+
+    long long wrapped = frames % day;
+    if(wrapped < 0)
+      wrapped += day;
+
+    const long long seconds = wrapped / rate;
+    const long long frame   = wrapped % rate;
+
+    std::ostringstream os;
+    os << std::setfill('0')
+       << std::setw(2) << (seconds / 3600) << ":"
+       << std::setw(2) << ((seconds / 60) % 60) << ":"
+       << std::setw(2) << (seconds % 60) << ":"
+       << std::setw(2) << frame;
+
+    return os.str();
+  }
+
+  std::string timecodeExpected(const std::string &startCode, int rate, OfxTime time)
+  {
+    const long long offset = (long long) (time - kTimecodeOrigin);
+
+    return timecodeContractFormat(timecodeContractFrames(startCode, rate) + offset, rate);
+  }
+
+  /// read the effect's output clip at one time and check it carries the timecode the
+  /// cell's start code and counted rate owe it, the frame rate the cell owes as a
+  /// double rather than as a string, and the fixture's own keys for Source with the
+  /// timecode key added, since the plugin contributes one at every time regardless of
+  /// whether the fixture itself carries one there
+  void checkTimecode(Report &report,
+                     OFX::Host::ImageEffect::ClipInstance &output,
+                     const TimecodeCell &cell,
+                     const TimecodeTime &one,
+                     const std::string &prefix)
+  {
+    const std::string where = prefix + " time=" + formatTime(one.time);
+
+    OfxPropertySetHandle metadata = NULL;
+
+    if(!report.check(gMetadataSuite->clipGetMetadata(output.getHandle(), one.time, &metadata) == kOfxStatOK && metadata,
+                     where + " fetched"))
+      return;
+
+    std::set<std::string> expected;
+    fixtureKeySet(kOfxImageEffectSimpleSourceClipName, one.time, expected);
+    expected.insert(kOfxMetadataKeyTimecode);
+
+    std::set<std::string> found;
+    const OfxStatus st = gMetadataSuite->metadataEnumerate(metadata, collectKey, &found);
+
+    report.check(st == kOfxStatOK && found == expected, where + " keys=" + joinKeys(found));
+
+    const int rate = int(cell.expectedRate + 0.5);
+    const std::string wantedTimecode = timecodeExpected(one.startTimecode, rate, one.time);
+
+    std::string timecodeType = "none";
+    std::string timecodeValue = "none";
+
+    const bool timecodeOk = readValue(metadata, kOfxMetadataKeyTimecode, timecodeType, timecodeValue)
+                            && timecodeType == "string"
+                            && timecodeValue == wantedTimecode;
+
+    report.check(timecodeOk, where + " " kOfxMetadataKeyTimecode " value=" + timecodeValue
+                 + " expected=" + wantedTimecode);
+
+    std::string rateType = "none";
+    std::string rateValue = "none";
+
+    const bool rateOk = readValue(metadata, kOfxMetadataKeyFrameRate, rateType, rateValue)
+                        && rateType == "double"
+                        && rateValue == formatDouble(cell.expectedRate);
+
+    report.check(rateOk, where + " " kOfxMetadataKeyFrameRate " type=" + rateType
+                 + " value=" + rateValue + " expected=" + formatDouble(cell.expectedRate));
+
+    report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
+  }
+
+  /// hold a plugin which counts a timecode on from a start code to what the sweep below
+  /// owes it: the fixture's own rate taken off Source's metadata in one cell, a rate
+  /// driven through the parameter in the other, evaluated at every frame of the fixture
+  /// range plus the second, four-second, minute and twenty-four-hour rollovers, with
+  /// the image still passed through untouched. There is no degraded twin: with no
+  /// metadata suite there is no source frame rate left to take, and nothing left to read
+  /// the plugin's own output back through, beyond the pass-through the generic
+  /// preconditions already check
+  void checkMetadataTimecode(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::string contract = "metadata-timecode";
+
+    if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
+      return;
+
+    OFX::Host::ImageEffect::ClipInstance *output = instance.getClip(kOfxImageEffectOutputClipName);
+
+    if(!report.check(output != NULL, contract + " clip=" kOfxImageEffectOutputClipName))
+      return;
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    const int kTimecodeTimeCount = kFixtureFrames + kTimecodeExtraTimeCount;
+
+    for(int index = 0; index < kTimecodeCellCount; ++index) {
+      const TimecodeCell cell = timecodeCell(index);
+
+      const std::string where = contract + " cell=" + cell.name;
+
+      const bool driven =
+        setParamValue(instance, kTimecodeRateFromMetadataParam, cell.rateFromMetadata ? "1" : "0")
+        && setParamValue(instance, kTimecodeRateParam, formatDouble(kTimecodeParamRate));
+
+      if(!report.check(driven, where + " parameters set"))
+        continue;
+
+      instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+      instance.paramInstanceChangedAction(kTimecodeRateFromMetadataParam, kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
+      instance.paramInstanceChangedAction(kTimecodeRateParam, kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
+      instance.endInstanceChangedAction(kOfxChangeUserEdited);
+
+      for(int t = 0; t < kTimecodeTimeCount; ++t) {
+        const TimecodeTime one = timecodeTime(t);
+
+        const std::string timeWhere = where + " time=" + formatTime(one.time);
+
+        const bool startDriven = setParamValue(instance, kTimecodeStartParam, one.startTimecode);
+
+        if(!report.check(startDriven, timeWhere + " starttimecode set"))
+          continue;
+
+        instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+        instance.paramInstanceChangedAction(kTimecodeStartParam, kOfxChangeUserEdited,
+                                            MetadataFixture::kFirstFrame, renderScale);
+        instance.endInstanceChangedAction(kOfxChangeUserEdited);
+
+        checkTimecode(report, *output, cell, one, where);
+      }
+
+      RenderPass pass;
+      checkRender(report, instance, &pass);
+
+      std::ostringstream pixels;
+      pixels << where << " passthrough frames=" << pass.framesRendered
+             << " identical=" << pass.framesPassedThrough;
+
+      report.check(pass.framesRendered == kFixtureFrames
+                   && pass.framesPassedThrough == pass.framesRendered,
+                   pixels.str());
+    }
+  }
+
   /// the degraded contracts are registered in both builds on purpose: each pair is held
   /// to a host which cannot meet it in the build the other pair passes in, which is what
   /// shows either of them is able to fail at all
@@ -3001,6 +3302,9 @@ namespace {
      eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + eMetadataModeCount + 1,
      checkMetadataContribute},
     {"metadata-modify", kModifyCaseCount * (kFixtureFrames * 2 + 1) + 1, checkMetadataModify},
+    {"metadata-timecode",
+     kTimecodeCellCount * (kFixtureFrames + kTimecodeExtraTimeCount) * 3 + kTimecodeCellCount + 1,
+     checkMetadataTimecode},
     {"metadata-chain", kFixtureFrames * 2 + 4, checkMetadataChain}
   };
 
@@ -3536,6 +3840,12 @@ namespace {
     os << "                                                   metadata it inherits from"
        << std::endl;
     os << "                                                   its source clip"
+       << std::endl;
+    os << "                        metadata-timecode          a plugin which counts a"
+       << std::endl;
+    os << "                                                   timecode on from a start"
+       << std::endl;
+    os << "                                                   code"
        << std::endl;
     os << "                        metadata-chain             a two node --upstream chain,"
        << std::endl;

@@ -3704,6 +3704,354 @@ namespace {
     }
   }
 
+
+  /// the head a metadata-compare invocation has to have built ahead of the plugin.
+  /// Every key the fixture gives Mask it also gives Source at the same frame, so with
+  /// no head there is no Mask only key and no key the two hold identically at any frame
+  /// of the range; the head edits Source while Mask stays on the fixture, which is what
+  /// puts those two line kinds within reach
+  const char kCompareHeadId[] = "org.openfx.examples.metadataModify";
+
+  /// the second input a plugin which compares two sets of metadata has to expose
+  const char kCompareMaskClip[] = "Mask";
+
+  /// the prefixes the lines of the display carry, one per kind of difference
+  const char kCompareSourceOnlyPrefix[] = "Source only: ";
+  const char kCompareMaskOnlyPrefix[]   = "Mask only: ";
+  const char kCompareDiffersPrefix[]    = "differs: ";
+
+  /// the key the head takes off Source, leaving Mask's own the only one the other input
+  /// does not hold
+  const char kCompareMaskOnlyKey[] = kOfxMetadataKeySampleType;
+
+  /// the key the head gives Source Mask's own value at, leaving the two holding it
+  /// identically. The fixture gives it a different value on each input at every frame,
+  /// so the head has to be driven per frame for it to land on Mask's
+  const char kCompareSharedKey[] = kOfxMetadataKeyFilePath;
+
+  enum CompareCaseEnum {
+    eCompareCaseUnedited,
+    eCompareCaseMaskOnly,
+    eCompareCaseShared,
+    eCompareCaseCount
+  };
+
+  const char *compareCaseName(int index)
+  {
+    switch(index) {
+    case eCompareCaseMaskOnly : return "mask-only";
+    case eCompareCaseShared   : return "shared";
+    default                   : return "unedited";
+    }
+  }
+
+  /// the one line pinned to a literal rather than composed from the fixture, so that the
+  /// same mistake in this file's composition and in the plugin's cannot hide in the
+  /// agreement between them
+  const int  kComparePinnedCase = eCompareCaseMaskOnly;
+  const char kComparePinnedLine[] = "Mask only: ofx/sampletype=uint";
+
+  /// what a case drives the head's operations parameter with at a frame; the empty list
+  /// leaves the head passing Source through unedited
+  std::string compareOperations(int index, OfxTime time)
+  {
+    std::string onMask;
+
+    switch(index) {
+    case eCompareCaseMaskOnly :
+      return std::string("remove ") + kCompareMaskOnlyKey;
+
+    case eCompareCaseShared :
+      if(!fixtureValue(kCompareMaskClip, kCompareSharedKey, time, onMask))
+        return std::string();
+      return std::string("set ") + kCompareSharedKey + " " + onMask;
+
+    default :
+      return std::string();
+    }
+  }
+
+  /// what the fixture gives a clip at a time, written the way a plugin streaming the
+  /// values out produces them rather than to formatDouble's seventeen digits
+  void compareValues(const std::string &clip, OfxTime time, std::map<std::string, std::string> &values)
+  {
+    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+      const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
+
+      if(entryAppliesAt(entry, clip, time))
+        values[entry.key] = displayValue(entry);
+    }
+  }
+
+  /// what a case leaves of Source once the head has edited it
+  void compareEdit(int index,
+                   const std::map<std::string, std::string> &mask,
+                   std::map<std::string, std::string> &source)
+  {
+    const std::map<std::string, std::string>::const_iterator shared = mask.find(kCompareSharedKey);
+
+    switch(index) {
+    case eCompareCaseMaskOnly :
+      source.erase(kCompareMaskOnlyKey);
+      break;
+
+    case eCompareCaseShared :
+      if(shared != mask.end())
+        source[kCompareSharedKey] = shared->second;
+      break;
+
+    default :
+      break;
+    }
+  }
+
+  /// the display two sets of metadata owe: one line per key they disagree on, in
+  /// ascending key order, with no line at all for a key they both hold the same value at
+  /// and no line after the last one
+  std::string compareDisplay(const std::map<std::string, std::string> &source,
+                             const std::map<std::string, std::string> &mask,
+                             int &lines)
+  {
+    std::set<std::string> keys;
+    std::map<std::string, std::string>::const_iterator it;
+
+    for(it = source.begin(); it != source.end(); ++it)
+      keys.insert(it->first);
+    for(it = mask.begin(); it != mask.end(); ++it)
+      keys.insert(it->first);
+
+    std::string text;
+    lines = 0;
+
+    for(std::set<std::string>::const_iterator k = keys.begin(); k != keys.end(); ++k) {
+      const std::map<std::string, std::string>::const_iterator onSource = source.find(*k);
+      const std::map<std::string, std::string>::const_iterator onMask = mask.find(*k);
+
+      std::string line;
+
+      if(onMask == mask.end())
+        line = std::string(kCompareSourceOnlyPrefix) + *k + "=" + onSource->second;
+      else if(onSource == source.end())
+        line = std::string(kCompareMaskOnlyPrefix) + *k + "=" + onMask->second;
+      else if(onSource->second != onMask->second)
+        line = std::string(kCompareDiffersPrefix) + *k + ": Source=" + onSource->second
+               + " Mask=" + onMask->second;
+      else
+        continue;
+
+      if(lines)
+        text += "\n";
+
+      text += line;
+      lines += 1;
+    }
+
+    return text;
+  }
+
+  /// the number of lines text is written on, none for an empty display
+  int compareLineCount(const std::string &text)
+  {
+    if(text.empty())
+      return 0;
+
+    return int(std::count(text.begin(), text.end(), '\n')) + 1;
+  }
+
+  /// the first line of text opening with prefix, empty if it carries none
+  std::string compareLineWith(const std::string &text, const std::string &prefix)
+  {
+    std::string::size_type at = 0;
+
+    while(at <= text.size()) {
+      const std::string::size_type end = text.find('\n', at);
+      const std::string line = text.substr(at, end == std::string::npos ? end : end - at);
+
+      if(line.compare(0, prefix.size(), prefix) == 0)
+        return line;
+
+      if(end == std::string::npos)
+        break;
+
+      at = end + 1;
+    }
+
+    return std::string();
+  }
+
+  /// the preconditions the contract below needs met before it can compose anything: the
+  /// suite, the one node chain --upstream built ahead of the plugin, proven by
+  /// identifier so a mistyped invocation cannot pass vacuously, and the second input the
+  /// plugin compares against. Returns the head, NULL if any of them was not met
+  OFX::Host::ImageEffect::Instance *compareHead(Report &report,
+                                                OFX::Host::ImageEffect::Instance &instance,
+                                                const std::string &contract)
+  {
+    if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
+      return NULL;
+
+#   ifdef OFX_SUPPORTS_METADATA
+    if(!report.check(gChain.size() == 2, contract + " nodes=" + formatInt(int(gChain.size()))))
+      return NULL;
+
+    OFX::Host::ImageEffect::Instance *head = gChain[0];
+
+    if(!report.check(head->getPlugin()->getIdentifier() == kCompareHeadId,
+                     contract + " head id=" + head->getPlugin()->getIdentifier()))
+      return NULL;
+
+    if(!report.check(instance.getClip(kCompareMaskClip) != NULL,
+                     contract + " clip=" + kCompareMaskClip))
+      return NULL;
+
+    return head;
+#   else
+    (void) instance;
+    return NULL;
+#   endif // OFX_SUPPORTS_METADATA
+  }
+
+  /// hold a plugin which shows how the metadata of its two inputs differ to what the
+  /// fixture, edited by the head, gives them: one line per key only one of them holds or
+  /// they hold different values at, and nothing at all for a key they agree on. Each
+  /// display is compared byte for byte and its line count against the number of
+  /// differences, so a spurious line is caught even in the cases which owe none. The
+  /// head and the plugin are both driven through the instance changed actions rather
+  /// than by invalidating the metadata by hand, so a host which does not invalidate what
+  /// a parameter change composed fails these. Degraded is the same plugin on a host with
+  /// no metadata suite, where it has nothing to compare and so owes an empty display
+  void checkMetadataCompare(Report &report, OFX::Host::ImageEffect::Instance &instance, bool degraded)
+  {
+    const std::string clip = kOfxImageEffectSimpleSourceClipName;
+    const std::string contract = degraded ? "metadata-compare-degraded" : "metadata-compare";
+
+    OFX::Host::ImageEffect::Instance *head = NULL;
+
+    if(!degraded) {
+      head = compareHead(report, instance, contract);
+
+      if(!head)
+        return;
+
+      std::map<std::string, std::string> source;
+      std::map<std::string, std::string> mask;
+      int lines = 0;
+
+      compareValues(clip, MetadataFixture::kFirstFrame, source);
+      compareValues(kCompareMaskClip, MetadataFixture::kFirstFrame, mask);
+      compareEdit(kComparePinnedCase, mask, source);
+
+      const std::string pinned =
+        compareLineWith(compareDisplay(source, mask, lines), kCompareMaskOnlyPrefix);
+
+      report.check(pinned == kComparePinnedLine,
+                   contract + " pinned case=" + compareCaseName(kComparePinnedCase)
+                   + " expected=" + escapeLines(pinned) + " literal=" + kComparePinnedLine);
+    }
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    for(int index = 0; index < eCompareCaseCount; ++index) {
+      for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+        std::ostringstream os;
+        os << contract << " case=" << compareCaseName(index) << " time=" << formatTime(time);
+        const std::string where = os.str();
+
+        if(head) {
+          const std::string operations = compareOperations(index, time);
+
+          if(!report.check(setParamValue(*head, kModifyOperationsParam, operations),
+                           where + " head operations=" + escapeLines(operations)))
+            continue;
+
+          head->beginInstanceChangedAction(kOfxChangeUserEdited);
+          head->paramInstanceChangedAction(kModifyOperationsParam, kOfxChangeUserEdited,
+                                           time, renderScale);
+          head->endInstanceChangedAction(kOfxChangeUserEdited);
+
+#         ifdef OFX_SUPPORTS_METADATA
+          invalidateChain();
+#         endif // OFX_SUPPORTS_METADATA
+        }
+
+        instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+        instance.paramInstanceChangedAction(kDisplayParam, kOfxChangeUserEdited, time, renderScale);
+        instance.endInstanceChangedAction(kOfxChangeUserEdited);
+
+        std::string shown = "none";
+        const bool read = getParamValue(instance, kDisplayParam, shown);
+
+        if(degraded) {
+          report.check(read && shown.empty(), where + " display=" + escapeLines(shown));
+          continue;
+        }
+
+        std::map<std::string, std::string> source;
+        std::map<std::string, std::string> mask;
+        int lines = 0;
+
+        compareValues(clip, time, source);
+        compareValues(kCompareMaskClip, time, mask);
+        compareEdit(index, mask, source);
+
+        const std::string wanted = compareDisplay(source, mask, lines);
+
+        report.check(read && shown == wanted,
+                     where + " display=" + escapeLines(shown)
+                     + " expected=" + escapeLines(wanted));
+
+        report.check(compareLineCount(shown) == lines,
+                     where + " lines=" + formatInt(compareLineCount(shown))
+                     + " differences=" + formatInt(lines));
+
+        const std::string only = compareLineWith(shown, kCompareMaskOnlyPrefix);
+
+        switch(index) {
+        case eCompareCaseMaskOnly :
+          report.check(!only.empty() && only == std::string(kCompareMaskOnlyPrefix)
+                       + kCompareMaskOnlyKey + "=" + mask[kCompareMaskOnlyKey],
+                       where + " maskonly=" + escapeLines(only));
+          break;
+
+        case eCompareCaseShared :
+          report.check(shown.find(kCompareSharedKey) == std::string::npos,
+                       where + " shared=" + kCompareSharedKey + " unshown");
+          break;
+
+        default :
+          report.check(only.empty(), where + " maskonly=" + escapeLines(only) + " none");
+          break;
+        }
+      }
+
+      std::ostringstream os;
+      os << contract << " case=" << compareCaseName(index);
+      const std::string where = os.str();
+
+      RenderPass pass;
+      checkRender(report, instance, &pass);
+
+      std::ostringstream pixels;
+      pixels << where << " passthrough frames=" << pass.framesRendered
+             << " identical=" << pass.framesPassedThrough;
+
+      report.check(pass.framesRendered == kFixtureFrames
+                   && pass.framesPassedThrough == pass.framesRendered,
+                   pixels.str());
+    }
+  }
+
+  void checkMetadataCompareSupported(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    checkMetadataCompare(report, instance, /*degraded=*/false);
+  }
+
+  void checkMetadataCompareDegraded(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    checkMetadataCompare(report, instance, /*degraded=*/true);
+  }
+
   /// the degraded contracts are registered in both builds on purpose: each pair is held
   /// to a host which cannot meet it in the build the other pair passes in, which is what
   /// shows either of them is able to fail at all
@@ -3722,6 +4070,12 @@ namespace {
     {"metadata-copy",
      kCopyModeCount * kCopyFilterCount * kFixtureFrames * 2 + kCopyModeCount + 1,
      checkMetadataCopy},
+    {"metadata-compare",
+     eCompareCaseCount * (kFixtureFrames * 4 + 1) + 5,
+     checkMetadataCompareSupported},
+    {"metadata-compare-degraded",
+     eCompareCaseCount * (kFixtureFrames + 1),
+     checkMetadataCompareDegraded},
     {"metadata-chain", kFixtureFrames * 2 + 4, checkMetadataChain}
   };
 
@@ -4270,7 +4624,19 @@ namespace {
        << std::endl;
     os << "                                                   two inputs or from both"
        << std::endl;
-    os << "                        metadata-chain             a two node --upstream chain,"
+    os << "                        metadata-compare           a plugin which shows how the"
+     << std::endl;
+  os << "                                                   metadata of its two inputs"
+     << std::endl;
+  os << "                                                   differs, run as the tail of"
+     << std::endl;
+  os << "                                                   an --upstream chain"
+     << std::endl;
+  os << "                        metadata-compare-degraded  the same plugin on a host"
+     << std::endl;
+  os << "                                                   with no metadata suite"
+     << std::endl;
+  os << "                        metadata-chain             a two node --upstream chain,"
        << std::endl;
     os << "                                                   proving what the tail sees"
        << std::endl;

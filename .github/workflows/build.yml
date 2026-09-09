@@ -467,6 +467,10 @@ jobs:
           echo "Testing the metadata-copy contract against MetadataCopy"
           "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataCopy --check metadata-copy
+          echo "Testing the metadata-compare contract against MetadataCompare downstream of MetadataModify"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataCompare \
+                 --upstream org.openfx.examples.metadataModify --check metadata-compare
           echo "Testing that the metadata-log contract fails a plugin which logs nothing"
           if "$BIN" --plugin-id org.openfx.examples.metadataPlugin --check metadata-log; then
             echo "metadata-log passed a plugin which renders and logs nothing" >&2
@@ -506,6 +510,13 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataContribute --check metadata-copy; then
             echo "metadata-copy passed a plugin which never selects its source clips" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-compare-degraded contract fails a plugin which compares metadata"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataCompare \
+                 --upstream org.openfx.examples.metadataModify --check metadata-compare-degraded; then
+            echo "metadata-compare-degraded passed a plugin which shows how its inputs differ" >&2
             exit 1
           fi
           echo "Testing the metadata-chain contract against MetadataView downstream of MetadataContribute"
@@ -552,6 +563,11 @@ jobs:
           echo "Testing the metadata-display-degraded contract against MetadataView on the OFF build"
           "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataView --check metadata-display-degraded
+          echo "Testing the metadata-compare-degraded contract against MetadataCompare on the OFF build"
+          # no --upstream here: the OFF build has no chain to build, and rejects the
+          # argument outright, so the degraded twin is held to the plugin alone
+          "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataCompare --check metadata-compare-degraded
           echo "Testing that the metadata-log contract fails on the OFF build"
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataPrint --check metadata-log; then
@@ -580,6 +596,13 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataCopy --check metadata-copy; then
             echo "metadata-copy passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-compare contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataCompare \
+                 --upstream org.openfx.examples.metadataModify --check metadata-compare; then
+            echo "metadata-compare passed on a host with no metadata suite" >&2
             exit 1
           fi
           echo "Testing that the metadata-chain contract fails on the OFF build"

@@ -370,6 +370,71 @@ its source clip's inheritance untouched, calls ``getRetainedKeys`` and
 returns true in every one of those branches, since even the modes that
 inherit nothing still contributed keys through ``metadata``.
 
+Worked examples
+=================
+
+Seven complete plugins under ``Support/Plugins/`` exercise this API end to
+end. `MetadataPrint
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataPrint/metadataPrint.cpp>`_
+and `MetadataView
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataView/metadataView.cpp>`_,
+walked through above in "Putting it together", cover the plain read path:
+logging every key a clip carries, and filtering that same metadata into a
+read-only display parameter. `MetadataContribute
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataContribute/metadataContribute.cpp>`_,
+walked through above at the end of "Contributing metadata", is the
+minimal write path: a fixed contribution through every
+``MetadataSetBuilder`` entry point, paired with each of the three ways
+to steer inheritance — untouched, one key dropped, or nothing inherited
+at all.
+
+`MetadataModify
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataModify/metadataModify.cpp>`_
+takes that further: an ordered, user-authored list of ``set`` and
+``remove`` operations is resolved against a single source clip's
+inherited metadata, a later operation on a key overriding an earlier
+one, before either ``metadata`` or ``inheritance`` is touched.
+Every removal it performs, like every removal in MetadataContribute,
+is expressed by leaving a key off the list passed to
+``setRetainedKeys`` — there is no suite call that deletes an inherited
+key directly, since ``inheritance`` has no such call and ``metadata``
+holds only what the effect contributes, never what it inherits.
+
+`MetadataTimeCode
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataTimeCode/metadataTimeCode.cpp>`_
+computes a timecode from a start code and a frame rate and contributes
+it fresh on every call to ``getMetadata``, so the value it writes
+changes from one frame to the next: the concrete demonstration that
+metadata belongs to an image, not to a clip as a whole.
+
+`MetadataCopy
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataCopy/metadataCopy.cpp>`_
+and `MetadataCompare
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataCompare/metadataCompare.cpp>`_
+are the two examples with more than one input clip, ``Source`` and
+``Mask``; both declare only ``eContextGeneral``, since declaring
+``eContextFilter`` as well would let a host instantiate them with a
+single clip. MetadataCopy combines the two inputs' metadata under four
+selectable modes — source only, mask only, or either one layered over
+the other — filtering each clip's contribution through its own pattern
+parameter before retaining it. MetadataCompare takes the same two
+inputs but writes nothing: it reads both clips' metadata independently
+and reports, into a read-only parameter, which keys belong to only one
+side and which are present on both but disagree.
+
+MetadataCopy is also where a fact about the host's default becomes
+unavoidable rather than academic: as covered in
+`HostSupport/src/ofxhImageEffect.cpp
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/HostSupport/src/ofxhImageEffect.cpp>`_,
+the host pre-populates a retained-keys default, the whole of that
+clip's key set, only for the first input clip an effect describes;
+every other clip's list starts empty. A single-input effect never
+notices, but MetadataCopy has two inputs, so it cannot rely on
+``getRetainedKeys`` to hand back candidates for ``Mask`` — filtering an
+empty list would contribute nothing from it at all — and instead reads
+``Mask``'s own metadata directly and calls ``setRetainedKeys`` on it
+from scratch, exactly as it does for ``Source``.
+
 .. _metadataNukeInterop:
 
 Interop note: Nuke has no metadata suite today

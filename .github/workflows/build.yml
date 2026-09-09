@@ -464,6 +464,9 @@ jobs:
           echo "Testing the metadata-timecode contract against MetadataTimeCode"
           "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataTimeCode --check metadata-timecode
+          echo "Testing the metadata-copy contract against MetadataCopy"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataCopy --check metadata-copy
           echo "Testing that the metadata-log contract fails a plugin which logs nothing"
           if "$BIN" --plugin-id org.openfx.examples.metadataPlugin --check metadata-log; then
             echo "metadata-log passed a plugin which renders and logs nothing" >&2
@@ -497,6 +500,12 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataContribute --check metadata-timecode; then
             echo "metadata-timecode passed a plugin which contributes no timecode" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-copy contract fails a plugin with only one input"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataContribute --check metadata-copy; then
+            echo "metadata-copy passed a plugin which never selects its source clips" >&2
             exit 1
           fi
           echo "Testing the metadata-chain contract against MetadataView downstream of MetadataContribute"
@@ -565,6 +574,12 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataTimeCode --check metadata-timecode; then
             echo "metadata-timecode passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-copy contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataCopy --check metadata-copy; then
+            echo "metadata-copy passed on a host with no metadata suite" >&2
             exit 1
           fi
           echo "Testing that the metadata-chain contract fails on the OFF build"

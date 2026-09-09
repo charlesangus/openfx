@@ -3290,6 +3290,420 @@ namespace {
     }
   }
 
+  /// the parameters a plugin which takes its metadata from either of its two inputs or
+  /// from both combined has to expose for the contract below to drive it
+  const char kCopyModeParam[]             = "mode";
+  const char kCopySourceFilterParam[]     = "sourceFilter";
+  const char kCopySourceFilterModeParam[] = "sourceFilterMode";
+  const char kCopyMaskFilterParam[]       = "maskFilter";
+  const char kCopyMaskFilterModeParam[]   = "maskFilterMode";
+
+  /// the two input clips it reads, which are the two the fixture publishes
+  const char *const kCopySourceClip = MetadataFixture::kInputClips[0];
+  const char *const kCopyMaskClip   = MetadataFixture::kInputClips[1];
+
+  enum CopyModeEnum {
+    eCopyModeSourceOnly,
+    eCopyModeMaskOnly,
+    eCopyModeSourceOverMask,
+    eCopyModeMaskOverSource,
+    eCopyModeCount
+  };
+
+  const int kCopyModeCount = eCopyModeCount;
+
+  /// the input clips a mode composes, in increasing precedence, so the clip named last
+  /// is the one whose value survives a key both inputs carry. The two single input modes
+  /// name one clip alone, so the other's keys are gone rather than merely overridden
+  void copyModeClips(int mode, std::vector<std::string> &clips)
+  {
+    switch(mode) {
+    case eCopyModeSourceOnly :
+      clips.push_back(kCopySourceClip);
+      break;
+
+    case eCopyModeMaskOnly :
+      clips.push_back(kCopyMaskClip);
+      break;
+
+    case eCopyModeMaskOverSource :
+      clips.push_back(kCopySourceClip);
+      clips.push_back(kCopyMaskClip);
+      break;
+
+    case eCopyModeSourceOverMask :
+    default :
+      clips.push_back(kCopyMaskClip);
+      clips.push_back(kCopySourceClip);
+      break;
+    }
+  }
+
+  const char *copyModeName(int mode)
+  {
+    switch(mode) {
+    case eCopyModeSourceOnly     : return "source-only";
+    case eCopyModeMaskOnly       : return "mask-only";
+    case eCopyModeMaskOverSource : return "mask-over-source";
+    default                      : return "source-over-mask";
+    }
+  }
+
+  /// does the whole of text match pattern, ignoring case, '*' standing for any run of
+  /// characters including none. Written by splitting the pattern on its stars and
+  /// walking the literal runs between them, rather than the way a plugin would write it,
+  /// so that the two do not share a mistake
+  bool globMatchesNoCase(const std::string &text, const std::string &pattern)
+  {
+    std::string haystack = text;
+    std::string wanted = pattern;
+
+    std::transform(haystack.begin(), haystack.end(), haystack.begin(), lowerCase);
+    std::transform(wanted.begin(), wanted.end(), wanted.begin(), lowerCase);
+
+    std::vector<std::string> runs;
+    std::string run;
+
+    for(size_t i = 0; i < wanted.size(); ++i) {
+      if(wanted[i] != '*') {
+        run += wanted[i];
+        continue;
+      }
+
+      if(!run.empty())
+        runs.push_back(run);
+      run.clear();
+    }
+
+    if(!run.empty())
+      runs.push_back(run);
+
+    const bool openStart = !wanted.empty() && wanted[0] == '*';
+    const bool openEnd   = !wanted.empty() && wanted[wanted.size() - 1] == '*';
+
+    if(runs.empty())
+      return wanted.empty() ? haystack.empty() : true;
+
+    size_t first = 0;
+    size_t last = runs.size();
+    size_t at = 0;
+    size_t end = haystack.size();
+
+    if(!openStart) {
+      if(haystack.size() < runs[0].size() || haystack.compare(0, runs[0].size(), runs[0]) != 0)
+        return false;
+
+      at = runs[0].size();
+      first = 1;
+    }
+
+    if(!openEnd) {
+      if(last == first)
+        return at == end;
+
+      const std::string &tail = runs[last - 1];
+
+      if(end < at + tail.size() || haystack.compare(end - tail.size(), tail.size(), tail) != 0)
+        return false;
+
+      end -= tail.size();
+      last -= 1;
+    }
+
+    for(size_t r = first; r < last; ++r) {
+      const size_t found = haystack.find(runs[r], at);
+
+      if(found == std::string::npos || found + runs[r].size() > end)
+        return false;
+
+      at = found + runs[r].size();
+    }
+
+    return true;
+  }
+
+  /// one cell of the filter sweep below. The two inputs are driven independently, in
+  /// both the pattern and what it is matched against, so a plugin which reaches for one
+  /// input's filter when it narrows the other fails
+  struct CopyFilter {
+    const char *name;
+    const char *sourceFilter;
+    int         sourceFilterMode;
+    const char *maskFilter;
+    int         maskFilterMode;
+  };
+
+  /// the filters swept, between them covering every filter mode: an unfiltered Source
+  /// against a Mask narrowed on the value side, the two inputs narrowed under different
+  /// modes at once, and a Source narrowed to nothing against an unfiltered Mask. A
+  /// pattern is matched against the whole of the text, so one meant to be found anywhere
+  /// in it carries a star at each end: a bare 'timecode' matches no key of the fixture
+  const CopyFilter kCopyFilters[] = {
+    {"open-source", "",           eFilterModeKeysAndValues, "*/mask/*", eFilterModeKeysAndValues},
+    {"split-modes", "*timecode*", eFilterModeKeysOnly,      "*/mask/*", eFilterModeValuesOnly},
+    {"open-mask",   "nosuchkey",  eFilterModeValuesOnly,    "",         eFilterModeKeysOnly}
+  };
+
+  const int kCopyFilterCount = sizeof(kCopyFilters) / sizeof(kCopyFilters[0]);
+
+  /// the key the value check reads. The fixture gives it to both inputs with a different
+  /// value on each, so which of the two comes back is what says which input the mode put
+  /// on top, and every cell of the sweep leaves it on at least one side
+  const char kCopyCollidedKey[] = kOfxMetadataKeyFilePath;
+
+  /// the pattern and the mode a cell narrows one clip with
+  void copyFilterFor(const CopyFilter &filter, const std::string &clip, std::string &pattern, int &mode)
+  {
+    const bool source = clip == kCopySourceClip;
+
+    pattern = source ? filter.sourceFilter : filter.maskFilter;
+    mode    = source ? filter.sourceFilterMode : filter.maskFilterMode;
+  }
+
+  /// what a pattern under a mode leaves of the keys the fixture gives a clip at a time.
+  /// An empty pattern keeps every one of them whatever the mode says
+  void copyRetainedKeys(const std::string &clip,
+                        OfxTime time,
+                        const std::string &pattern,
+                        int mode,
+                        std::set<std::string> &keys)
+  {
+    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+      const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
+
+      if(!entryAppliesAt(entry, clip, time))
+        continue;
+
+      bool kept = pattern.empty();
+
+      if(!kept) {
+        switch(mode) {
+        case eFilterModeKeysOnly   : kept = globMatchesNoCase(entry.key, pattern); break;
+        case eFilterModeValuesOnly : kept = globMatchesNoCase(displayValue(entry), pattern); break;
+        default                    : kept = globMatchesNoCase(entry.key, pattern)
+                                            || globMatchesNoCase(displayValue(entry), pattern); break;
+        }
+      }
+
+      if(kept)
+        keys.insert(entry.key);
+    }
+  }
+
+  /// the keys a mode and a cell of the sweep leave on the effect's output clip at a time
+  void copyExpectedKeys(int mode, const CopyFilter &filter, OfxTime time, std::set<std::string> &keys)
+  {
+    std::vector<std::string> clips;
+    copyModeClips(mode, clips);
+
+    for(size_t c = 0; c < clips.size(); ++c) {
+      std::string pattern;
+      int filterMode = eFilterModeKeysAndValues;
+
+      copyFilterFor(filter, clips[c], pattern, filterMode);
+      copyRetainedKeys(clips[c], time, pattern, filterMode, keys);
+    }
+  }
+
+  /// the entry the fixture gives for one key of a clip at a time, NULL if it gives none
+  const MetadataFixture::Entry *fixtureEntry(const std::string &clip, const std::string &key, OfxTime time)
+  {
+    for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
+      const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
+
+      if(key == entry.key && entryAppliesAt(entry, clip, time))
+        return &entry;
+    }
+
+    return NULL;
+  }
+
+  /// the entry a mode and a cell leave the key carrying: the one from the clip named
+  /// last among those which both compose the key and retain it under their own filter.
+  /// NULL if no clip leaves it on the output clip at all
+  const MetadataFixture::Entry *copyExpectedEntry(int mode,
+                                                  const CopyFilter &filter,
+                                                  const std::string &key,
+                                                  OfxTime time)
+  {
+    std::vector<std::string> clips;
+    copyModeClips(mode, clips);
+
+    const MetadataFixture::Entry *winner = NULL;
+
+    for(size_t c = 0; c < clips.size(); ++c) {
+      std::string pattern;
+      int filterMode = eFilterModeKeysAndValues;
+      std::set<std::string> keys;
+
+      copyFilterFor(filter, clips[c], pattern, filterMode);
+      copyRetainedKeys(clips[c], time, pattern, filterMode, keys);
+
+      if(keys.count(key))
+        winner = fixtureEntry(clips[c], key, time);
+    }
+
+    return winner;
+  }
+
+  /// the fixture has to give the collided key a different value on each input at every
+  /// frame, or a check of which input won could be satisfied by either of them
+  bool copyFixtureCollides()
+  {
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      std::string onSource;
+      std::string onMask;
+
+      if(!fixtureValue(kCopySourceClip, kCopyCollidedKey, time, onSource)
+         || !fixtureValue(kCopyMaskClip, kCopyCollidedKey, time, onMask)
+         || onSource == onMask)
+        return false;
+    }
+
+    return true;
+  }
+
+  /// read the effect's output clip at one frame and check it carries what the mode and
+  /// the cell leave of the two inputs, and that the collided key came off the input the
+  /// mode put on top rather than off the other
+  void checkCopied(Report &report,
+                   OFX::Host::ImageEffect::ClipInstance &output,
+                   int mode,
+                   const CopyFilter &filter,
+                   OfxTime time,
+                   const std::string &prefix)
+  {
+    const std::string where = prefix + " time=" + formatTime(time);
+
+    std::set<std::string> expected;
+    copyExpectedKeys(mode, filter, time, expected);
+
+    OfxPropertySetHandle metadata = NULL;
+    const OfxStatus fetched = gMetadataSuite->clipGetMetadata(output.getHandle(), time, &metadata);
+
+    // a clip left carrying nothing answers kOfxStatReplyDefault and no handle at all,
+    // which is what the cells that retain nothing on the composed side come back as
+    if(expected.empty()) {
+      report.check(fetched == kOfxStatReplyDefault && metadata == NULL,
+                   where + " keys=none status=" + formatInt(fetched));
+      return;
+    }
+
+    if(!report.check(fetched == kOfxStatOK && metadata,
+                     where + " fetched status=" + formatInt(fetched)))
+      return;
+
+    std::set<std::string> found;
+    const OfxStatus st = gMetadataSuite->metadataEnumerate(metadata, collectKey, &found);
+
+    report.check(st == kOfxStatOK && found == expected,
+                 where + " keys=" + joinKeys(found) + " expected=" + joinKeys(expected));
+
+    const MetadataFixture::Entry *winner = copyExpectedEntry(mode, filter, kCopyCollidedKey, time);
+
+    std::string type = "none";
+    std::string value = "none";
+    int dimension = 0;
+
+    const bool read = readValueN(metadata, kCopyCollidedKey, type, dimension, value);
+
+    if(winner) {
+      const bool ok = read
+                      && type == typeName(winner->type)
+                      && dimension == entryDimension(*winner)
+                      && value == entryValue(*winner);
+
+      report.check(ok, where + " " + kCopyCollidedKey + " value=" + escapeLines(value)
+                   + " expected=" + escapeLines(entryValue(*winner)) + " from=" + winner->clip);
+    }
+    else {
+      report.check(!read, where + " " + kCopyCollidedKey + " absent value=" + escapeLines(value));
+    }
+
+    report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
+  }
+
+  /// hold a plugin which takes its metadata from either of its two inputs or from both
+  /// combined to what every combination mode owes over every cell of the filter sweep,
+  /// at every frame of the fixture range, with the image still passed through untouched.
+  /// The parameters are driven through the instance changed actions rather than by
+  /// invalidating the metadata by hand, so a host which does not invalidate what a
+  /// parameter change composed fails these. There is no degraded twin: with no metadata
+  /// suite there is nothing for a plugin which only ever narrows what its inputs carry
+  /// to be judged on, beyond the pass-through the generic preconditions already check
+  void checkMetadataCopy(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::string contract = "metadata-copy";
+
+    if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
+      return;
+
+    OFX::Host::ImageEffect::ClipInstance *output = instance.getClip(kOfxImageEffectOutputClipName);
+
+    if(!report.check(output != NULL, contract + " clip=" kOfxImageEffectOutputClipName))
+      return;
+
+    if(!report.check(instance.getClip(kCopyMaskClip) != NULL, contract + " clip=" + kCopyMaskClip))
+      return;
+
+    report.check(copyFixtureCollides(), contract + " fixture collides on=" + kCopyCollidedKey);
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    for(int mode = 0; mode < kCopyModeCount; ++mode) {
+      for(int f = 0; f < kCopyFilterCount; ++f) {
+        const CopyFilter &filter = kCopyFilters[f];
+
+        const std::string where = contract + " mode=" + copyModeName(mode)
+                                  + " filter=" + filter.name
+                                  + " source=" + escapeLines(filter.sourceFilter)
+                                  + " mask=" + escapeLines(filter.maskFilter);
+
+        const bool driven =
+          setParamValue(instance, kCopyModeParam, formatInt(mode))
+          && setParamValue(instance, kCopySourceFilterParam, filter.sourceFilter)
+          && setParamValue(instance, kCopySourceFilterModeParam, formatInt(filter.sourceFilterMode))
+          && setParamValue(instance, kCopyMaskFilterParam, filter.maskFilter)
+          && setParamValue(instance, kCopyMaskFilterModeParam, formatInt(filter.maskFilterMode));
+
+        if(!report.check(driven, where + " parameters set"))
+          continue;
+
+        instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+        instance.paramInstanceChangedAction(kCopyModeParam, kOfxChangeUserEdited,
+                                            MetadataFixture::kFirstFrame, renderScale);
+        instance.paramInstanceChangedAction(kCopySourceFilterParam, kOfxChangeUserEdited,
+                                            MetadataFixture::kFirstFrame, renderScale);
+        instance.paramInstanceChangedAction(kCopySourceFilterModeParam, kOfxChangeUserEdited,
+                                            MetadataFixture::kFirstFrame, renderScale);
+        instance.paramInstanceChangedAction(kCopyMaskFilterParam, kOfxChangeUserEdited,
+                                            MetadataFixture::kFirstFrame, renderScale);
+        instance.paramInstanceChangedAction(kCopyMaskFilterModeParam, kOfxChangeUserEdited,
+                                            MetadataFixture::kFirstFrame, renderScale);
+        instance.endInstanceChangedAction(kOfxChangeUserEdited);
+
+        for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1)
+          checkCopied(report, *output, mode, filter, time, where);
+      }
+
+      std::ostringstream os;
+      os << contract << " mode=" << copyModeName(mode);
+      const std::string where = os.str();
+
+      RenderPass pass;
+      checkRender(report, instance, &pass);
+
+      std::ostringstream pixels;
+      pixels << where << " passthrough frames=" << pass.framesRendered
+             << " identical=" << pass.framesPassedThrough;
+
+      report.check(pass.framesRendered == kFixtureFrames
+                   && pass.framesPassedThrough == pass.framesRendered,
+                   pixels.str());
+    }
+  }
+
   /// the degraded contracts are registered in both builds on purpose: each pair is held
   /// to a host which cannot meet it in the build the other pair passes in, which is what
   /// shows either of them is able to fail at all
@@ -3305,6 +3719,9 @@ namespace {
     {"metadata-timecode",
      kTimecodeCellCount * (kFixtureFrames + kTimecodeExtraTimeCount) * 3 + kTimecodeCellCount + 1,
      checkMetadataTimecode},
+    {"metadata-copy",
+     kCopyModeCount * kCopyFilterCount * kFixtureFrames * 2 + kCopyModeCount + 1,
+     checkMetadataCopy},
     {"metadata-chain", kFixtureFrames * 2 + 4, checkMetadataChain}
   };
 
@@ -3846,6 +4263,12 @@ namespace {
     os << "                                                   timecode on from a start"
        << std::endl;
     os << "                                                   code"
+       << std::endl;
+    os << "                        metadata-copy              a plugin which takes its"
+       << std::endl;
+    os << "                                                   metadata from either of its"
+       << std::endl;
+    os << "                                                   two inputs or from both"
        << std::endl;
     os << "                        metadata-chain             a two node --upstream chain,"
        << std::endl;

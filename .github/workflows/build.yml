@@ -509,7 +509,13 @@ jobs:
           echo "Testing that the metadata-copy contract fails a plugin with only one input"
           if "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataContribute --check metadata-copy; then
-            echo "metadata-copy passed a plugin which never selects its source clips" >&2
+            echo "metadata-copy passed a plugin with no Mask clip to compose" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-compare contract fails without --upstream"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataCompare --check metadata-compare; then
+            echo "metadata-compare passed with no head built ahead of the plugin" >&2
             exit 1
           fi
           echo "Testing that the metadata-compare-degraded contract fails a plugin which compares metadata"
@@ -614,8 +620,7 @@ jobs:
           fi
           echo "Testing that the metadata-compare contract fails on the OFF build"
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
-                 --plugin-id org.openfx.examples.metadataCompare \
-                 --upstream org.openfx.examples.metadataModify --check metadata-compare; then
+                 --plugin-id org.openfx.examples.metadataCompare --check metadata-compare; then
             echo "metadata-compare passed on a host with no metadata suite" >&2
             exit 1
           fi

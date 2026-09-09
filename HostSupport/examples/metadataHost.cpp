@@ -2784,10 +2784,9 @@ namespace {
     eModifyCaseSetNew,
     eModifyCaseSetInherited,
     eModifyCaseRemoveInherited,
-    eModifyCaseSetThenRemove
+    eModifyCaseSetThenRemove,
+    eModifyCaseCount
   };
-
-  const int kModifyCaseCount = 4;
 
   /// the key the contract removes: the last key, in ascending order, the fixture gives
   /// Source at every frame of its range. The host pre-populates a clip's retained-keys
@@ -2958,7 +2957,7 @@ namespace {
     OfxPointD renderScale;
     renderScale.x = renderScale.y = 1.0;
 
-    for(int index = 0; index < kModifyCaseCount; ++index) {
+    for(int index = 0; index < eModifyCaseCount; ++index) {
       const ModifyCase one = modifyCase(index, dropKey);
 
       const std::string where = contract + " case=" + one.name;
@@ -2994,6 +2993,8 @@ namespace {
   const char kTimecodeStartParam[]            = "startTimecode";
   const char kTimecodeRateParam[]             = "rate";
   const char kTimecodeRateFromMetadataParam[] = "rateFromMetadata";
+  const char kTimecodeStartFrameParam[]       = "startFrame";
+  const char kTimecodeUseStartFrameParam[]    = "useStartFrame";
 
   /// driven in place of the plugin's own default: at 24fps from frame 1 the default
   /// start code reproduces the fixture's own 01:00:00:00 / 01:00:00:01 / 01:00:00:02
@@ -3001,13 +3002,22 @@ namespace {
   /// an inherited one
   const char kTimecodeStart[] = "10:00:00:00";
 
-  /// the wrap needs a start code of its own rather than the sweep's: only a start code
-  /// one frame short of the day boundary rolls over to 00:00:00:00 on the very next frame
+  /// the wrap needs a start code of its own rather than the sweep's: one frame short of
+  /// the day boundary, it rolls over on the very next frame. Its last field, and the
+  /// names the extra times below carry, are those of the cell counting at the fixture's
+  /// own 24 fps from frame 1; a cell counting at another rate or from another origin
+  /// lands elsewhere on the same times, and is held to what its own rate and origin owe
   const char kTimecodeWrapStart[] = "23:59:59:23";
 
   /// the frame the plugin's own start code lands on with useStartFrame left off, which
-  /// this contract never turns on
+  /// the plugin fixes at absolute frame 1 rather than at the clip's or the project's
+  /// own first frame
   const OfxTime kTimecodeOrigin = 1;
+
+  /// the start frame driven into the plugin at every cell of the sweep, distinct from
+  /// the origin above so that the cells leaving useStartFrame off hold the plugin to
+  /// ignoring it, and the cell turning it on holds the origin to moving to it
+  const int kTimecodeStartFrame = 9;
 
   /// the rate driven into the plugin's rate parameter, distinct from the fixture's 24.0
   /// so a readback of it can only be satisfied by the parameter path rather than by
@@ -3017,28 +3027,45 @@ namespace {
   enum TimecodeCellEnum {
     eTimecodeCellFromMetadata,
     eTimecodeCellFromParam,
+    eTimecodeCellFromStartFrame,
     eTimecodeCellCount
   };
 
   const int kTimecodeCellCount = eTimecodeCellCount;
 
   /// one cell of the sweep below: whether the rate is taken from Source's metadata or
-  /// from the rate parameter, and what the frame rate key has to read back as
+  /// from the rate parameter, what the frame rate key has to read back as, whether the
+  /// start frame toggle is on, and the frame the start code therefore lands on. The
+  /// last two cells differ in the toggle alone, so what moves between them can only be
+  /// the origin
   struct TimecodeCell {
     std::string name;
     bool        rateFromMetadata;
     double      expectedRate;
+    bool        useStartFrame;
+    OfxTime     origin;
   };
 
   TimecodeCell timecodeCell(int index)
   {
     TimecodeCell one;
 
+    one.useStartFrame = false;
+    one.origin        = kTimecodeOrigin;
+
     switch(index) {
     case eTimecodeCellFromMetadata :
       one.name             = "from-metadata";
       one.rateFromMetadata = true;
       one.expectedRate     = 24.0;
+      break;
+
+    case eTimecodeCellFromStartFrame :
+      one.name             = "from-start-frame";
+      one.rateFromMetadata = false;
+      one.expectedRate     = kTimecodeParamRate;
+      one.useStartFrame    = true;
+      one.origin           = kTimecodeStartFrame;
       break;
 
     case eTimecodeCellFromParam :
@@ -3122,13 +3149,16 @@ namespace {
     return !is.fail();
   }
 
-  long long timecodeContractFrames(const std::string &code, int rate)
+  bool timecodeContractFrames(const std::string &code, int rate, long long &frames)
   {
     int fields[4];
 
-    timecodeContractFields(code, fields);
+    if(!timecodeContractFields(code, fields))
+      return false;
 
-    return (((long long) fields[0] * 60 + fields[1]) * 60 + fields[2]) * rate + fields[3];
+    frames = (((long long) fields[0] * 60 + fields[1]) * 60 + fields[2]) * rate + fields[3];
+
+    return true;
   }
 
   /// the non drop frame HH:MM:SS:FF a frame count stands for, wrapped into the twenty
@@ -3154,11 +3184,16 @@ namespace {
     return os.str();
   }
 
-  std::string timecodeExpected(const std::string &startCode, int rate, OfxTime time)
+  /// the code a start code counted on to a time from an origin stands for, or a text
+  /// no timecode can equal if the start code will not parse
+  std::string timecodeExpected(const std::string &startCode, int rate, OfxTime origin, OfxTime time)
   {
-    const long long offset = (long long) (time - kTimecodeOrigin);
+    long long frames = 0;
 
-    return timecodeContractFormat(timecodeContractFrames(startCode, rate) + offset, rate);
+    if(!timecodeContractFrames(startCode, rate, frames))
+      return "unparsed " + startCode;
+
+    return timecodeContractFormat(frames + (long long) (time - origin), rate);
   }
 
   /// read the effect's output clip at one time and check it carries the timecode the
@@ -3172,7 +3207,8 @@ namespace {
                      const TimecodeTime &one,
                      const std::string &prefix)
   {
-    const std::string where = prefix + " time=" + formatTime(one.time);
+    const std::string where = prefix + " start=" + one.startTimecode
+                              + " time=" + formatTime(one.time);
 
     OfxPropertySetHandle metadata = NULL;
 
@@ -3190,7 +3226,7 @@ namespace {
     report.check(st == kOfxStatOK && found == expected, where + " keys=" + joinKeys(found));
 
     const int rate = int(cell.expectedRate + 0.5);
-    const std::string wantedTimecode = timecodeExpected(one.startTimecode, rate, one.time);
+    const std::string wantedTimecode = timecodeExpected(one.startTimecode, rate, cell.origin, one.time);
 
     std::string timecodeType = "none";
     std::string timecodeValue = "none";
@@ -3217,7 +3253,8 @@ namespace {
 
   /// hold a plugin which counts a timecode on from a start code to what the sweep below
   /// owes it: the fixture's own rate taken off Source's metadata in one cell, a rate
-  /// driven through the parameter in the other, evaluated at every frame of the fixture
+  /// driven through the parameter in the second, and that same rate counted from a
+  /// start frame of its own in the third, evaluated at every frame of the fixture
   /// range plus the second, four-second, minute and twenty-four-hour rollovers, with
   /// the image still passed through untouched. There is no degraded twin: with no
   /// metadata suite there is no source frame rate left to take, and nothing left to read
@@ -3247,7 +3284,9 @@ namespace {
 
       const bool driven =
         setParamValue(instance, kTimecodeRateFromMetadataParam, cell.rateFromMetadata ? "1" : "0")
-        && setParamValue(instance, kTimecodeRateParam, formatDouble(kTimecodeParamRate));
+        && setParamValue(instance, kTimecodeRateParam, formatDouble(kTimecodeParamRate))
+        && setParamValue(instance, kTimecodeUseStartFrameParam, cell.useStartFrame ? "1" : "0")
+        && setParamValue(instance, kTimecodeStartFrameParam, formatInt(kTimecodeStartFrame));
 
       if(!report.check(driven, where + " parameters set"))
         continue;
@@ -3257,12 +3296,17 @@ namespace {
                                           MetadataFixture::kFirstFrame, renderScale);
       instance.paramInstanceChangedAction(kTimecodeRateParam, kOfxChangeUserEdited,
                                           MetadataFixture::kFirstFrame, renderScale);
+      instance.paramInstanceChangedAction(kTimecodeUseStartFrameParam, kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
+      instance.paramInstanceChangedAction(kTimecodeStartFrameParam, kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
       instance.endInstanceChangedAction(kOfxChangeUserEdited);
 
       for(int t = 0; t < kTimecodeTimeCount; ++t) {
         const TimecodeTime one = timecodeTime(t);
 
-        const std::string timeWhere = where + " time=" + formatTime(one.time);
+        const std::string timeWhere = where + " start=" + one.startTimecode
+                                      + " time=" + formatTime(one.time);
 
         const bool startDriven = setParamValue(instance, kTimecodeStartParam, one.startTimecode);
 
@@ -3433,15 +3477,22 @@ namespace {
     int         maskFilterMode;
   };
 
-  /// the filters swept, between them covering every filter mode: an unfiltered Source
-  /// against a Mask narrowed on the value side, the two inputs narrowed under different
-  /// modes at once, and a Source narrowed to nothing against an unfiltered Mask. A
-  /// pattern is matched against the whole of the text, so one meant to be found anywhere
-  /// in it carries a star at each end: a bare 'timecode' matches no key of the fixture
+  /// the filters swept, between them pinning every filter mode on each input. Only a
+  /// pattern whose key match and value match differ pins a mode at all, since only then
+  /// does widening or narrowing the mode move the key set the cell owes: '*ate*' and
+  /// '*plate*' match keys of Source and, separately, its plate path value, and '*s*'
+  /// matches a key of Mask and, separately, its shot path value, so each of those tells
+  /// all three modes apart; '*/mask/*' matches a Mask value and no Mask key at all and
+  /// '*sampletype*' the reverse, so each pins the one mode it leaves nothing under. The
+  /// two cells carrying an empty pattern, which every mode keeps everything under, carry
+  /// a mode another cell pins. A pattern is matched against the whole of the text, so
+  /// one meant to be found anywhere in it carries a star at each end: a bare 'timecode'
+  /// matches no key of the fixture
   const CopyFilter kCopyFilters[] = {
-    {"open-source", "",           eFilterModeKeysAndValues, "*/mask/*", eFilterModeKeysAndValues},
-    {"split-modes", "*timecode*", eFilterModeKeysOnly,      "*/mask/*", eFilterModeValuesOnly},
-    {"open-mask",   "nosuchkey",  eFilterModeValuesOnly,    "",         eFilterModeKeysOnly}
+    {"open-source",   "",           eFilterModeKeysAndValues, "*/mask/*",     eFilterModeKeysOnly},
+    {"narrow-source", "*plate*",    eFilterModeKeysOnly,      "*s*",          eFilterModeKeysAndValues},
+    {"open-mask",     "*ate*",      eFilterModeValuesOnly,    "",             eFilterModeKeysOnly},
+    {"split-modes",   "*ate*",      eFilterModeKeysAndValues, "*sampletype*", eFilterModeValuesOnly}
   };
 
   const int kCopyFilterCount = sizeof(kCopyFilters) / sizeof(kCopyFilters[0]);
@@ -3703,7 +3754,6 @@ namespace {
                    pixels.str());
     }
   }
-
 
   /// the head a metadata-compare invocation has to have built ahead of the plugin.
   /// Every key the fixture gives Mask it also gives Source at the same frame, so with
@@ -4008,11 +4058,16 @@ namespace {
         const std::string only = compareLineWith(shown, kCompareMaskOnlyPrefix);
 
         switch(index) {
-        case eCompareCaseMaskOnly :
-          report.check(!only.empty() && only == std::string(kCompareMaskOnlyPrefix)
-                       + kCompareMaskOnlyKey + "=" + mask[kCompareMaskOnlyKey],
+        case eCompareCaseMaskOnly : {
+          const std::map<std::string, std::string>::const_iterator onMask = mask.find(kCompareMaskOnlyKey);
+
+          report.check(onMask != mask.end()
+                       && !only.empty()
+                       && only == std::string(kCompareMaskOnlyPrefix)
+                          + kCompareMaskOnlyKey + "=" + onMask->second,
                        where + " maskonly=" + escapeLines(only));
           break;
+        }
 
         case eCompareCaseShared :
           report.check(shown.find(kCompareSharedKey) == std::string::npos,
@@ -4076,8 +4131,8 @@ namespace {
   const char kGraphModifyValue[] = "graphed";
 
   /// the key the head drops. The fixture gives it to both of its clips, and the head
-  /// only ever sees Source, so once the head has dropped it the third node's mask over
-  /// source mode is the only thing left in the graph that can bring it back
+  /// only ever sees Source, so with the third node combining source over its mask the
+  /// head's drop is what leaves Mask's own value as the one the tail sees
   const char kGraphDroppedKey[] = kOfxMetadataKeySourceFrame;
 
   /// what the head is driven with: one key contributed and one inherited key dropped
@@ -4172,7 +4227,7 @@ namespace {
     report.check(contributed, where + " " + kModifyNewKey + " value=" + value
                  + " expected=" + kGraphModifyValue);
 
-    const std::string wantedTimecode = timecodeExpected(kTimecodeStart, rate, time);
+    const std::string wantedTimecode = timecodeExpected(kTimecodeStart, rate, kTimecodeOrigin, time);
 
     type = "none";
     value = "none";
@@ -4245,8 +4300,9 @@ namespace {
     if(!report.check(rate > 0, contract + " fixture rate=" + formatInt(rate)))
       return;
 
-    const std::string firstCode = timecodeExpected(kTimecodeStart, rate, kGraphTimes[0]);
-    const std::string lastCode  = timecodeExpected(kTimecodeStart, rate, kGraphTimes[kGraphFrames - 1]);
+    const std::string firstCode = timecodeExpected(kTimecodeStart, rate, kTimecodeOrigin, kGraphTimes[0]);
+    const std::string lastCode  = timecodeExpected(kTimecodeStart, rate, kTimecodeOrigin,
+                                                   kGraphTimes[kGraphFrames - 1]);
 
     if(!report.check(firstCode != lastCode,
                      contract + " timecodes first=" + firstCode + " last=" + lastCode + " differ"))
@@ -4256,7 +4312,7 @@ namespace {
       setParamValue(*gChain[0], kModifyOperationsParam, graphOperations())
       && setParamValue(*gChain[1], kTimecodeStartParam, kTimecodeStart)
       && setParamValue(*gChain[1], kTimecodeRateFromMetadataParam, "1")
-      && setParamValue(*gChain[2], kCopyModeParam, formatInt(eCopyModeMaskOverSource))
+      && setParamValue(*gChain[2], kCopyModeParam, formatInt(eCopyModeSourceOverMask))
       && setParamValue(*gChain[2], kCopySourceFilterParam, "")
       && setParamValue(*gChain[2], kCopySourceFilterModeParam, formatInt(eFilterModeKeysAndValues))
       && setParamValue(*gChain[2], kCopyMaskFilterParam, "")
@@ -4295,7 +4351,7 @@ namespace {
     {"metadata-contribute",
      eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + eMetadataModeCount + 1,
      checkMetadataContribute},
-    {"metadata-modify", kModifyCaseCount * (kFixtureFrames * 2 + 1) + 1, checkMetadataModify},
+    {"metadata-modify", eModifyCaseCount * (kFixtureFrames * 2 + 1) + 1, checkMetadataModify},
     {"metadata-timecode",
      kTimecodeCellCount * (kFixtureFrames + kTimecodeExtraTimeCount) * 3 + kTimecodeCellCount + 1,
      checkMetadataTimecode},
@@ -4858,18 +4914,18 @@ namespace {
     os << "                                                   two inputs or from both"
        << std::endl;
     os << "                        metadata-compare           a plugin which shows how the"
-     << std::endl;
-  os << "                                                   metadata of its two inputs"
-     << std::endl;
-  os << "                                                   differs, run as the tail of"
-     << std::endl;
-  os << "                                                   an --upstream chain"
-     << std::endl;
-  os << "                        metadata-compare-degraded  the same plugin on a host"
-     << std::endl;
-  os << "                                                   with no metadata suite"
-     << std::endl;
-  os << "                        metadata-chain             a two node --upstream chain,"
+       << std::endl;
+    os << "                                                   metadata of its two inputs"
+       << std::endl;
+    os << "                                                   differs, run as the tail of"
+       << std::endl;
+    os << "                                                   an --upstream chain"
+       << std::endl;
+    os << "                        metadata-compare-degraded  the same plugin on a host"
+       << std::endl;
+    os << "                                                   with no metadata suite"
+       << std::endl;
+    os << "                        metadata-chain             a two node --upstream chain,"
        << std::endl;
     os << "                                                   proving what the tail sees"
        << std::endl;

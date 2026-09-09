@@ -377,13 +377,13 @@ void MetadataCopyExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
   sourceFilter->setAnimates(false);
   page->addChild(*sourceFilter);
 
-  // the labels are the ones Metadata View gives its own filter mode for consistency, but
-  // they do not mean the same thing: there the mode picks what text is shown for a key it
-  // has already matched on, here it picks what text the pattern is matched against
   ChoiceParamDescriptor *sourceFilterMode = desc.defineChoiceParam(kSourceFilterModeParam);
   sourceFilterMode->setLabels("source filter mode", "source filter mode", "source filter mode");
   sourceFilterMode->setHint("what the source filter is matched against: a key's name, its "
-                            "values, or either of them");
+                            "values, or either of them. Metadata View labels its own filter "
+                            "mode the same way for a different thing: there the mode picks "
+                            "what is displayed for a key already matched, here it picks what "
+                            "the pattern is matched against");
   sourceFilterMode->appendOption("keys and values");
   sourceFilterMode->appendOption("keys only");
   sourceFilterMode->appendOption("values only");
@@ -404,7 +404,8 @@ void MetadataCopyExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
   ChoiceParamDescriptor *maskFilterMode = desc.defineChoiceParam(kMaskFilterModeParam);
   maskFilterMode->setLabels("mask filter mode", "mask filter mode", "mask filter mode");
   maskFilterMode->setHint("what the mask filter is matched against: a key's name, its "
-                          "values, or either of them");
+                          "values, or either of them, as for the source filter mode above "
+                          "and not as Metadata View means the same labels");
   maskFilterMode->appendOption("keys and values");
   maskFilterMode->appendOption("keys only");
   maskFilterMode->appendOption("values only");

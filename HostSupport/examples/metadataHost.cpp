@@ -4052,6 +4052,238 @@ namespace {
     checkMetadataCompare(report, instance, /*degraded=*/true);
   }
 
+  /// the four nodes a metadata-graph contract expects --upstream and --plugin-id to
+  /// have built, head first, proven by identifier so a mistyped invocation cannot pass
+  /// vacuously
+  const char *const kGraphNodeIds[] = {
+    "org.openfx.examples.metadataModify",
+    "org.openfx.examples.metadataTimeCode",
+    "org.openfx.examples.metadataCopy",
+    "org.openfx.examples.metadataView"
+  };
+
+  const int kGraphNodeCount = sizeof(kGraphNodeIds) / sizeof(kGraphNodeIds[0]);
+
+  /// the frames the tail is read at: the first and the last of the fixture range, which
+  /// are two frames the timecode counted through the chain has to differ between
+  const OfxTime kGraphTimes[] = {MetadataFixture::kFirstFrame, MetadataFixture::kLastFrame};
+
+  const int kGraphFrames = sizeof(kGraphTimes) / sizeof(kGraphTimes[0]);
+
+  /// the value the head writes into the key it contributes, distinct from
+  /// metadata-modify's own so a graph check cannot be satisfied by a value the two
+  /// contracts happen to share
+  const char kGraphModifyValue[] = "graphed";
+
+  /// the key the head drops. The fixture gives it to both of its clips, and the head
+  /// only ever sees Source, so once the head has dropped it the third node's mask over
+  /// source mode is the only thing left in the graph that can bring it back
+  const char kGraphDroppedKey[] = kOfxMetadataKeySourceFrame;
+
+  /// what the head is driven with: one key contributed and one inherited key dropped
+  std::string graphOperations()
+  {
+    return std::string("set ") + kModifyNewKey + " " + kGraphModifyValue + "\n"
+           + "remove " + kGraphDroppedKey;
+  }
+
+  /// the rate the second node counts its timecode at. It is driven to take that rate off
+  /// the metadata reaching it rather than off its own parameter, so the rate is the one
+  /// the fixture gives Source and the head leaves alone. Zero if the fixture gives none
+  int graphCountedRate()
+  {
+    std::string rate;
+    double value = 0;
+
+    if(!fixtureValue(kOfxImageEffectSimpleSourceClipName, kOfxMetadataKeyFrameRate,
+                     MetadataFixture::kFirstFrame, rate)
+       || !parseDouble(rate, value)
+       || value < 1)
+      return 0;
+
+    return int(value + 0.5);
+  }
+
+  /// the keys the tail's output clip carries at a time: what the fixture gives Source,
+  /// less the key the head drops and with the key the head contributes added, combined
+  /// with what the fixture gives Mask, which reaches the tail only across the second
+  /// input of the third node
+  void graphExpectedKeys(OfxTime time, std::set<std::string> &keys)
+  {
+    fixtureKeySet(kOfxImageEffectSimpleSourceClipName, time, keys);
+
+    keys.erase(kGraphDroppedKey);
+    keys.insert(kModifyNewKey);
+
+    fixtureKeySet(kCopyMaskClip, time, keys);
+  }
+
+  /// drive one node's parameters through the actions a host raises around a user edit
+  void graphChanged(OFX::Host::ImageEffect::Instance &node, const char *const *params, int count)
+  {
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    node.beginInstanceChangedAction(kOfxChangeUserEdited);
+
+    for(int i = 0; i < count; ++i)
+      node.paramInstanceChangedAction(params[i], kOfxChangeUserEdited,
+                                      MetadataFixture::kFirstFrame, renderScale);
+
+    node.endInstanceChangedAction(kOfxChangeUserEdited);
+  }
+
+  /// read the tail's output clip at one frame and check it carries the exact key set the
+  /// four nodes leave on it between them, and the three values which each name a
+  /// different node: the key the head contributed, the timecode the second node counted,
+  /// and the key the head dropped, back only because the third node combined its second
+  /// input with what reached its first
+  void checkGraphed(Report &report,
+                    OFX::Host::ImageEffect::ClipInstance &output,
+                    int rate,
+                    OfxTime time,
+                    const std::string &prefix)
+  {
+    const std::string where = prefix + " time=" + formatTime(time);
+
+    OfxPropertySetHandle metadata = NULL;
+
+    if(!report.check(gMetadataSuite->clipGetMetadata(output.getHandle(), time, &metadata) == kOfxStatOK
+                     && metadata,
+                     where + " fetched"))
+      return;
+
+    std::set<std::string> expected;
+    graphExpectedKeys(time, expected);
+
+    std::set<std::string> found;
+    const OfxStatus st = gMetadataSuite->metadataEnumerate(metadata, collectKey, &found);
+
+    report.check(st == kOfxStatOK && found == expected,
+                 where + " keys=" + joinKeys(found) + " expected=" + joinKeys(expected));
+
+    std::string type = "none";
+    std::string value = "none";
+
+    const bool contributed = readValue(metadata, kModifyNewKey, type, value)
+                             && type == "string"
+                             && value == kGraphModifyValue;
+
+    report.check(contributed, where + " " + kModifyNewKey + " value=" + value
+                 + " expected=" + kGraphModifyValue);
+
+    const std::string wantedTimecode = timecodeExpected(kTimecodeStart, rate, time);
+
+    type = "none";
+    value = "none";
+
+    const bool counted = readValue(metadata, kOfxMetadataKeyTimecode, type, value)
+                         && type == "string"
+                         && value == wantedTimecode;
+
+    report.check(counted, where + " " kOfxMetadataKeyTimecode " value=" + value
+                 + " expected=" + wantedTimecode);
+
+    std::string wantedDropped = "none";
+    const bool onMask = fixtureValue(kCopyMaskClip, kGraphDroppedKey, time, wantedDropped);
+
+    type = "none";
+    value = "none";
+
+    const bool restored = onMask
+                          && readValue(metadata, kGraphDroppedKey, type, value)
+                          && type == "int"
+                          && value == wantedDropped;
+
+    report.check(restored, where + " " + kGraphDroppedKey + " value=" + value
+                 + " expected=" + wantedDropped + " from=" + kCopyMaskClip);
+
+    report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
+  }
+
+  /// hold a four node --upstream graph to what its tail has to see of what every node
+  /// ahead of it did: a head which contributes one key and drops another, a node which
+  /// counts a timecode on at the rate reaching it, and a node which combines that with a
+  /// second input still on the fixture, read through a tail which only displays what it
+  /// inherits. The three values checked at each frame name a different node each, and
+  /// the timecode differs between the two frames, so the per-frame variation is shown
+  /// surviving the whole graph rather than only the last node of it. Every node ahead of
+  /// the tail is driven through the instance changed actions rather than by invalidating
+  /// the metadata by hand, so a host which does not invalidate what a parameter change
+  /// composed fails these. There is no degraded twin: an --upstream chain cannot be
+  /// built at all on a host with no metadata suite
+  void checkMetadataGraph(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::string contract = "metadata-graph";
+
+    if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
+      return;
+
+#   ifdef OFX_SUPPORTS_METADATA
+    if(!report.check(int(gChain.size()) == kGraphNodeCount,
+                     contract + " nodes=" + formatInt(int(gChain.size()))))
+      return;
+
+    for(int i = 0; i < kGraphNodeCount; ++i) {
+      if(!report.check(gChain[i]->getPlugin()->getIdentifier() == kGraphNodeIds[i],
+                       contract + " node=" + formatInt(i)
+                       + " id=" + gChain[i]->getPlugin()->getIdentifier()
+                       + " expected=" + kGraphNodeIds[i]))
+        return;
+    }
+
+    OFX::Host::ImageEffect::ClipInstance *output = instance.getClip(kOfxImageEffectOutputClipName);
+
+    if(!report.check(output != NULL, contract + " clip=" kOfxImageEffectOutputClipName))
+      return;
+
+    if(!report.check(gChain[2]->getClip(kCopyMaskClip) != NULL, contract + " clip=" + kCopyMaskClip))
+      return;
+
+    const int rate = graphCountedRate();
+
+    if(!report.check(rate > 0, contract + " fixture rate=" + formatInt(rate)))
+      return;
+
+    const std::string firstCode = timecodeExpected(kTimecodeStart, rate, kGraphTimes[0]);
+    const std::string lastCode  = timecodeExpected(kTimecodeStart, rate, kGraphTimes[kGraphFrames - 1]);
+
+    if(!report.check(firstCode != lastCode,
+                     contract + " timecodes first=" + firstCode + " last=" + lastCode + " differ"))
+      return;
+
+    const bool driven =
+      setParamValue(*gChain[0], kModifyOperationsParam, graphOperations())
+      && setParamValue(*gChain[1], kTimecodeStartParam, kTimecodeStart)
+      && setParamValue(*gChain[1], kTimecodeRateFromMetadataParam, "1")
+      && setParamValue(*gChain[2], kCopyModeParam, formatInt(eCopyModeMaskOverSource))
+      && setParamValue(*gChain[2], kCopySourceFilterParam, "")
+      && setParamValue(*gChain[2], kCopySourceFilterModeParam, formatInt(eFilterModeKeysAndValues))
+      && setParamValue(*gChain[2], kCopyMaskFilterParam, "")
+      && setParamValue(*gChain[2], kCopyMaskFilterModeParam, formatInt(eFilterModeKeysAndValues));
+
+    if(!report.check(driven, contract + " parameters set"))
+      return;
+
+    const char *const headParams[] = {kModifyOperationsParam};
+    const char *const timecodeParams[] = {kTimecodeStartParam, kTimecodeRateFromMetadataParam};
+    const char *const copyParams[] = {kCopyModeParam,
+                                      kCopySourceFilterParam, kCopySourceFilterModeParam,
+                                      kCopyMaskFilterParam, kCopyMaskFilterModeParam};
+
+    graphChanged(*gChain[0], headParams, sizeof(headParams) / sizeof(headParams[0]));
+    graphChanged(*gChain[1], timecodeParams, sizeof(timecodeParams) / sizeof(timecodeParams[0]));
+    graphChanged(*gChain[2], copyParams, sizeof(copyParams) / sizeof(copyParams[0]));
+
+    invalidateChain();
+
+    for(int t = 0; t < kGraphFrames; ++t)
+      checkGraphed(report, *output, rate, kGraphTimes[t], contract);
+#   else
+    (void) instance;
+#   endif // OFX_SUPPORTS_METADATA
+  }
+
   /// the degraded contracts are registered in both builds on purpose: each pair is held
   /// to a host which cannot meet it in the build the other pair passes in, which is what
   /// shows either of them is able to fail at all
@@ -4076,7 +4308,8 @@ namespace {
     {"metadata-compare-degraded",
      eCompareCaseCount * (kFixtureFrames + 1),
      checkMetadataCompareDegraded},
-    {"metadata-chain", kFixtureFrames * 2 + 4, checkMetadataChain}
+    {"metadata-chain", kFixtureFrames * 2 + 4, checkMetadataChain},
+    {"metadata-graph", kGraphFrames * 4 + kGraphNodeCount + 1, checkMetadataGraph}
   };
 
   const Contract *const kContracts = kContractTable;
@@ -4641,6 +4874,14 @@ namespace {
     os << "                                                   proving what the tail sees"
        << std::endl;
     os << "                                                   of what the head contributes"
+       << std::endl;
+    os << "                        metadata-graph             a four node --upstream graph,"
+       << std::endl;
+    os << "                                                   proving what the tail sees of"
+       << std::endl;
+    os << "                                                   every node ahead of it, frame"
+       << std::endl;
+    os << "                                                   by frame"
        << std::endl;
     os << "  with no arguments, publish the fixture through a host, read it back" << std::endl;
     os << "  through the metadata suite, then run it through the metadata plugin and" << std::endl;

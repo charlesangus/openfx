@@ -536,6 +536,20 @@ jobs:
             echo "metadata-chain passed a head which contributes nothing" >&2
             exit 1
           fi
+          echo "Testing the metadata-graph contract against a four node chain"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView \
+                 --upstream org.openfx.examples.metadataModify \
+                 --upstream org.openfx.examples.metadataTimeCode \
+                 --upstream org.openfx.examples.metadataCopy --check metadata-graph
+          echo "Testing that the metadata-graph contract fails a chain a node short"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView \
+                 --upstream org.openfx.examples.metadataModify \
+                 --upstream org.openfx.examples.metadataTimeCode --check metadata-graph; then
+            echo "metadata-graph passed a chain with no node combining a second input" >&2
+            exit 1
+          fi
 
       - name: Configure NoMetadata build with cmake
         if: matrix.check_metadata_off == true

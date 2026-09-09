@@ -458,6 +458,19 @@ jobs:
           echo "Testing the metadata-contribute contract against MetadataContribute"
           "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataContribute --check metadata-contribute
+          echo "Testing the metadata-modify contract against MetadataModify"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataModify --check metadata-modify
+          echo "Testing the metadata-timecode contract against MetadataTimeCode"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataTimeCode --check metadata-timecode
+          echo "Testing the metadata-copy contract against MetadataCopy"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataCopy --check metadata-copy
+          echo "Testing the metadata-compare contract against MetadataCompare downstream of MetadataModify"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataCompare \
+                 --upstream org.openfx.examples.metadataModify --check metadata-compare
           echo "Testing that the metadata-log contract fails a plugin which logs nothing"
           if "$BIN" --plugin-id org.openfx.examples.metadataPlugin --check metadata-log; then
             echo "metadata-log passed a plugin which renders and logs nothing" >&2
@@ -481,6 +494,37 @@ jobs:
             echo "metadata-contribute passed a plugin which contributes nothing" >&2
             exit 1
           fi
+          echo "Testing that the metadata-modify contract fails a plugin which edits nothing"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataPrint --check metadata-modify; then
+            echo "metadata-modify passed a plugin which edits nothing" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-timecode contract fails a plugin which contributes no timecode"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataContribute --check metadata-timecode; then
+            echo "metadata-timecode passed a plugin which contributes no timecode" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-copy contract fails a plugin with only one input"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataContribute --check metadata-copy; then
+            echo "metadata-copy passed a plugin with no Mask clip to compose" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-compare contract fails without --upstream"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataCompare --check metadata-compare; then
+            echo "metadata-compare passed with no head built ahead of the plugin" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-compare-degraded contract fails a plugin which compares metadata"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataCompare \
+                 --upstream org.openfx.examples.metadataModify --check metadata-compare-degraded; then
+            echo "metadata-compare-degraded passed a plugin which shows how its inputs differ" >&2
+            exit 1
+          fi
           echo "Testing the metadata-chain contract against MetadataView downstream of MetadataContribute"
           "$BIN" --plugin-dir "$(pwd)/build/Install" \
                  --plugin-id org.openfx.examples.metadataView \
@@ -496,6 +540,20 @@ jobs:
                  --plugin-id org.openfx.examples.metadataView \
                  --upstream org.openfx.examples.metadataPrint --check metadata-chain; then
             echo "metadata-chain passed a head which contributes nothing" >&2
+            exit 1
+          fi
+          echo "Testing the metadata-graph contract against a four node chain"
+          "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView \
+                 --upstream org.openfx.examples.metadataModify \
+                 --upstream org.openfx.examples.metadataTimeCode \
+                 --upstream org.openfx.examples.metadataCopy --check metadata-graph
+          echo "Testing that the metadata-graph contract fails a chain a node short"
+          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
+                 --plugin-id org.openfx.examples.metadataView \
+                 --upstream org.openfx.examples.metadataModify \
+                 --upstream org.openfx.examples.metadataTimeCode --check metadata-graph; then
+            echo "metadata-graph passed a chain with no node combining a second input" >&2
             exit 1
           fi
 
@@ -525,6 +583,11 @@ jobs:
           echo "Testing the metadata-display-degraded contract against MetadataView on the OFF build"
           "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataView --check metadata-display-degraded
+          echo "Testing the metadata-compare-degraded contract against MetadataCompare on the OFF build"
+          # no --upstream here: the OFF build has no chain to build, and rejects the
+          # argument outright, so the degraded twin is held to the plugin alone
+          "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataCompare --check metadata-compare-degraded
           echo "Testing that the metadata-log contract fails on the OFF build"
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataPrint --check metadata-log; then
@@ -535,6 +598,30 @@ jobs:
           if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
                  --plugin-id org.openfx.examples.metadataContribute --check metadata-contribute; then
             echo "metadata-contribute passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-modify contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataModify --check metadata-modify; then
+            echo "metadata-modify passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-timecode contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataTimeCode --check metadata-timecode; then
+            echo "metadata-timecode passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-copy contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataCopy --check metadata-copy; then
+            echo "metadata-copy passed on a host with no metadata suite" >&2
+            exit 1
+          fi
+          echo "Testing that the metadata-compare contract fails on the OFF build"
+          if "$BIN" --plugin-dir "$(pwd)/build/InstallNoMetadata" \
+                 --plugin-id org.openfx.examples.metadataCompare --check metadata-compare; then
+            echo "metadata-compare passed on a host with no metadata suite" >&2
             exit 1
           fi
           echo "Testing that the metadata-chain contract fails on the OFF build"

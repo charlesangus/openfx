@@ -5,7 +5,7 @@ This guide covers the OFX metadata API from a plugin's side: finding out
 whether a host can supply metadata, fetching the metadata attached to a
 clip or an image, reading the values, and contributing metadata to the
 effect's output. It uses the ``C++`` support wrappers around
-:c:struct:`OfxMetadataSuiteV1`, ``OFX::MetadataSet``, ``OFX::MetadataSetter``
+:ref:`OfxMetadataSuiteV1`, ``OFX::MetadataSet``, ``OFX::MetadataSetter``
 and ``OFX::MetadataInheritanceSetter``, declared in
 `ofxsMetadata.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsMetadata.h>`_ and
 `ofxsImageEffect.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsImageEffect.h>`_.
@@ -185,10 +185,11 @@ appending the clip's name to ``OfxImageClipPropMetadataRetainedKeys_``.
 and ``getRetainedKeys`` throw ``OFX::Exception::PropertyUnknownToHost`` for
 a clip the effect never defined.
 
-A multi-input effect has to say which of its clips the output inherits
-from. ``MetadataCopy`` has a ``Source`` and a ``Mask``, orders them by a
-mode parameter, leaves an unconnected ``Mask`` out of the list, and sets
-each named clip's retained keys from that clip's own metadata, since only
+A multi-input effect has to say which of its clips the output inherits from
+only when it wants a composition other than the host's default of the first
+connected clip alone. ``MetadataCopy`` has a ``Source`` and a ``Mask``, orders
+them by a mode parameter, leaves an unconnected ``Mask`` out of the list, and
+sets each named clip's retained keys from that clip's own metadata, since only
 the first connected clip's list is pre-filled by the host:
 
 .. literalinclude:: ../../../Support/Plugins/MetadataCopy/metadataCopy.cpp

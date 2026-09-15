@@ -7,7 +7,7 @@ Clip and Image Metadata
 Metadata is the descriptive information that travels with an image but is not
 part of its pixels: where the image was read from, when the file was written,
 what lens shot it, what the timecode was. A host exposes it to plugins through
-the :c:struct:`OfxMetadataSuiteV1`, fetched under the name
+the :ref:`OfxMetadataSuiteV1`, fetched under the name
 :c:macro:`kOfxMetadataSuite`, and a plugin contributes metadata of its own,
 and controls what its output inherits from its inputs, in the
 :c:macro:`kOfxImageEffectActionGetMetadata` action. The suite, the action's
@@ -28,7 +28,7 @@ action is always time-parameterised.
 
 Structurally, a metadata set is a flat property set. Each entry has a string
 key and a value that is an int, a double or a string, or an array of one of
-those, described by a type from :c:type:`OfxMetadataValueType` and a
+those, described by a type from :cpp:type:`OfxMetadataValueType` and a
 dimension. There is no nesting and no binary blob type.
 
 Reading Metadata
@@ -41,7 +41,7 @@ succeeds and the set it returns is empty. A host may evaluate metadata
 lazily.
 
 The keys present in a set are discovered with ``metadataEnumerate``, which
-calls an :c:type:`OfxMetadataEnumerateFuncV1` once per key with the key's
+calls an :cpp:type:`OfxMetadataEnumerateFuncV1` once per key with the key's
 name, its type and its dimension, in no guaranteed order. Once those three
 are known the value is read with the generic Property Suite, using the
 ``propGet`` entry point that the type names and the array form when the

@@ -147,6 +147,7 @@ MetadataModifyPlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::M
   for(std::map<std::string, std::string>::const_iterator it = edits.set.begin(); it != edits.set.end(); ++it)
     metadata.setString(it->first, it->second);
 
+  // guide: begin dropRemovedKeys
   if(!edits.removed.empty()) {
     const std::vector<std::string> retained = inheritance.getRetainedKeys(*srcClip_);
     std::vector<std::string> kept;
@@ -160,6 +161,7 @@ MetadataModifyPlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::M
 
     inheritance.setRetainedKeys(*srcClip_, kept);
   }
+  // guide: end dropRemovedKeys
 }
 
 // the overridden render function

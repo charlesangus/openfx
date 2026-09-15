@@ -146,6 +146,7 @@ public :
   virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
+// guide: begin getMetadata
 void
 MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &/*inheritance*/)
 {
@@ -184,6 +185,7 @@ MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Met
                      framesToTimecode(timecodeToFrames(startTimecode, counted) + offset, counted));
   metadata.setDouble(kOfxMetadataKeyFrameRate, rate);
 }
+// guide: end getMetadata
 
 // the overridden render function
 void

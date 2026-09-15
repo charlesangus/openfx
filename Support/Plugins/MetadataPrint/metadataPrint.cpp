@@ -58,6 +58,7 @@ public :
   void logMetadata(double time);
 };
 
+// guide: begin logMetadata
 void
 MetadataPrintPlugin::logMetadata(double time)
 {
@@ -78,6 +79,7 @@ MetadataPrintPlugin::logMetadata(double time)
     sendMessage(OFX::Message::eMessageLog, "", line.str());
   }
 }
+// guide: end logMetadata
 
 // the overridden render function
 void

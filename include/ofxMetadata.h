@@ -61,7 +61,9 @@ see what its inputs carry reads it with OfxMetadataSuiteV1::clipGetMetadata.
 An effect that does not trap the action returns \ref kOfxStatReplyDefault, and the host then
 ignores everything it wrote: it reads back neither the contributed set nor either inheritance
 control in outArgs, and composes the output's metadata from the defaults it initialised
-outArgs with. An effect that means anything it wrote to be honoured must return ::kOfxStatOK.
+outArgs with. An effect that means anything it wrote to be honoured must return ::kOfxStatOK. The
+output's metadata is then the inherited keys with the contributed keys written over them: a key the
+effect writes replaces the inherited value of the same key.
 
  @param handle handle to the instance, cast to an \ref OfxImageEffectHandle
 

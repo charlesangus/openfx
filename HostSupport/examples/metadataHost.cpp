@@ -52,8 +52,6 @@
 
 namespace MyHost {
 
-#ifdef OFX_SUPPORTS_METADATA
-
   /// the clip and key whose published value carries gRevision below
   const char *const kRevisedClip = MetadataFixture::kInputClips[0];
   const char kRevisedKey[] = kOfxMetadataKeyTimecode;
@@ -262,12 +260,6 @@ namespace MyHost {
     }
   }
 
-#else
-
-  typedef Host MetadataHost;
-
-#endif // OFX_SUPPORTS_METADATA
-
 } // MyHost
 
 namespace {
@@ -277,14 +269,7 @@ namespace {
   const OfxImageEffectSuiteV1 *gEffectSuite = NULL;
   const OfxMessageSuiteV2     *gMessageSuite = NULL;
 
-  /// the metadata suite is vended only by a host built with OFX_SUPPORTS_METADATA
-#ifdef OFX_SUPPORTS_METADATA
   const bool kMetadataSuiteExpected = true;
-#else
-  const bool kMetadataSuiteExpected = false;
-#endif // OFX_SUPPORTS_METADATA
-
-#ifdef OFX_SUPPORTS_METADATA
 
   /// the effects --upstream chains ahead of the plugin --plugin-id names, head first
   /// with that plugin last, which is how a contract handed one instance reaches the
@@ -299,8 +284,6 @@ namespace {
     for(size_t i = 0; i < gChain.size(); ++i)
       gChain[i]->invalidateMetadata();
   }
-
-#endif // OFX_SUPPORTS_METADATA
 
   ////////////////////////////////////////////////////////////////////////////////
   // formatting, shared by the fixture listing and the values read back so that the
@@ -840,8 +823,6 @@ namespace {
 
     contributed.push_back(one);
   }
-
-#ifdef OFX_SUPPORTS_METADATA
 
   /// check that a metadata set holds exactly the keys, types and values the fixture
   /// gives for this clip at this time, and return what was read for each key
@@ -1733,8 +1714,6 @@ namespace {
     return ok;
   }
 
-#endif // OFX_SUPPORTS_METADATA
-
   /// write text through whichever of the host's parameter instances a name resolves to,
   /// so that a check can drive a parameter it knows only by name and value
   bool setParamValue(OFX::Host::ImageEffect::Instance &instance,
@@ -1895,8 +1874,6 @@ namespace {
     return false;
   }
 
-#ifdef OFX_SUPPORTS_METADATA
-
   /// write a value through the host's string and choice parameter instances and read it
   /// straight back, in both the scalar and the at-a-time form. A host that dropped what
   /// was written, or that answered with the declared default instead of it, fails these
@@ -1995,8 +1972,6 @@ namespace {
     report.check(readAfter && is == expectedAfter,
                  "invalidation after value=" + is + " expected=" + expectedAfter);
   }
-
-#endif // OFX_SUPPORTS_METADATA
 
   /// the first clip 'instance' described that is not the output clip, in the order the
   /// effect described them; only the fixture's own plugins are guaranteed to have
@@ -2900,7 +2875,6 @@ namespace {
     if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
       return;
 
-#   ifdef OFX_SUPPORTS_METADATA
     if(!report.check(gChain.size() == 2, contract + " nodes=" + formatInt(int(gChain.size()))))
       return;
 
@@ -3004,9 +2978,6 @@ namespace {
 
     report.check(displayed, contract + " tail display holds " + noteKey + "=" + (note ? note->value : "none")
                  + " shown=" + escapeLines(shown));
-#   else
-    (void) instance;
-#   endif // OFX_SUPPORTS_METADATA
   }
 
   /// the parameter a plugin which edits inherited metadata has to expose for the
@@ -3946,7 +3917,6 @@ namespace {
                             OFX::Host::ImageEffect::ClipInstance &output,
                             const std::string &contract)
   {
-#   ifdef OFX_SUPPORTS_METADATA
     const std::string where = contract + " unconnected clip=" + kCopyMaskClip;
 
     MyHost::MetadataEffectInstance *effect = dynamic_cast<MyHost::MetadataEffectInstance *>(&instance);
@@ -4019,12 +3989,6 @@ namespace {
                  pixels.str());
 
     maskClip->setConnected(true);
-#   else
-    (void) report;
-    (void) instance;
-    (void) output;
-    (void) contract;
-#   endif // OFX_SUPPORTS_METADATA
   }
 
   /// hold a plugin which takes its metadata from either of its two inputs or from both
@@ -4274,7 +4238,6 @@ namespace {
     if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
       return NULL;
 
-#   ifdef OFX_SUPPORTS_METADATA
     if(!report.check(gChain.size() == 2, contract + " nodes=" + formatInt(int(gChain.size()))))
       return NULL;
 
@@ -4289,10 +4252,6 @@ namespace {
       return NULL;
 
     return head;
-#   else
-    (void) instance;
-    return NULL;
-#   endif // OFX_SUPPORTS_METADATA
   }
 
   /// the same plugin with Mask unconnected, the head passing Source through unedited:
@@ -4330,9 +4289,7 @@ namespace {
                                        MetadataFixture::kFirstFrame, renderScale);
       head->endInstanceChangedAction(kOfxChangeUserEdited);
 
-#     ifdef OFX_SUPPORTS_METADATA
       invalidateChain();
-#     endif // OFX_SUPPORTS_METADATA
     }
 
     maskClip->setConnected(false);
@@ -4443,9 +4400,7 @@ namespace {
                                            time, renderScale);
           head->endInstanceChangedAction(kOfxChangeUserEdited);
 
-#         ifdef OFX_SUPPORTS_METADATA
           invalidateChain();
-#         endif // OFX_SUPPORTS_METADATA
         }
 
         clipChanged(instance, clip, time);
@@ -4682,7 +4637,6 @@ namespace {
     if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
       return;
 
-#   ifdef OFX_SUPPORTS_METADATA
     if(!report.check(int(gChain.size()) == kGraphNodeCount,
                      contract + " nodes=" + formatInt(int(gChain.size()))))
       return;
@@ -4743,14 +4697,10 @@ namespace {
 
     for(int t = 0; t < kGraphFrames; ++t)
       checkGraphed(report, *output, rate, kGraphTimes[t], contract);
-#   else
-    (void) instance;
-#   endif // OFX_SUPPORTS_METADATA
   }
 
-  /// the degraded contracts are registered in both builds on purpose: each pair is held
-  /// to a host which cannot meet it in the build the other pair passes in, which is what
-  /// shows either of them is able to fail at all
+  /// each degraded contract is held to the plugin its non-degraded twin passes, and
+  /// fails it, which is what shows the contract is able to fail at all
   const Contract kContractTable[] = {
     {"metadata-log", kFixtureFrames + 3, checkMetadataLogSupported},
     {"metadata-log-degraded", kFixtureFrames + 2, checkMetadataLogDegraded},
@@ -4789,8 +4739,6 @@ namespace {
 
     return NULL;
   }
-
-#ifdef OFX_SUPPORTS_METADATA
 
   /// the effects --upstream builds ahead of the plugin under test, head first
   class ChainNodes {
@@ -4878,8 +4826,6 @@ namespace {
     return true;
   }
 
-#endif // OFX_SUPPORTS_METADATA
-
   /// load an arbitrary plugin by id and drive it far enough to prove the contract any
   /// plugin has to meet, regardless of what it does: it resolves, describes, creates an
   /// instance exposing the clips its context guarantees, and completes a render pass.
@@ -4902,16 +4848,10 @@ namespace {
     effectCache.registerInCache(cache);
     cache.scanPluginFiles();
 
-#   ifdef OFX_SUPPORTS_METADATA
     ChainNodes chain;
 
     if(!buildChain(report, effectCache, pluginDir, upstreamIds, chain))
       return 0;
-#   else
-    if(!upstreamIds.empty())
-      report.check(false, "chain unsupported id="
-                   + joinKeys(std::set<std::string>(upstreamIds.begin(), upstreamIds.end())));
-#   endif // OFX_SUPPORTS_METADATA
 
     OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, pluginId, pluginDir);
 
@@ -4929,7 +4869,6 @@ namespace {
     report.check(instance->getClip(kOfxImageEffectOutputClipName) != NULL,
                  "plugin clip=" kOfxImageEffectOutputClipName);
 
-#   ifdef OFX_SUPPORTS_METADATA
     if(chain.tail() && !connectUpstream(report, *instance, chain.tail(), pluginId))
       return 0;
 
@@ -4941,7 +4880,6 @@ namespace {
     // the chain is only whole from here, so anything a node may have derived or
     // cached before it was connected is dropped rather than trusted
     invalidateChain();
-#   endif // OFX_SUPPORTS_METADATA
 
     checkRender(report, *instance);
 
@@ -4957,14 +4895,10 @@ namespace {
       report.ranAtLeast(before, contract->leastChecks, std::string("check=") + contract->name);
     }
 
-#   ifdef OFX_SUPPORTS_METADATA
     gChain.clear();
-#   endif // OFX_SUPPORTS_METADATA
 
     return ran;
   }
-
-#ifdef OFX_SUPPORTS_METADATA
 
   /// the number of non overlapping occurrences of what in text
   int countOccurrences(const std::string &text, const std::string &what)
@@ -5342,8 +5276,6 @@ namespace {
     checkUnconnectedInput(report, plugin);
   }
 
-#endif // OFX_SUPPORTS_METADATA
-
   int runChecks(const std::string &pluginDir,
                 const std::string &pluginId,
                 const std::vector<std::string> &upstreamIds,
@@ -5372,7 +5304,6 @@ namespace {
                  std::string("host metadatasuite ") + (suite ? "present" : "absent"));
 
     if(pluginId.empty()) {
-#ifdef OFX_SUPPORTS_METADATA
       const bool v2 = handle->fetchSuite(handle->host, kOfxPropertySuite, 2) != NULL;
       report.check(!v2, std::string("host propertysuite v2 ") + (v2 ? "present" : "absent"));
 
@@ -5381,11 +5312,6 @@ namespace {
       checkClips(report);
       checkMetadataWrites(report);
       checkPlugin(report, host, pluginDir);
-#else
-      std::cerr << "metadataHost this build has no metadata suite, so --plugin-id is required"
-                << std::endl;
-      return 2;
-#endif // OFX_SUPPORTS_METADATA
     }
     else {
       const int ran = checkGenericPlugin(report, host, pluginDir, pluginId, upstreamIds, contract);

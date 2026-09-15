@@ -22,12 +22,8 @@ else
   EXPATFLAGS = --disable-debug
 endif
 
-# the library and everything built here must agree on this, as it changes the layout
-# of the clip and effect classes metadataHost derives from
-METADATA_FLAGS ?= -DOFX_SUPPORTS_METADATA
-
-INCFLAGS = -I../include -I../../include -I../$(EXPAT_INCLUDE) 
-CXXFLAGS = $(INCFLAGS) $(METADATA_FLAGS) $(OPTIMISE)
+INCFLAGS = -I../include -I../../include -I../$(EXPAT_INCLUDE)
+CXXFLAGS = $(INCFLAGS) $(OPTIMISE)
 
 HOST_DEMO_FILES = $(DST_DIR)/hostDemo.o \
 	$(DST_DIR)/hostDemoClipInstance.o     \
@@ -52,7 +48,7 @@ clean :
 
 $(OFXSLIB):
 	cd ..; make DEBUG=$(DEBUG) EXPAT_INCLUDE=$(EXPAT_INCLUDE) OBJSUF=$(OBJSUF) LIBSUF=$(LIBSUF) \
-	LIBPREFIX=$(LIBPREFIX) LIBNAME=$(LIBNAME) OPTIMISE="$(OPTIMISE) $(METADATA_FLAGS)"; 
+	LIBPREFIX=$(LIBPREFIX) LIBNAME=$(LIBNAME) OPTIMISE="$(OPTIMISE)";
 
 
 $(OBJECT_FILES) : $(DST_DIR)/%.o : %.cpp

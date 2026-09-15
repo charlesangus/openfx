@@ -52,92 +52,95 @@ endif()
 add_test(NAME metadata.harness COMMAND metadataHost)
 add_test(NAME metadata.fixture
 	COMMAND metadataHost --plugin-id net.sf.openfx.metadataPlugin)
-add_test(NAME metadata.log
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataPrint --check metadata-log)
-add_test(NAME metadata.display
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataView --check metadata-display)
-add_test(NAME metadata.contribute
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataContribute --check metadata-contribute)
-add_test(NAME metadata.modify
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataModify --check metadata-modify)
-add_test(NAME metadata.timecode
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataTimeCode --check metadata-timecode)
-add_test(NAME metadata.copy
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataCopy --check metadata-copy)
-add_test(NAME metadata.compare
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataCompare
-		--upstream net.sf.openfx.metadataModify --check metadata-compare)
-
 add_test(NAME metadata.log.rejects-silent-plugin
-	COMMAND metadataHost --plugin-id net.sf.openfx.metadataPlugin --check metadata-log)
-add_test(NAME metadata.log-degraded.rejects-reading-plugin
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataPrint --check metadata-log-degraded)
-add_test(NAME metadata.display-degraded.rejects-reading-plugin
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataView --check metadata-display-degraded)
-add_test(NAME metadata.contribute.rejects-non-contributing-plugin
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataPrint --check metadata-contribute)
-add_test(NAME metadata.modify.rejects-non-editing-plugin
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataPrint --check metadata-modify)
-add_test(NAME metadata.timecode.rejects-no-timecode
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataContribute --check metadata-timecode)
-add_test(NAME metadata.copy.rejects-single-input
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataContribute --check metadata-copy)
-add_test(NAME metadata.compare.rejects-no-upstream
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataCompare --check metadata-compare)
-add_test(NAME metadata.compare-degraded.rejects-comparing-plugin
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataCompare
-		--upstream net.sf.openfx.metadataModify --check metadata-compare-degraded)
+	COMMAND metadataHost --plugin-id net.sf.openfx.metadataPlugin --check metadata-log
+		--expect-failure)
 
-add_test(NAME metadata.chain
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataView
-		--upstream net.sf.openfx.metadataContribute --check metadata-chain)
-add_test(NAME metadata.chain.rejects-no-upstream
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataView --check metadata-chain)
-add_test(NAME metadata.chain.rejects-empty-head
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataView
-		--upstream net.sf.openfx.metadataPrint --check metadata-chain)
+# the rest load example plugins from PLUGIN_INSTALLDIR, which only this tree's own
+# install fills; registered without BUILD_EXAMPLE_PLUGINS they would find nothing
+# there, or whatever an earlier install of some other tree left behind
+if(BUILD_EXAMPLE_PLUGINS)
+	add_test(NAME metadata.log
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataPrint --check metadata-log)
+	add_test(NAME metadata.display
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataView --check metadata-display)
+	add_test(NAME metadata.contribute
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataContribute --check metadata-contribute)
+	add_test(NAME metadata.modify
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataModify --check metadata-modify)
+	add_test(NAME metadata.timecode
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataTimeCode --check metadata-timecode)
+	add_test(NAME metadata.copy
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataCopy --check metadata-copy)
+	add_test(NAME metadata.compare
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataCompare
+			--upstream net.sf.openfx.metadataModify --check metadata-compare)
 
-add_test(NAME metadata.graph
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataView
-		--upstream net.sf.openfx.metadataModify
-		--upstream net.sf.openfx.metadataTimeCode
-		--upstream net.sf.openfx.metadataCopy --check metadata-graph)
-add_test(NAME metadata.graph.rejects-short-chain
-	COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-		--plugin-id net.sf.openfx.metadataView
-		--upstream net.sf.openfx.metadataModify
-		--upstream net.sf.openfx.metadataTimeCode --check metadata-graph)
+	add_test(NAME metadata.log-degraded.rejects-reading-plugin
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataPrint --check metadata-log-degraded
+			--expect-failure)
+	add_test(NAME metadata.display-degraded.rejects-reading-plugin
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataView --check metadata-display-degraded
+			--expect-failure)
+	add_test(NAME metadata.contribute.rejects-non-contributing-plugin
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataPrint --check metadata-contribute
+			--expect-failure)
+	add_test(NAME metadata.modify.rejects-non-editing-plugin
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataPrint --check metadata-modify
+			--expect-failure)
+	add_test(NAME metadata.timecode.rejects-no-timecode
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataContribute --check metadata-timecode
+			--expect-failure)
+	add_test(NAME metadata.copy.rejects-single-input
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataContribute --check metadata-copy
+			--expect-failure)
+	add_test(NAME metadata.compare.rejects-no-upstream
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataCompare --check metadata-compare
+			--expect-failure)
+	add_test(NAME metadata.compare-degraded.rejects-comparing-plugin
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataCompare
+			--upstream net.sf.openfx.metadataModify --check metadata-compare-degraded
+			--expect-failure)
 
-set_tests_properties(
-	metadata.log.rejects-silent-plugin
-	metadata.log-degraded.rejects-reading-plugin
-	metadata.display-degraded.rejects-reading-plugin
-	metadata.contribute.rejects-non-contributing-plugin
-	metadata.modify.rejects-non-editing-plugin
-	metadata.timecode.rejects-no-timecode
-	metadata.copy.rejects-single-input
-	metadata.compare.rejects-no-upstream
-	metadata.compare-degraded.rejects-comparing-plugin
-	metadata.chain.rejects-no-upstream
-	metadata.chain.rejects-empty-head
-	metadata.graph.rejects-short-chain
-	PROPERTIES WILL_FAIL TRUE)
+	add_test(NAME metadata.chain
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataView
+			--upstream net.sf.openfx.metadataContribute --check metadata-chain)
+	add_test(NAME metadata.chain.rejects-no-upstream
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataView --check metadata-chain
+			--expect-failure)
+	add_test(NAME metadata.chain.rejects-empty-head
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataView
+			--upstream net.sf.openfx.metadataPrint --check metadata-chain
+			--expect-failure)
+
+	add_test(NAME metadata.graph
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataView
+			--upstream net.sf.openfx.metadataModify
+			--upstream net.sf.openfx.metadataTimeCode
+			--upstream net.sf.openfx.metadataCopy --check metadata-graph)
+	add_test(NAME metadata.graph.rejects-short-chain
+		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
+			--plugin-id net.sf.openfx.metadataView
+			--upstream net.sf.openfx.metadataModify
+			--upstream net.sf.openfx.metadataTimeCode --check metadata-graph
+			--expect-failure)
+endif()

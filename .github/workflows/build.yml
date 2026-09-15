@@ -437,9 +437,9 @@ jobs:
           MATRIX_OSTYPE: ${{ matrix.ostype }}
         run: |
           if [[ $MATRIX_OSTYPE = windows ]]; then
-            (cd $BUILD_DIR && ctest --output-on-failure -C Release)
+            (cd $BUILD_DIR && ctest --output-on-failure --no-tests=error -C Release)
           else
-            (cd $BUILD_DIR && ctest --output-on-failure)
+            (cd $BUILD_DIR && ctest --output-on-failure --no-tests=error)
           fi
 
       - name: Install with cmake

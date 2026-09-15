@@ -27,6 +27,7 @@ namespace MyHost {
     MyEffectInstance *_effect;
     std::string       _name;
     MyImage          *_outputImage; ///< only set for output clips
+    bool              _connected;
 
   public:
     MyClipInstance(MyEffectInstance* effect, OFX::Host::ImageEffect::ClipDescriptor* desc);
@@ -85,6 +86,9 @@ namespace MyHost {
     //
     //  Says whether the clip is actually connected at the moment.
     virtual bool getConnected() const;
+
+    /// every clip starts connected; this is how a host driving an effect leaves one unconnected
+    void setConnected(bool connected) { _connected = connected; }
 
     // Unmapped Frame Rate -
     //

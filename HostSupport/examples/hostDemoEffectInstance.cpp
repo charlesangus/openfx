@@ -3,6 +3,8 @@
 
 #include <iostream>
 #include <fstream>
+#include <cstdarg>
+#include <vector>
 
 // ofx
 #include "ofxCore.h"
@@ -65,13 +67,19 @@ namespace MyHost {
                                        va_list args)
   {
     if(_messageCapture) {
-      char buf[1024];
-      vsnprintf(buf, sizeof(buf), format, args);
+      va_list measuring;
+      va_copy(measuring, args);
+      const int needed = vsnprintf(NULL, 0, format, measuring);
+      va_end(measuring);
+
+      std::vector<char> buf(needed > 0 ? size_t(needed) + 1 : 1, '\0');
+      vsnprintf(buf.data(), buf.size(), format, args);
+
       *_messageCapture += type;
       *_messageCapture += " ";
       *_messageCapture += id;
       *_messageCapture += " ";
-      *_messageCapture += buf;
+      *_messageCapture += buf.data();
       *_messageCapture += '\n';
       return kOfxStatOK;
     }

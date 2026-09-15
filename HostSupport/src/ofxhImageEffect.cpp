@@ -1800,6 +1800,17 @@ namespace OFX {
         return -1;
       }
 
+      /// the index in 'inputs' of the first connected clip, -1 if none is connected
+      static int findConnectedInputClip(const std::vector<ClipInstance *> &inputs)
+      {
+        for(size_t i = 0; i < inputs.size(); ++i) {
+          if(inputs[i]->getConnected())
+            return int(i);
+        }
+
+        return -1;
+      }
+
       /// the inheritance the out args describe: the input clips whose metadata the output
       /// composes, in increasing precedence, and the keys retained from each input clip
       static void readMetadataInheritance(const Property::Set &outArgs,
@@ -1873,18 +1884,21 @@ namespace OFX {
         MetadataSet *contribution = new MetadataSet(true, false);
 
         try {
-          /// the list starts as the first input clip the effect described, if it has one,
-          /// with the whole of that clip's key set retained and every other clip's empty
-          if(!inputs.empty()) {
-            outArgs.setStringProperty(kOfxImageEffectPropMetadataSourceClip, inputs[0]->getName());
+          /// the list starts as the first connected input clip in the order the effect
+          /// described them, if there is one, with the whole of that clip's key set
+          /// retained and every other clip's empty
+          const int defaultSource = findConnectedInputClip(inputs);
 
-            inputMetadata[0] = inputs[0]->getMetadata(time);
+          if(defaultSource >= 0) {
+            outArgs.setStringProperty(kOfxImageEffectPropMetadataSourceClip, inputs[defaultSource]->getName());
 
-            const Property::PropertyMap &props = inputMetadata[0]->getProperties();
+            inputMetadata[defaultSource] = inputs[defaultSource]->getMetadata(time);
+
+            const Property::PropertyMap &props = inputMetadata[defaultSource]->getProperties();
             int n = 0;
 
             for(Property::PropertyMap::const_iterator k = props.begin(); k != props.end(); ++k)
-              outArgs.setStringProperty(retainedKeysPropNames[0], k->first, n++);
+              outArgs.setStringProperty(retainedKeysPropNames[defaultSource], k->first, n++);
           }
 
           /// the inheritance the host offers, read before the effect can write over it
@@ -1927,7 +1941,7 @@ namespace OFX {
           for(size_t s = 0; s < sources.size(); ++s) {
             const int source = findInputClip(inputs, sources[s]);
 
-            if(source < 0)
+            if(source < 0 || !inputs[source]->getConnected())
               continue;
 
             if(!inputMetadata[source])
@@ -2481,6 +2495,20 @@ namespace OFX {
       ////////////////////////////////////////////////////////////////////////////////
       /// The metadata suite functions
 
+      /// maps a Property::Exception's status to what clipGetMetadata and imageGetMetadata
+      /// document: their own status if it is one of those, else kOfxStatFailed
+      static OfxStatus metadataFetchExceptionStatus(OfxStatus status)
+      {
+        switch (status) {
+        case kOfxStatErrBadHandle:
+        case kOfxStatErrMemory:
+        case kOfxStatFailed:
+          return status;
+        default:
+          return kOfxStatFailed;
+        }
+      }
+
       static OfxStatus clipGetMetadata(OfxImageClipHandle clip,
                                        OfxTime time,
                                        OfxPropertySetHandle *metadata)
@@ -2506,22 +2534,13 @@ namespace OFX {
           return kOfxStatFailed;
         }
 
-        if (set->getProperties().empty()) {
-          // no handle goes back to the plugin, so the reference the clip added for us
-          // is ours to drop
-          set->releaseReference();
-          *metadata = NULL;
-
-          return kOfxStatReplyDefault;
-        }
-
         *metadata = set->getPropHandle();
 
         return kOfxStatOK;
         } catch (const Property::Exception& e) {
           *metadata = NULL;
 
-          return e.getStatus();
+          return metadataFetchExceptionStatus(e.getStatus());
         } catch (std::bad_alloc&) {
           *metadata = NULL;
 
@@ -2529,7 +2548,7 @@ namespace OFX {
         } catch (...) {
           *metadata = NULL;
 
-          return kOfxStatErrBadHandle;
+          return kOfxStatFailed;
         }
       }
 
@@ -2562,7 +2581,7 @@ namespace OFX {
         if (!clipInstance) {
           *metadata = NULL;
 
-          return kOfxStatReplyDefault;
+          return kOfxStatErrBadHandle;
         }
 
         return clipGetMetadata(clipInstance->getHandle(), imageBase->getFetchedTime(), metadata);
@@ -2573,7 +2592,7 @@ namespace OFX {
         } catch (...) {
           *metadata = NULL;
 
-          return kOfxStatErrBadHandle;
+          return kOfxStatFailed;
         }
       }
 
@@ -2610,7 +2629,7 @@ namespace OFX {
       {
         try {
         if (!callback) {
-          return kOfxStatErrBadHandle;
+          return kOfxStatErrValue;
         }
 
         Property::Set *pset = reinterpret_cast<Property::Set*>(metadata);
@@ -2627,22 +2646,43 @@ namespace OFX {
 
         // the callback may call back into the suite, and may release this very handle,
         // so walk a copy of the key list rather than the map itself
-        std::vector<std::string> keys;
+        struct KeyInfo {
+          std::string key;
+          OfxMetadataValueType type;
+          int dimension;
+        };
+        std::vector<KeyInfo> keys;
         const Property::PropertyMap &map = set->getProperties();
         Property::PropertyMap::const_iterator i;
-        for(i = map.begin(); i != map.end(); ++i)
-          keys.push_back((*i).first);
+        for(i = map.begin(); i != map.end(); ++i) {
+          OfxMetadataValueType type;
+          switch((*i).second->getType()) {
+          case Property::eInt:
+            type = kOfxMetadataValueTypeInteger;
+            break;
+          case Property::eDouble:
+            type = kOfxMetadataValueTypeDouble;
+            break;
+          case Property::eString:
+            type = kOfxMetadataValueTypeString;
+            break;
+          default:
+            continue;
+          }
+          KeyInfo info = { (*i).first, type, (*i).second->getDimension() };
+          keys.push_back(info);
+        }
 
-        std::vector<std::string>::const_iterator k;
+        std::vector<KeyInfo>::const_iterator k;
         for(k = keys.begin(); k != keys.end(); ++k) {
-          OfxStatus st = callback((*k).c_str(), userData);
+          OfxStatus st = callback(k->key.c_str(), k->type, k->dimension, userData);
           if(st != kOfxStatOK)
             return st;
         }
 
         return kOfxStatOK;
         } catch (...) {
-          return kOfxStatErrBadHandle;
+          return kOfxStatFailed;
         }
       }
 

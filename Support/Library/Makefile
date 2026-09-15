@@ -9,5 +9,6 @@ libOfxSupport.a : libOfxSupport.a(ofxsMultiThread.o) \
 	libOfxSupport.a(ofxsCore.o) \
 	libOfxSupport.a(ofxsPropertyValidation.o) \
 	libOfxSupport.a(ofxsImageEffect.o) \
+	libOfxSupport.a(ofxsMetadata.o) \
 	libOfxSupport.a(ofxsParams.o)
 	ranlib libOfxSupport.a

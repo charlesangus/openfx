@@ -212,7 +212,7 @@ namespace OFX
   {
     void getPluginIDs(OFX::PluginFactoryArray &ids)
     {
-      static MetadataPrintExamplePluginFactory p("org.openfx.examples.metadataPrint", 1, 0);
+      static MetadataPrintExamplePluginFactory p("net.sf.openfx.metadataPrint", 1, 0);
       ids.push_back(&p);
     }
   }

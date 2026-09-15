@@ -46,12 +46,12 @@ namespace MetadataFixture {
   /// the standard vocabulary has no int X N key and reserves its own prefix, so the
   /// array case is carried under a reverse DNS name, as the standard requires of every
   /// key it does not define itself
-  const char kDataWindowKey[] = "org.openfx.examples.metadataHost.dataWindow";
+  const char kDataWindowKey[] = "net.sf.openfx.metadataHost.dataWindow";
 
   /// another reverse DNS key; its value is a realistic path that happens to carry a
   /// bare '%' (an opacity folder) and a '%s' (an unsubstituted shot-name token), so it
   /// catches a plugin that passes metadata text as a printf format rather than an arg
-  const char kBurnInTemplateKey[] = "org.openfx.examples.metadataHost.burnInTemplate";
+  const char kBurnInTemplateKey[] = "net.sf.openfx.metadataHost.burnInTemplate";
 
   const char kSourceMovie[] = "/shots/ab_010/plate/ab_010_plate.mov";
   const char kBurnInTemplate[] = "/shots/ab_010/burnin/50%/ab_010_%s.txt";

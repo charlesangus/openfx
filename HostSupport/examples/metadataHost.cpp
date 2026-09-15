@@ -1427,7 +1427,7 @@ namespace {
   ////////////////////////////////////////////////////////////////////////////////
   // the checks that need the plugin
 
-  const char kPluginId[] = "org.openfx.examples.metadataPlugin";
+  const char kPluginId[] = "net.sf.openfx.metadataPlugin";
 
   /// the plugin's composition order parameter, and the two values of it this checks
   const char kOrderParam[] = "compositionOrder";
@@ -1455,10 +1455,10 @@ namespace {
 
   /// the keys the plugin writes under its own reverse DNS prefix, and the values it
   /// writes into them, the string one being whatever the note parameter holds
-  const char kContributedNote[]   = "org.openfx.examples.metadataPlugin.note";
-  const char kContributedGain[]   = "org.openfx.examples.metadataPlugin.gain";
-  const char kContributedPasses[] = "org.openfx.examples.metadataPlugin.passes";
-  const char kContributedWindow[] = "org.openfx.examples.metadataPlugin.window";
+  const char kContributedNote[]   = "net.sf.openfx.metadataPlugin.note";
+  const char kContributedGain[]   = "net.sf.openfx.metadataPlugin.gain";
+  const char kContributedPasses[] = "net.sf.openfx.metadataPlugin.passes";
+  const char kContributedWindow[] = "net.sf.openfx.metadataPlugin.window";
 
   const double kContributedGainValue     = 1.75;
   const int    kContributedPassesValue   = 5;
@@ -2592,7 +2592,7 @@ namespace {
 
   /// the reverse DNS prefix the plugin namespaces every key of its own under, and the
   /// values it writes into them
-  const char kContributePrefix[] = "org.openfx.examples.metadataContribute.";
+  const char kContributePrefix[] = "net.sf.openfx.metadataContribute.";
 
   const int         kContributeRevision       = 1;
   const double      kContributeQuality        = 0.75;
@@ -2854,8 +2854,8 @@ namespace {
 
   /// the two nodes a metadata-chain contract expects --upstream and --plugin-id to have
   /// built, proven by identifier so a mistyped invocation cannot pass vacuously
-  const char kChainHeadId[] = "org.openfx.examples.metadataContribute";
-  const char kChainTailId[] = "org.openfx.examples.metadataView";
+  const char kChainHeadId[] = "net.sf.openfx.metadataContribute";
+  const char kChainTailId[] = "net.sf.openfx.metadataView";
 
   /// the note the contract drives through the head once the initial read is checked,
   /// distinct from metadata-contribute's own note so a chain check cannot be satisfied
@@ -2987,7 +2987,7 @@ namespace {
 
   /// a key the fixture does not carry, so the case which sets it can only be satisfied
   /// by the plugin actually contributing it
-  const char kModifyNewKey[]   = "org.openfx.examples.metadataModify.added";
+  const char kModifyNewKey[]   = "net.sf.openfx.metadataModify.added";
   const char kModifyNewValue[] = "custom-value";
 
   /// the value the case which sets an inherited key writes into it, distinct from the
@@ -4079,7 +4079,7 @@ namespace {
   /// no head there is no Mask only key and no key the two hold identically at any frame
   /// of the range; the head edits Source while Mask stays on the fixture, which is what
   /// puts those two line kinds within reach
-  const char kCompareHeadId[] = "org.openfx.examples.metadataModify";
+  const char kCompareHeadId[] = "net.sf.openfx.metadataModify";
 
   /// the second input a plugin which compares two sets of metadata has to expose
   const char kCompareMaskClip[] = "Mask";
@@ -4489,10 +4489,10 @@ namespace {
   /// have built, head first, proven by identifier so a mistyped invocation cannot pass
   /// vacuously
   const char *const kGraphNodeIds[] = {
-    "org.openfx.examples.metadataModify",
-    "org.openfx.examples.metadataTimeCode",
-    "org.openfx.examples.metadataCopy",
-    "org.openfx.examples.metadataView"
+    "net.sf.openfx.metadataModify",
+    "net.sf.openfx.metadataTimeCode",
+    "net.sf.openfx.metadataCopy",
+    "net.sf.openfx.metadataView"
   };
 
   const int kGraphNodeCount = sizeof(kGraphNodeIds) / sizeof(kGraphNodeIds[0]);

@@ -1800,6 +1800,17 @@ namespace OFX {
         return -1;
       }
 
+      /// the index in 'inputs' of the first connected clip, -1 if none is connected
+      static int findConnectedInputClip(const std::vector<ClipInstance *> &inputs)
+      {
+        for(size_t i = 0; i < inputs.size(); ++i) {
+          if(inputs[i]->getConnected())
+            return int(i);
+        }
+
+        return -1;
+      }
+
       /// the inheritance the out args describe: the input clips whose metadata the output
       /// composes, in increasing precedence, and the keys retained from each input clip
       static void readMetadataInheritance(const Property::Set &outArgs,
@@ -1873,18 +1884,21 @@ namespace OFX {
         MetadataSet *contribution = new MetadataSet(true, false);
 
         try {
-          /// the list starts as the first input clip the effect described, if it has one,
-          /// with the whole of that clip's key set retained and every other clip's empty
-          if(!inputs.empty()) {
-            outArgs.setStringProperty(kOfxImageEffectPropMetadataSourceClip, inputs[0]->getName());
+          /// the list starts as the first connected input clip in the order the effect
+          /// described them, if there is one, with the whole of that clip's key set
+          /// retained and every other clip's empty
+          const int defaultSource = findConnectedInputClip(inputs);
 
-            inputMetadata[0] = inputs[0]->getMetadata(time);
+          if(defaultSource >= 0) {
+            outArgs.setStringProperty(kOfxImageEffectPropMetadataSourceClip, inputs[defaultSource]->getName());
 
-            const Property::PropertyMap &props = inputMetadata[0]->getProperties();
+            inputMetadata[defaultSource] = inputs[defaultSource]->getMetadata(time);
+
+            const Property::PropertyMap &props = inputMetadata[defaultSource]->getProperties();
             int n = 0;
 
             for(Property::PropertyMap::const_iterator k = props.begin(); k != props.end(); ++k)
-              outArgs.setStringProperty(retainedKeysPropNames[0], k->first, n++);
+              outArgs.setStringProperty(retainedKeysPropNames[defaultSource], k->first, n++);
           }
 
           /// the inheritance the host offers, read before the effect can write over it
@@ -1927,7 +1941,7 @@ namespace OFX {
           for(size_t s = 0; s < sources.size(); ++s) {
             const int source = findInputClip(inputs, sources[s]);
 
-            if(source < 0)
+            if(source < 0 || !inputs[source]->getConnected())
               continue;
 
             if(!inputMetadata[source])

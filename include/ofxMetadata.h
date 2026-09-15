@@ -83,15 +83,17 @@ means anything it wrote to be honoured has to return ::kOfxStatOK.
  named by \ref kOfxImageEffectPropMetadataSet. It has the following properties
      - \ref kOfxImageEffectPropMetadataSourceClip the ordered list of input clip names whose
        metadata the output composes, read in increasing precedence, defaulting to a
-       single-element list naming the first input clip described by the effect
-     - a set of char * X N properties, one for each of the input clips currently attached,
-       labelled with ``OfxImageClipPropMetadataRetainedKeys_`` post pended with the clip's name,
-       for example ``OfxImageClipPropMetadataRetainedKeys_Source``. Each such property lists the
-       metadata keys retained from that input clip. A key absent from the list on a clip is not
-       carried through from that clip. The host initialises the list for the effect's first
-       input clip, the clip named by the default value of \ref kOfxImageEffectPropMetadataSourceClip,
-       to the full set of keys present on that clip, and to the empty list for every other input
-       clip, before the action is called.
+       single-element list naming the first connected input clip in the order the effect
+       described them, or the empty list if none is connected
+     - a set of char * X N properties, one for each input clip the effect describes, connected
+       or not, labelled with ``OfxImageClipPropMetadataRetainedKeys_`` post pended with the
+       clip's name, for example ``OfxImageClipPropMetadataRetainedKeys_Source``. Each such
+       property lists the metadata keys retained from that input clip. A key absent from the
+       list on a clip is not carried through from that clip. The host initialises the list for
+       the clip named by the default value of \ref kOfxImageEffectPropMetadataSourceClip to the
+       full set of keys present on that clip, and to the empty list for every other input clip,
+       before the action is called. An input clip that is not connected contributes nothing to
+       the composition, even when the list names it.
 
  @returns
      - \ref kOfxStatOK the action was trapped and the effect has populated outArgs with the metadata it contributes,
@@ -165,8 +167,8 @@ the list.
    - Property Set - outArgs property set of the \ref kOfxImageEffectActionGetMetadata action
    - Valid Values - the name of any of the effect's input clips, each may appear at most once and
                     in any order; the empty list is valid and means no metadata is inherited
-   - Default - a single-element list naming the first input clip described by the effect, or the
-               empty list if the effect has no input clips
+   - Default - a single-element list naming the first connected input clip in the order the
+               effect described them, or the empty list if no input clip is connected
 
  @version Added in OpenFX NEXT
 

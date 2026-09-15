@@ -290,9 +290,11 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
   gPropSuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
 
   // the clips are declared in this order, so Source is the one whose metadata the
-  // host offers by default
+  // host offers by default when it is connected; it is optional so that a host may
+  // leave it unconnected and the offer falls through to Mask
   gEffectSuite->clipDefine(effect, kSourceClip, &props);
   gPropSuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
+  gPropSuite->propSetInt(props, kOfxImageClipPropOptional, 0, 1);
 
   gEffectSuite->clipDefine(effect, kMaskClip, &props);
   gPropSuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);

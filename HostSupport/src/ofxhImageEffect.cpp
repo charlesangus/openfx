@@ -2495,6 +2495,20 @@ namespace OFX {
       ////////////////////////////////////////////////////////////////////////////////
       /// The metadata suite functions
 
+      /// maps a Property::Exception's status to what clipGetMetadata and imageGetMetadata
+      /// document: their own status if it is one of those, else kOfxStatFailed
+      static OfxStatus metadataFetchExceptionStatus(OfxStatus status)
+      {
+        switch (status) {
+        case kOfxStatErrBadHandle:
+        case kOfxStatErrMemory:
+        case kOfxStatFailed:
+          return status;
+        default:
+          return kOfxStatFailed;
+        }
+      }
+
       static OfxStatus clipGetMetadata(OfxImageClipHandle clip,
                                        OfxTime time,
                                        OfxPropertySetHandle *metadata)
@@ -2526,7 +2540,7 @@ namespace OFX {
         } catch (const Property::Exception& e) {
           *metadata = NULL;
 
-          return e.getStatus();
+          return metadataFetchExceptionStatus(e.getStatus());
         } catch (std::bad_alloc&) {
           *metadata = NULL;
 
@@ -2534,7 +2548,7 @@ namespace OFX {
         } catch (...) {
           *metadata = NULL;
 
-          return kOfxStatErrBadHandle;
+          return kOfxStatFailed;
         }
       }
 
@@ -2578,7 +2592,7 @@ namespace OFX {
         } catch (...) {
           *metadata = NULL;
 
-          return kOfxStatErrBadHandle;
+          return kOfxStatFailed;
         }
       }
 
@@ -2615,7 +2629,7 @@ namespace OFX {
       {
         try {
         if (!callback) {
-          return kOfxStatErrBadHandle;
+          return kOfxStatErrValue;
         }
 
         Property::Set *pset = reinterpret_cast<Property::Set*>(metadata);
@@ -2668,7 +2682,7 @@ namespace OFX {
 
         return kOfxStatOK;
         } catch (...) {
-          return kOfxStatErrBadHandle;
+          return kOfxStatFailed;
         }
       }
 

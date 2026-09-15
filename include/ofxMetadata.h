@@ -770,6 +770,8 @@ typedef struct OfxMetadataSuiteV1 {
 	 @returns
 	 - ::kOfxStatOK - enumeration completed, having visited every key,
 	 - ::kOfxStatErrBadHandle - the metadata handle was invalid,
+	 - ::kOfxStatErrValue - callback is NULL,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message,
 	 - any other status returned by callback to stop enumeration early.
 	 */
 	OfxStatus (*metadataEnumerate)(OfxPropertySetHandle metadata, OfxMetadataEnumerateFuncV1 callback, void *userData);

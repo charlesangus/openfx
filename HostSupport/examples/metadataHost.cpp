@@ -1216,6 +1216,9 @@ namespace {
       report.check(enumerated == kOfxStatOK && found.empty(),
                    "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata enumerate");
 
+      report.check(gMetadataSuite->metadataEnumerate(empty, NULL, &found) == kOfxStatErrValue,
+                   "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata enumerate nullcallback");
+
       report.check(gMetadataSuite->metadataRelease(empty) == kOfxStatOK,
                    "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata release");
     }

@@ -150,6 +150,11 @@ namespace OFX {
         std::map<OfxTime, MetadataSet*> _metadataCache; ///< metadata sets vended by getMetadata(), keyed by time, one reference held per entry
 #       endif
 
+      private:
+#       ifdef OFX_SUPPORTS_METADATA
+        void releaseMetadataCache();
+#       endif
+
       public:
         ClipInstance(ImageEffect::Instance* effectInstance, ClipDescriptor& desc);
 

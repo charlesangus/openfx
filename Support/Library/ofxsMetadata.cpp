@@ -180,8 +180,10 @@ namespace OFX {
   {
     if(_metadataHandle) {
       OfxStatus stat = refreshEntries();
-      if(stat != kOfxStatOK)
+      if(stat != kOfxStatOK) {
+        reset();
         throwSuiteStatusException(stat);
+      }
     }
   }
 

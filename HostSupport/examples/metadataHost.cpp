@@ -93,7 +93,10 @@ namespace MyHost {
   struct MetadataOffer {
     bool taken;
     std::vector<std::string> sources;
-    std::map<std::string, std::vector<std::string> > retained; ///< by clip, absent when the property is
+    std::map<std::string, std::vector<std::string> > retained; ///< by clip; no entry when the clip's
+                                                                 ///< retained-keys property is absent from
+                                                                 ///< outArgs, an empty vector when it is
+                                                                 ///< present but names no keys
 
     MetadataOffer() : taken(false) {}
   };
@@ -1996,11 +1999,11 @@ namespace {
 #endif // OFX_SUPPORTS_METADATA
 
   /// the first clip 'instance' described that is not the output clip, in the order the
-  /// effect described them. Every context guarantees at least one such clip, whereas
-  /// only the fixture's own plugins are guaranteed to have named it
-  /// kOfxImageEffectSimpleSourceClipName, so this is what a check driving an arbitrary
-  /// plugin has to ask for instead. NULL only for a plugin that described none, which
-  /// no context allows
+  /// effect described them; only the fixture's own plugins are guaranteed to have
+  /// named it kOfxImageEffectSimpleSourceClipName, so this is what a check driving an
+  /// arbitrary plugin has to ask for instead. NULL for a plugin that described no
+  /// input clip at all, which a Generator-context effect and an input-less General one
+  /// both may do
   OFX::Host::ImageEffect::ClipInstance *firstInputClip(OFX::Host::ImageEffect::Instance &instance)
   {
     const std::vector<OFX::Host::ImageEffect::ClipDescriptor *> &clips =
@@ -2012,6 +2015,22 @@ namespace {
     }
 
     return NULL;
+  }
+
+  /// how many clips 'instance' described that are not the output clip
+  int countInputClips(OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::vector<OFX::Host::ImageEffect::ClipDescriptor *> &clips =
+      instance.getDescriptor().getClipsByOrder();
+
+    int count = 0;
+
+    for(size_t i = 0; i < clips.size(); ++i) {
+      if(!clips[i]->isOutput())
+        count += 1;
+    }
+
+    return count;
   }
 
   /// what a render pass produced, for a caller with more to say about it than checkRender
@@ -4802,9 +4821,9 @@ namespace {
   };
 
   /// make the first input clip of 'instance' carry what 'upstream' emits, reporting the
-  /// one precondition an effect downstream of another has to meet: every context
-  /// guarantees such a clip exists, though only the fixture's own plugins are
-  /// guaranteed to have named it kOfxImageEffectSimpleSourceClipName
+  /// one precondition an effect downstream of another has to meet: that it described
+  /// an input clip at all, since only the fixture's own plugins are guaranteed to have
+  /// named it kOfxImageEffectSimpleSourceClipName
   bool connectUpstream(Report &report,
                        OFX::Host::ImageEffect::Instance &instance,
                        OFX::Host::ImageEffect::Instance *upstream,
@@ -4906,7 +4925,7 @@ namespace {
     if(!instance.get())
       return 0;
 
-    report.check(firstInputClip(*instance) != NULL, "plugin clip=inputclip");
+    report.check(true, "plugin clip=inputclip count=" + formatInt(countInputClips(*instance)));
     report.check(instance->getClip(kOfxImageEffectOutputClipName) != NULL,
                  "plugin clip=" kOfxImageEffectOutputClipName);
 

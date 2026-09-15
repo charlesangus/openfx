@@ -2597,7 +2597,6 @@ namespace OFX {
       // and call the plug-in client code
       effectInstance->getMetadata(args, metadata, inheritance);
 
-      // did we do anything ?
       return metadata.didSomething() || inheritance.didSomething();
     }
 

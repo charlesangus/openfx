@@ -45,11 +45,11 @@ a clip at one specific time, so there is nothing left to parameterise.
 Checking whether the host can supply metadata
 ==============================================
 
-Reading a key of a type the plugin didn't ask for relies on the generic
-Property Suite to report what type the host actually holds it as, so a
-host only qualifies as supporting metadata if it exposes both
-:c:macro:`kOfxMetadataSuite` and ``OfxPropertySuiteV2``. The support
-library checks both suites for you and folds them into a single flag:
+Reading a key back as a type the plugin didn't ask for relies on
+``OfxMetadataSuiteV1::metadataEnumerate`` to report what type the host
+actually holds it as, so a host only qualifies as supporting metadata if
+it exposes :c:macro:`kOfxMetadataSuite`. The support library checks for
+that suite and folds the result into a single flag:
 
 .. code:: c++
 

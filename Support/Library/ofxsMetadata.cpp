@@ -4,7 +4,6 @@
 #include "ofxsSupportPrivate.h"
 #include "ofxsMetadata.h"
 
-#include <algorithm>
 #include <climits>
 #include <iomanip>
 #include <locale>
@@ -16,26 +15,27 @@ namespace OFX {
 
   namespace {
 
-    OfxStatus collectMetadataKey(const char *key, void *userData)
+    MetadataTypeEnum mapValueType(OfxMetadataValueType type)
+    {
+      switch(type) {
+      case kOfxMetadataValueTypeInteger : return eMetadataTypeInt;
+      case kOfxMetadataValueTypeDouble  : return eMetadataTypeDouble;
+      case kOfxMetadataValueTypeString  : return eMetadataTypeString;
+      }
+      return eMetadataTypeNone;
+    }
+
+    OfxStatus collectMetadataEntry(const char *key, OfxMetadataValueType type, int dimension, void *userData)
     {
       // the host calls this through a C function pointer, so nothing may propagate out of it
       try {
-        ((std::vector<std::string> *) userData)->push_back(key);
+        std::map<std::string, MetadataEntry> &entries = *(std::map<std::string, MetadataEntry> *) userData;
+        entries[key] = MetadataEntry(key, mapValueType(type), dimension);
       }
       catch(...) {
         return kOfxStatErrMemory;
       }
       return kOfxStatOK;
-    }
-
-    MetadataTypeEnum mapDataType(OfxPropDataType type)
-    {
-      switch(type) {
-      case kOfxPropDataTypeString  : return eMetadataTypeString;
-      case kOfxPropDataTypeDouble  : return eMetadataTypeDouble;
-      case kOfxPropDataTypeInteger : return eMetadataTypeInt;
-      default : return eMetadataTypeNone;
-      }
     }
 
     /** @brief writes value as the shortest text which reads back as the same double, in
@@ -91,42 +91,28 @@ namespace OFX {
       return int(value);
     }
 
-    bool readRawString(OfxPropertySetHandle metadata, const char *key, int index, std::string &value)
-    {
-      char *raw = 0;
-      if(gPropSuite->propGetString(metadata, key, index, &raw) != kOfxStatOK || !raw)
-        return false;
-      value = raw;
-      return true;
-    }
-
-    bool readRawDouble(OfxPropertySetHandle metadata, const char *key, int index, double &value)
-    {
-      return gPropSuite->propGetDouble(metadata, key, index, &value) == kOfxStatOK;
-    }
-
-    bool readRawInt(OfxPropertySetHandle metadata, const char *key, int index, int &value)
-    {
-      return gPropSuite->propGetInt(metadata, key, index, &value) == kOfxStatOK;
-    }
-
     bool readAsString(OfxPropertySetHandle metadata, const char *key, MetadataTypeEnum type, int index, std::string &value)
     {
       double asDouble = 0;
       int asInt = 0;
 
       switch(type) {
-      case eMetadataTypeString :
-        return readRawString(metadata, key, index, value);
+      case eMetadataTypeString : {
+        char *raw = 0;
+        if(gPropSuite->propGetString(metadata, key, index, &raw) != kOfxStatOK || !raw)
+          return false;
+        value = raw;
+        return true;
+      }
 
       case eMetadataTypeDouble :
-        if(!readRawDouble(metadata, key, index, asDouble))
+        if(gPropSuite->propGetDouble(metadata, key, index, &asDouble) != kOfxStatOK)
           return false;
         value = doubleToString(asDouble);
         return true;
 
       case eMetadataTypeInt :
-        if(!readRawInt(metadata, key, index, asInt))
+        if(gPropSuite->propGetInt(metadata, key, index, &asInt) != kOfxStatOK)
           return false;
         value = intToString(asInt);
         return true;
@@ -135,17 +121,6 @@ namespace OFX {
         break;
       }
 
-      // the host cannot say what the key is, so try each type in turn
-      if(readRawString(metadata, key, index, value))
-        return true;
-      if(readRawDouble(metadata, key, index, asDouble)) {
-        value = doubleToString(asDouble);
-        return true;
-      }
-      if(readRawInt(metadata, key, index, asInt)) {
-        value = intToString(asInt);
-        return true;
-      }
       return false;
     }
 
@@ -156,28 +131,22 @@ namespace OFX {
 
       switch(type) {
       case eMetadataTypeDouble :
-        return readRawDouble(metadata, key, index, value);
+        return gPropSuite->propGetDouble(metadata, key, index, &value) == kOfxStatOK;
 
       case eMetadataTypeInt :
-        if(!readRawInt(metadata, key, index, asInt))
+        if(gPropSuite->propGetInt(metadata, key, index, &asInt) != kOfxStatOK)
           return false;
         value = asInt;
         return true;
 
       case eMetadataTypeString :
-        return readRawString(metadata, key, index, asString) && stringToDouble(asString, value);
+        return readAsString(metadata, key, eMetadataTypeString, index, asString) && stringToDouble(asString, value);
 
       case eMetadataTypeNone :
         break;
       }
 
-      if(readRawDouble(metadata, key, index, value))
-        return true;
-      if(readRawInt(metadata, key, index, asInt)) {
-        value = asInt;
-        return true;
-      }
-      return readRawString(metadata, key, index, asString) && stringToDouble(asString, value);
+      return false;
     }
 
     bool readAsInt(OfxPropertySetHandle metadata, const char *key, MetadataTypeEnum type, int index, int &value, int defaultValue)
@@ -185,10 +154,10 @@ namespace OFX {
       double asDouble = 0;
 
       if(type == eMetadataTypeInt)
-        return readRawInt(metadata, key, index, value);
+        return gPropSuite->propGetInt(metadata, key, index, &value) == kOfxStatOK;
 
-      if(type == eMetadataTypeNone && readRawInt(metadata, key, index, value))
-        return true;
+      if(type == eMetadataTypeNone)
+        return false;
 
       if(!readAsDouble(metadata, key, type, index, asDouble))
         return false;
@@ -207,6 +176,11 @@ namespace OFX {
   MetadataSet::MetadataSet(OfxPropertySetHandle handle)
     : _metadataHandle(handle)
   {
+    if(_metadataHandle) {
+      OfxStatus stat = refreshEntries();
+      if(stat != kOfxStatOK)
+        throwSuiteStatusException(stat);
+    }
   }
 
   MetadataSet::~MetadataSet()
@@ -216,8 +190,10 @@ namespace OFX {
 
   MetadataSet::MetadataSet(MetadataSet &&other) noexcept
     : _metadataHandle(other._metadataHandle)
+    , _entries(std::move(other._entries))
   {
     other._metadataHandle = 0;
+    other._entries.clear();
   }
 
   MetadataSet &MetadataSet::operator=(MetadataSet &&other) noexcept
@@ -225,7 +201,9 @@ namespace OFX {
     if(this != &other) {
       reset();
       _metadataHandle = other._metadataHandle;
+      _entries = std::move(other._entries);
       other._metadataHandle = 0;
+      other._entries.clear();
     }
     return *this;
   }
@@ -269,39 +247,53 @@ namespace OFX {
       Log::error(stat != kOfxStatOK, "Failed to release a metadata handle, host returned status %s.", mapStatusToString(stat));
     }
     _metadataHandle = 0;
+    _entries.clear();
+  }
+
+  OfxStatus MetadataSet::refreshEntries(void) const
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return kOfxStatOK;
+
+    std::map<std::string, MetadataEntry> collected;
+    OfxStatus stat = gMetadataSuite->metadataEnumerate(_metadataHandle, collectMetadataEntry, &collected);
+
+    if(stat == kOfxStatOK)
+      _entries = std::move(collected);
+
+    return stat;
+  }
+
+  const MetadataEntry *MetadataSet::findEntry(const std::string &key) const
+  {
+    if(!_metadataHandle)
+      return 0;
+
+    std::map<std::string, MetadataEntry>::const_iterator it = _entries.find(key);
+    if(it != _entries.end())
+      return &it->second;
+
+    refreshEntries();
+
+    it = _entries.find(key);
+    return it != _entries.end() ? &it->second : 0;
   }
 
   bool MetadataSet::has(const std::string &key) const
   {
-    if(!_metadataHandle)
-      return false;
-
-    int dimension = 0;
-    return gPropSuite->propGetDimension(_metadataHandle, key.c_str(), &dimension) == kOfxStatOK;
+    return findEntry(key) != 0;
   }
 
   MetadataTypeEnum MetadataSet::getType(const std::string &key) const
   {
-    if(!_metadataHandle || !gPropSuiteV2)
-      return eMetadataTypeNone;
-
-    OfxPropDataType type = kOfxPropDataTypeNone;
-    if(gPropSuiteV2->propGetType(_metadataHandle, key.c_str(), &type) != kOfxStatOK)
-      return eMetadataTypeNone;
-
-    return mapDataType(type);
+    const MetadataEntry *entry = findEntry(key);
+    return entry ? entry->type : eMetadataTypeNone;
   }
 
   int MetadataSet::getDimension(const std::string &key) const
   {
-    if(!_metadataHandle)
-      return 0;
-
-    int dimension = 0;
-    if(gPropSuite->propGetDimension(_metadataHandle, key.c_str(), &dimension) != kOfxStatOK)
-      return 0;
-
-    return dimension < 0 ? 0 : dimension;
+    const MetadataEntry *entry = findEntry(key);
+    return entry ? entry->dimension : 0;
   }
 
   std::string MetadataSet::getString(const std::string &key, int index, const std::string &defaultValue) const
@@ -311,7 +303,9 @@ namespace OFX {
     if(!_metadataHandle || index < 0)
       return defaultValue;
 
-    if(!readAsString(_metadataHandle, key.c_str(), getType(key), index, value))
+    const MetadataEntry *entry = findEntry(key);
+
+    if(!entry || !readAsString(_metadataHandle, key.c_str(), entry->type, index, value))
       return defaultValue;
 
     return value;
@@ -324,7 +318,9 @@ namespace OFX {
     if(!_metadataHandle || index < 0)
       return defaultValue;
 
-    if(!readAsDouble(_metadataHandle, key.c_str(), getType(key), index, value))
+    const MetadataEntry *entry = findEntry(key);
+
+    if(!entry || !readAsDouble(_metadataHandle, key.c_str(), entry->type, index, value))
       return defaultValue;
 
     return value;
@@ -337,7 +333,9 @@ namespace OFX {
     if(!_metadataHandle || index < 0)
       return defaultValue;
 
-    if(!readAsInt(_metadataHandle, key.c_str(), getType(key), index, value, defaultValue))
+    const MetadataEntry *entry = findEntry(key);
+
+    if(!entry || !readAsInt(_metadataHandle, key.c_str(), entry->type, index, value, defaultValue))
       return defaultValue;
 
     return value;
@@ -346,12 +344,14 @@ namespace OFX {
   std::vector<std::string> MetadataSet::getStringN(const std::string &key) const
   {
     std::vector<std::string> values;
-    const MetadataTypeEnum type = getType(key);
-    const int dimension = getDimension(key);
+    const MetadataEntry *entry = findEntry(key);
 
-    for(int i = 0; i < dimension; ++i) {
+    if(!entry)
+      return values;
+
+    for(int i = 0; i < entry->dimension; ++i) {
       std::string value;
-      if(!readAsString(_metadataHandle, key.c_str(), type, i, value))
+      if(!readAsString(_metadataHandle, key.c_str(), entry->type, i, value))
         return std::vector<std::string>();
       values.push_back(value);
     }
@@ -362,12 +362,14 @@ namespace OFX {
   std::vector<double> MetadataSet::getDoubleN(const std::string &key) const
   {
     std::vector<double> values;
-    const MetadataTypeEnum type = getType(key);
-    const int dimension = getDimension(key);
+    const MetadataEntry *entry = findEntry(key);
 
-    for(int i = 0; i < dimension; ++i) {
+    if(!entry)
+      return values;
+
+    for(int i = 0; i < entry->dimension; ++i) {
       double value = 0;
-      if(!readAsDouble(_metadataHandle, key.c_str(), type, i, value))
+      if(!readAsDouble(_metadataHandle, key.c_str(), entry->type, i, value))
         return std::vector<double>();
       values.push_back(value);
     }
@@ -378,12 +380,14 @@ namespace OFX {
   std::vector<int> MetadataSet::getIntN(const std::string &key) const
   {
     std::vector<int> values;
-    const MetadataTypeEnum type = getType(key);
-    const int dimension = getDimension(key);
+    const MetadataEntry *entry = findEntry(key);
 
-    for(int i = 0; i < dimension; ++i) {
+    if(!entry)
+      return values;
+
+    for(int i = 0; i < entry->dimension; ++i) {
       int value = 0;
-      if(!readAsInt(_metadataHandle, key.c_str(), type, i, value, 0))
+      if(!readAsInt(_metadataHandle, key.c_str(), entry->type, i, value, 0))
         return std::vector<int>();
       values.push_back(value);
     }
@@ -393,35 +397,44 @@ namespace OFX {
 
   std::vector<MetadataEntry> MetadataSet::entries(void) const
   {
-    const std::vector<std::string> sorted = keys();
-    std::vector<MetadataEntry> entries;
+    std::vector<MetadataEntry> result;
 
-    entries.reserve(sorted.size());
+    if(!_metadataHandle || !gMetadataSuite)
+      return result;
 
-    for(size_t i = 0; i < sorted.size(); ++i)
-      entries.push_back(MetadataEntry(sorted[i], getType(sorted[i]), getDimension(sorted[i])));
+    OfxStatus stat = refreshEntries();
 
-    return entries;
+    if(stat != kOfxStatOK) {
+      throwSuiteStatusException(stat);
+      return result;
+    }
+
+    result.reserve(_entries.size());
+    for(std::map<std::string, MetadataEntry>::const_iterator it = _entries.begin(); it != _entries.end(); ++it)
+      result.push_back(it->second);
+
+    return result;
   }
 
   std::vector<std::string> MetadataSet::keys(void) const
   {
-    std::vector<std::string> keys;
+    std::vector<std::string> result;
 
     if(!_metadataHandle || !gMetadataSuite)
-      return keys;
+      return result;
 
-    OfxStatus stat = gMetadataSuite->metadataEnumerate(_metadataHandle, collectMetadataKey, &keys);
+    OfxStatus stat = refreshEntries();
 
     if(stat != kOfxStatOK) {
       throwSuiteStatusException(stat);
-      return std::vector<std::string>();
+      return result;
     }
 
-    // the suite guarantees no order, so one is imposed here rather than passed on
-    std::sort(keys.begin(), keys.end());
+    result.reserve(_entries.size());
+    for(std::map<std::string, MetadataEntry>::const_iterator it = _entries.begin(); it != _entries.end(); ++it)
+      result.push_back(it->first);
 
-    return keys;
+    return result;
   }
 
   MetadataSetBuilder::MetadataSetBuilder(OfxPropertySetHandle handle)

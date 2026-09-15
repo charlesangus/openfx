@@ -11,6 +11,7 @@ time, or to an image, and reads values out of it.
 
 #include "ofxsCore.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -18,7 +19,7 @@ namespace OFX {
 
   /** @brief Enumerates the types a metadata value can have */
   enum MetadataTypeEnum {
-    eMetadataTypeNone,   /**< @brief the key is absent, or the host cannot report types */
+    eMetadataTypeNone,   /**< @brief the key is absent */
     eMetadataTypeInt,
     eMetadataTypeDouble,
     eMetadataTypeString
@@ -54,6 +55,16 @@ namespace OFX {
     /** @brief The raw metadata property set handle, owned by this object */
     OfxPropertySetHandle _metadataHandle;
 
+    /** @brief the type and dimension of every key seen on _metadataHandle by the last enumeration */
+    mutable std::map<std::string, MetadataEntry> _entries;
+
+    /** @brief enumerate _metadataHandle and replace _entries with what it reports, or leave
+    _entries untouched and return the failing status */
+    OfxStatus refreshEntries(void) const;
+
+    /** @brief the entry for key from _entries, re-enumerating once first if it is not already there */
+    const MetadataEntry *findEntry(const std::string &key) const;
+
   public :
     /** @brief construct an empty set, carrying no metadata */
     MetadataSet(void);
@@ -87,7 +98,7 @@ namespace OFX {
     /** @brief is the key present in this set */
     bool has(const std::string &key) const;
 
-    /** @brief the type the host holds the key as, eMetadataTypeNone if it is absent or the host cannot say */
+    /** @brief the type the host holds the key as, eMetadataTypeNone if it is absent */
     MetadataTypeEnum getType(const std::string &key) const;
 
     /** @brief how many values the key has, 0 if it is absent */

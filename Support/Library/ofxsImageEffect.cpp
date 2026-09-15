@@ -111,7 +111,6 @@ namespace OFX {
     OfxHost               *gHost = 0;
     OfxImageEffectSuiteV1 *gEffectSuite = 0;
     OfxPropertySuiteV1    *gPropSuite = 0;
-    OfxPropertySuiteV2    *gPropSuiteV2 = 0;
     OfxMetadataSuiteV1    *gMetadataSuite = 0;
     OfxInteractSuiteV1    *gInteractSuite = 0;
     OfxParameterSuiteV1   *gParamSuite = 0;
@@ -2033,7 +2032,6 @@ namespace OFX {
       if(gLoadCount == 1) {
         gEffectSuite    = (OfxImageEffectSuiteV1 *) fetchSuite(kOfxImageEffectSuite, 1);
         gPropSuite      = (OfxPropertySuiteV1 *)    fetchSuite(kOfxPropertySuite, 1);
-        gPropSuiteV2    = (OfxPropertySuiteV2 *)    fetchSuite(kOfxPropertySuite, 2, true);
         gParamSuite     = (OfxParameterSuiteV1 *)   fetchSuite(kOfxParameterSuite, 1);
         gMemorySuite    = (OfxMemorySuiteV1 *)      fetchSuite(kOfxMemorySuite, 1);
         gThreadSuite    = (OfxMultiThreadSuiteV1 *) fetchSuite(kOfxMultiThreadSuite, 1);
@@ -2055,7 +2053,7 @@ namespace OFX {
         OFX::gHostDescription.supportsMessageSuiteV2 = gMessageSuiteV2 != NULL;
         OFX::gHostDescription.supportsProgressSuite = (gProgressSuiteV1 != NULL || gProgressSuiteV2 != NULL);
         OFX::gHostDescription.supportsTimeLineSuite = gTimeLineSuite != NULL;
-        OFX::gHostDescription.supportsMetadata = gMetadataSuite != NULL && gPropSuiteV2 != NULL;
+        OFX::gHostDescription.supportsMetadata = gMetadataSuite != NULL;
 
         // fetch the interact suite if the host supports interaction
         if(OFX::gHostDescription.supportsOverlays || OFX::gHostDescription.supportsCustomInteract)
@@ -2085,7 +2083,6 @@ namespace OFX {
         // force these to null
         gEffectSuite = 0;
         gPropSuite = 0;
-        gPropSuiteV2 = 0;
         gMetadataSuite = 0;
         gParamSuite = 0;
         gMemorySuite = 0;

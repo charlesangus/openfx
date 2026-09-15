@@ -4525,6 +4525,11 @@ namespace {
            + "remove " + kGraphDroppedKey;
   }
 
+  /// what the head overwrites the rate key with on the second pass: text strtod reads
+  /// as a number, so a reader which stops at strtod hands the second node a nan to
+  /// count at rather than the default it asked for
+  const char kGraphUnreadableRate[] = "nan";
+
   /// the rate the second node counts its timecode at. It is driven to take that rate off
   /// the metadata reaching it rather than off its own parameter, so the rate is the one
   /// the fixture gives Source and the head leaves alone. Zero if the fixture gives none
@@ -4557,10 +4562,10 @@ namespace {
   }
 
   /// read the tail's output clip at one frame and check it carries the exact key set the
-  /// four nodes leave on it between them, and the three values which each name a
-  /// different node: the key the head contributed, the timecode the second node counted,
-  /// and the key the head dropped, back only because the third node combined its second
-  /// input with what reached its first
+  /// four nodes leave on it between them, and the values which each name a different
+  /// node: the key the head contributed, the timecode the second node counted and the
+  /// rate it counted at, and the key the head dropped, back only because the third node
+  /// combined its second input with what reached its first
   void checkGraphed(Report &report,
                     OFX::Host::ImageEffect::ClipInstance &output,
                     int rate,
@@ -4606,6 +4611,16 @@ namespace {
 
     report.check(counted, where + " " kOfxMetadataKeyTimecode " value=" + value
                  + " expected=" + wantedTimecode);
+
+    type = "none";
+    value = "none";
+
+    const bool atRate = readValue(metadata, kOfxMetadataKeyFrameRate, type, value)
+                        && type == "double"
+                        && value == formatDouble(rate);
+
+    report.check(atRate, where + " " kOfxMetadataKeyFrameRate " value=" + value
+                 + " expected=" + formatDouble(rate));
 
     std::string wantedDropped = "none";
     const bool onMask = fixtureValue(kCopyMaskClip, kGraphDroppedKey, time, wantedDropped);
@@ -4702,6 +4717,27 @@ namespace {
 
     for(int t = 0; t < kGraphFrames; ++t)
       checkGraphed(report, *output, rate, kGraphTimes[t], contract);
+
+    // the head now also overwrites the rate reaching the second node with text no number
+    // reads from, so that node has to fall back to its own rate parameter, driven off the
+    // fixture's rate so the fallback cannot be mistaken for the inherited value
+    const bool redriven =
+      setParamValue(*gChain[0], kModifyOperationsParam,
+                    graphOperations() + "\nset " kOfxMetadataKeyFrameRate " " + kGraphUnreadableRate)
+      && setParamValue(*gChain[1], kTimecodeRateParam, formatDouble(kTimecodeParamRate));
+
+    if(!report.check(redriven, contract + " unreadable rate parameters set"))
+      return;
+
+    const char *const rateParams[] = {kTimecodeRateParam};
+
+    paramsChanged(*gChain[0], headParams, sizeof(headParams) / sizeof(headParams[0]));
+    paramsChanged(*gChain[1], rateParams, sizeof(rateParams) / sizeof(rateParams[0]));
+
+    invalidateChain();
+
+    for(int t = 0; t < kGraphFrames; ++t)
+      checkGraphed(report, *output, int(kTimecodeParamRate), kGraphTimes[t], contract + " unreadable-rate");
   }
 
   /// each degraded contract is a negative: CI holds it to the plugin its non-degraded
@@ -4729,7 +4765,7 @@ namespace {
      eCompareCaseCount * (kFixtureFrames + 1) + kFixtureFrames + 2,
      checkMetadataCompareDegraded},
     {"metadata-chain", kFixtureFrames * 2 + 5, checkMetadataChain},
-    {"metadata-graph", kGraphFrames * 4 + kGraphNodeCount + 1, checkMetadataGraph}
+    {"metadata-graph", kGraphFrames * 2 * 7 + kGraphNodeCount + 2, checkMetadataGraph}
   };
 
   const Contract *const kContracts = kContractTable;

@@ -4,8 +4,6 @@
 #ifndef _ofxsSupportPrivate_H_
 #define _ofxsSupportPrivate_H_
 
-#include "ofxMetadata.h"
-
 #include "ofxsInteract.h"
 #include "ofxsImageEffect.h"
 #include "ofxsLog.h"

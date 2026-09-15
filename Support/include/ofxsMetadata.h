@@ -190,6 +190,10 @@ namespace OFX {
     /** @brief a read-only, non-owning view of _metadataHandle, for contents() */
     MetadataSet _contents;
 
+    /** @brief take up what the host answered a write of key with: log a failure, and on
+    success mark this builder as having done something and drop the key from _contents */
+    void record(const std::string &key, OfxStatus stat);
+
   public :
     /** @brief wrap a host-owned handle, typically the value of kOfxImageEffectPropMetadataSet found in an inArgs property set */
     explicit MetadataSetBuilder(OfxPropertySetHandle handle);

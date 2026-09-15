@@ -6,7 +6,6 @@
 #include <windows.h>
 #endif
 
-#include <cstring>
 #include <map>
 #include <memory>
 #include <set>
@@ -16,6 +15,8 @@
 
 #include "ofxsImageEffect.h"
 #include "ofxsMetadata.h"
+
+#include "../include/ofxsPixelCopy.H"
 
 namespace {
 
@@ -92,43 +93,6 @@ namespace {
       else if(verb == kRemoveVerb) {
         edits.set.erase(key);
         edits.removed.insert(key);
-      }
-    }
-  }
-
-  int bytesPerPixel(const OFX::Image &image)
-  {
-    int perComponent = 0;
-
-    switch(image.getPixelDepth()) {
-    case OFX::eBitDepthUByte  : perComponent = 1; break;
-    case OFX::eBitDepthUShort : perComponent = 2; break;
-    case OFX::eBitDepthHalf   : perComponent = 2; break;
-    case OFX::eBitDepthFloat  : perComponent = 4; break;
-    default : return 0;
-    }
-
-    return perComponent * image.getPixelComponentCount();
-  }
-
-  void copyPixels(const OFX::Image &src, OFX::Image &dst, const OfxRectI &window)
-  {
-    const int pixelBytes = bytesPerPixel(dst);
-
-    if(pixelBytes == 0 || pixelBytes != bytesPerPixel(src))
-      OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
-
-    for(int y = window.y1; y < window.y2; y++) {
-      for(int x = window.x1; x < window.x2; x++) {
-        void *to = dst.getPixelAddress(x, y);
-
-        if(!to)
-          continue;
-
-        if(const void *from = src.getPixelAddress(x, y))
-          memcpy(to, from, size_t(pixelBytes));
-        else
-          memset(to, 0, size_t(pixelBytes));
       }
     }
   }

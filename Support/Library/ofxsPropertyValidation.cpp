@@ -679,7 +679,7 @@ namespace OFX {
       gGetMetadataActionInArgProps, sizeof(gGetMetadataActionInArgProps)/sizeof(PropertyDescription),
       NULLPTR);
 
-    /** @brief kOfxImageEffectActionGetMetadata action's outargs properties; the per-clip OfxImageClipPropMetadataRetainedKeys_<clip> properties are not listed as their names depend on the clips the effect describes */
+    /** @brief kOfxImageEffectActionGetMetadata action's outargs properties, less the per-clip OfxImageClipPropMetadataRetainedKeys_<clip> properties, which are named after the clips the effect describes */
     static PropertyDescription gGetMetadataActionOutArgProps[ ] =
     {
       PropertyDescription(kOfxImageEffectPropMetadataSourceClip, OFX::eString, -1, eDescFinished),

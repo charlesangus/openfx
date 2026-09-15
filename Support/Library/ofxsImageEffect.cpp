@@ -1810,9 +1810,8 @@ namespace OFX {
   {
     doneSomething_ = true;
 
-    // a variable-dimension property only ever grows when written index by index, so writing
-    // fewer entries than the host pre-populated it with leaves the surplus ones behind unless
-    // it is reset to zero dimension first
+    // an indexed write never shrinks a property, so without the reset entries beyond
+    // clips.size() would survive from what the host pre-populated
     outArgs_.propReset(kOfxImageEffectPropMetadataSourceClip);
 
     int n = 0;
@@ -1839,7 +1838,7 @@ namespace OFX {
     doneSomething_ = true;
     const std::string& propName = extractValueForName(clipMetadataRetainedKeysPropNames_, clip.name());
 
-    // see the comment in setSourceClips: the reset is what makes a shrinking write actually shrink
+    // reset first, as in setSourceClips, so that a shorter list does not leave surplus entries behind
     outArgs_.propReset(propName.c_str());
 
     int n = 0;

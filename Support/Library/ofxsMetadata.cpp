@@ -38,11 +38,9 @@ namespace OFX {
       return kOfxStatOK;
     }
 
-    /** @brief writes value as the shortest text which reads back as the same double, in
-    the classic locale so that the decimal point does not follow whatever locale the host
-    happens to have installed. Seventeen digits read back as any finite double, so the
-    loop's last text is faithful whether or not a shorter one was, and a nan or an inf,
-    which never compare equal, come out at that precision too */
+    /** @brief writes value at the fewest of 15, 16 or 17 significant digits which reads
+    back as the same double, else at 17, in the classic locale so that the decimal point
+    does not follow whatever locale the host happens to have installed */
     std::string doubleToString(double value)
     {
       std::string text;

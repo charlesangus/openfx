@@ -1209,10 +1209,13 @@ namespace OFX {
 
     /** @brief get the metadata this effect contributes to its output, and the metadata it inherits from its inputs
 
-    Returns false if the effect does not want to override the host's default metadata handling,
-    in which case the host falls through to its own inheritance rules.
+    If the effect wants to contribute keys to its output metadata, it should do so by calling one of the
+    OFX::MetadataSetBuilder setter functions (setString, setDouble, setInt, setStringN, setDoubleN, setIntN
+    or copyFrom) on the \em metadata argument. If it wants to change which input clips it inherits metadata
+    from, it should call OFX::MetadataInheritanceSetter::setSourceClips on the \em inheritance argument.
+    An effect that calls neither leaves the host to its own default metadata inheritance rules.
     */
-    virtual bool getMetadata(const MetadataArguments &args, MetadataSetBuilder &metadata, MetadataInheritanceSetter &inheritance);
+    virtual void getMetadata(const MetadataArguments &args, MetadataSetBuilder &metadata, MetadataInheritanceSetter &inheritance);
 
     /** @brief the effect is about to be actively edited by a user, called when the first user interface is opened on an instance */
     virtual void beginEdit(void);

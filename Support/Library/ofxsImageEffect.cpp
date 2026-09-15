@@ -1531,9 +1531,9 @@ namespace OFX {
   }
 
   /** @brief get the metadata this effect contributes to its output, and the metadata it inherits from its inputs */
-  bool ImageEffect::getMetadata(const MetadataArguments &/*args*/, MetadataSetBuilder &/*metadata*/, MetadataInheritanceSetter &/*inheritance*/)
+  void ImageEffect::getMetadata(const MetadataArguments &/*args*/, MetadataSetBuilder &/*metadata*/, MetadataInheritanceSetter &/*inheritance*/)
   {
-    return false; // by default, we do not override the host's metadata handling
+    // fa niente
   }
 
   /** @brief the effect is about to be actively edited by a user, called when the first user interface is opened on an instance */
@@ -2595,12 +2595,10 @@ namespace OFX {
       MetadataInheritanceSetter inheritance(outArgs, desc->getClipMetadataRetainedKeysPropNames());
 
       // and call the plug-in client code
-      bool v = effectInstance->getMetadata(args, metadata, inheritance);
+      effectInstance->getMetadata(args, metadata, inheritance);
 
-      // kOfxStatReplyDefault makes the host discard outArgs and the contributed metadata set
-      // alike, so a plugin that wrote to either but forgot to return true would otherwise
-      // lose its contribution silently
-      return v || metadata.didSomething() || inheritance.didSomething();
+      // did we do anything ?
+      return metadata.didSomething() || inheritance.didSomething();
     }
 
     /** @brief Library side begin instance changed action */

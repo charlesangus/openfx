@@ -25,9 +25,7 @@
 #ifdef OFX_SUPPORTS_OPENGLRENDER
 #include "ofxGPURender.h"
 #endif
-#ifdef OFX_SUPPORTS_METADATA
 #include "ofxMetadata.h"
-#endif
 #include "ofxOld.h" // old plugins may rely on deprecated properties being present
 
 #include <memory>
@@ -743,9 +741,7 @@ namespace OFX {
         if(isClipPreferencesSlaveParam(paramName))
           _clipPrefsDirty = true;
 
-#       ifdef OFX_SUPPORTS_METADATA
         invalidateMetadata();
-#       endif
 
         if (!param) {
           return kOfxStatFailed;
@@ -784,9 +780,7 @@ namespace OFX {
       {
         _clipPrefsDirty = true;
 
-#       ifdef OFX_SUPPORTS_METADATA
         invalidateMetadata();
-#       endif
 
         std::map<std::string,ClipInstance*>::iterator it=_clips.find(clipName);
         if(it!=_clips.end())
@@ -1774,7 +1768,6 @@ namespace OFX {
         return true;
       }
 
-#     ifdef OFX_SUPPORTS_METADATA
       const std::string &Instance::metadataRetainedKeysPropName(const std::string &clipName)
       {
         std::string &propName = _clipMetadataRetainedKeysPropNames[clipName];
@@ -1986,7 +1979,6 @@ namespace OFX {
         releaseInputMetadata(inputMetadata);
         contribution->releaseReference();
       }
-#     endif // OFX_SUPPORTS_METADATA
 
       /// find the most chromatic components out of the two. Override this if you define
       /// more chromatic components
@@ -2266,9 +2258,7 @@ namespace OFX {
           return kOfxStatFailed;
         }
 
-#   ifdef OFX_SUPPORTS_METADATA
         image->setFetchedFor(*clipInstance, time);
-#   endif // OFX_SUPPORTS_METADATA
 
         *h3 = image->getPropHandle();
 
@@ -2505,7 +2495,6 @@ namespace OFX {
         imageMemoryUnlock
       };
 
-#   ifdef OFX_SUPPORTS_METADATA
       ////////////////////////////////////////////////////////////////////////////////
       ////////////////////////////////////////////////////////////////////////////////
       ////////////////////////////////////////////////////////////////////////////////
@@ -2832,7 +2821,6 @@ namespace OFX {
         metadataSetDoubleN,
         metadataSetIntN
       };
-#   endif // OFX_SUPPORTS_METADATA
 
 #   ifdef OFX_SUPPORTS_OPENGLRENDER
       ////////////////////////////////////////////////////////////////////////////////
@@ -2865,9 +2853,7 @@ namespace OFX {
             return kOfxStatFailed;
           }
 
-#     ifdef OFX_SUPPORTS_METADATA
           texture->setFetchedFor(*clipInstance, time);
-#     endif // OFX_SUPPORTS_METADATA
 
           *h3 = texture->getPropHandle();
 
@@ -3378,14 +3364,12 @@ namespace OFX {
           return ParametricParam::GetSuite(suiteVersion);
         }
 #     endif
-#     ifdef OFX_SUPPORTS_METADATA
         else if (strcmp(suiteName, kOfxMetadataSuite)==0) {
           if(suiteVersion == 1)
             return (void*)&gMetadataSuite;
           else
             return NULL;
         }
-#     endif
         else  /// otherwise just grab the base class one, which is props and memory
           return OFX::Host::Host::fetchSuite(suiteName, suiteVersion);
       }

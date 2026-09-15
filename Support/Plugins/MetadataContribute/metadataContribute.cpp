@@ -22,7 +22,7 @@ namespace {
   const char kDropKeyParam[] = "dropKey";
 
   // the reverse DNS prefix every key this plugin contributes is namespaced under
-  const char kKeyPrefix[] = "org.openfx.examples.metadataContribute.";
+  const char kKeyPrefix[] = "net.sf.openfx.metadataContribute.";
 
   enum ModeEnum {
     eModeInheritAll,
@@ -227,7 +227,7 @@ void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectD
 
   StringParamDescriptor *note = desc.defineStringParam(kNoteParam);
   note->setLabels("note", "note", "note");
-  note->setHint("text contributed as org.openfx.examples.metadataContribute.note at every call");
+  note->setHint("text contributed as net.sf.openfx.metadataContribute.note at every call");
   note->setStringType(eStringTypeSingleLine);
   note->setDefault("");
   note->setAnimates(false);
@@ -263,7 +263,7 @@ namespace OFX
   {
     void getPluginIDs(OFX::PluginFactoryArray &ids)
     {
-      static MetadataContributeExamplePluginFactory p("org.openfx.examples.metadataContribute", 1, 0);
+      static MetadataContributeExamplePluginFactory p("net.sf.openfx.metadataContribute", 1, 0);
       ids.push_back(&p);
     }
   }

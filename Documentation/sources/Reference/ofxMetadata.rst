@@ -133,7 +133,7 @@ As with any other metadata key, a key a plugin contributes is subject to the nam
 :c:macro:`kOfxMetadataKeyPrefixStandard`, which is reserved for the standard vocabulary defined in
 this specification. A plugin-defined key is a vendor key, and so must be named in reverse DNS form
 using a domain the plugin's author controls, for example
-``org.openfx.examples.metadataPlugin.gain``, exactly as described in `Vendor Keys`_.
+``net.sf.openfx.metadataPlugin.gain``, exactly as described in `Vendor Keys`_.
 
 The Key Namespaces
 ------------------

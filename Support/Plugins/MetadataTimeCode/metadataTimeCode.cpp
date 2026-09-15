@@ -348,7 +348,7 @@ namespace OFX
   {
     void getPluginIDs(OFX::PluginFactoryArray &ids)
     {
-      static MetadataTimeCodeExamplePluginFactory p("org.openfx.examples.metadataTimeCode", 1, 0);
+      static MetadataTimeCodeExamplePluginFactory p("net.sf.openfx.metadataTimeCode", 1, 0);
       ids.push_back(&p);
     }
   }

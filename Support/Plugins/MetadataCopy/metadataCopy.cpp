@@ -428,7 +428,7 @@ namespace OFX
   {
     void getPluginIDs(OFX::PluginFactoryArray &ids)
     {
-      static MetadataCopyExamplePluginFactory p("org.openfx.examples.metadataCopy", 1, 0);
+      static MetadataCopyExamplePluginFactory p("net.sf.openfx.metadataCopy", 1, 0);
       ids.push_back(&p);
     }
   }

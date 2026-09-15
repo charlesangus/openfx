@@ -49,11 +49,22 @@ namespace OFX {
   The methods which read a value never throw. The ones which describe the shape of the set,
   fetchFromClip, fetchFromImage, entries and keys, throw an OFX::Exception::Suite if the
   host fails the underlying call.
+
+  A set built by the public constructor, by fetchFromClip or by fetchFromImage owns the
+  handle it wraps, and releases it on reset() or destruction as described above. A set
+  built by borrow() instead wraps a handle owned by something else -- neither reset() nor
+  the destructor release it -- for reading a set that outlives this object and that the
+  host would refuse to release a second time, such as the writable set a
+  MetadataSetBuilder exposes through contents().
   */
   class MetadataSet {
   protected :
-    /** @brief The raw metadata property set handle, owned by this object */
+    /** @brief The raw metadata property set handle */
     OfxPropertySetHandle _metadataHandle;
+
+    /** @brief whether this object releases _metadataHandle on reset(), rather than only
+    borrowing it from something else that owns it */
+    bool _owned;
 
     /** @brief the type and dimension of every key seen on _metadataHandle by the last enumeration */
     mutable std::map<std::string, MetadataEntry> _entries;
@@ -64,6 +75,15 @@ namespace OFX {
 
     /** @brief the entry for key from _entries, re-enumerating once first if it is not already there */
     const MetadataEntry *findEntry(const std::string &key) const;
+
+    /** @brief construct over handle, owning it exactly when owned is true */
+    MetadataSet(OfxPropertySetHandle handle, bool owned);
+
+    /** @brief drop key from _entries, so the next read of it re-enumerates rather than
+    answering from a cached entry a writer elsewhere on the same handle has since changed */
+    void forget(const std::string &key);
+
+    friend class MetadataSetBuilder;
 
   public :
     /** @brief construct an empty set, carrying no metadata */
@@ -85,6 +105,10 @@ namespace OFX {
 
     /** @brief fetch the metadata an image carries, the image handle already naming a time */
     static MetadataSet fetchFromImage(OfxPropertySetHandle image);
+
+    /** @brief wrap handle without taking ownership of it, for reading a set something
+    else keeps alive and will release itself */
+    static MetadataSet borrow(OfxPropertySetHandle handle);
 
     /** @brief does this set carry metadata at all */
     bool isValid(void) const {return _metadataHandle != 0;}
@@ -148,6 +172,12 @@ namespace OFX {
   constructed from a NULL handle, or because the host rejects the call, does nothing and never
   throws. didSomething distinguishes a builder that has made at least one successful call from
   one that has not.
+
+  contents() offers a read-only view of the same handle, for a plugin that wants to read back
+  what it has written, which the C header permits on this set even though it forbids writing
+  it through anything but the setters above. The view is a MetadataSet built with borrow(), so
+  it never releases the handle either, and it reflects every write made through this builder's
+  setters, however that write's key was previously read through the view.
   */
   class MetadataSetBuilder {
   protected :
@@ -157,12 +187,18 @@ namespace OFX {
     /** @brief whether any setter on this builder has yet succeeded */
     bool _didSomething;
 
+    /** @brief a read-only, non-owning view of _metadataHandle, for contents() */
+    MetadataSet _contents;
+
   public :
     /** @brief wrap a host-owned handle, typically the value of kOfxImageEffectPropMetadataSet found in an inArgs property set */
     explicit MetadataSetBuilder(OfxPropertySetHandle handle);
 
     /** @brief has any setter on this builder yet succeeded */
     bool didSomething(void) const {return _didSomething;}
+
+    /** @brief a read-only view of what this builder has written to its set so far */
+    const MetadataSet &contents(void) const {return _contents;}
 
     /** @brief write a single string value to key, creating it if absent */
     void setString(const std::string &key, const std::string &value);

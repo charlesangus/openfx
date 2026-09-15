@@ -2651,6 +2651,30 @@ namespace {
     report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
   }
 
+  /// how many lines of captured log text read exactly "contributed keys=<expected>", the
+  /// shape MetadataContribute logs after reading its own writes back through
+  /// MetadataSetBuilder::contents(), so that a wrong count or a stray extra digit misses
+  int countContributedKeyLogs(const std::string &text, int expected)
+  {
+    const std::string marker = "contributed keys=";
+    std::istringstream lines(text);
+    std::string line;
+    int matches = 0;
+
+    while(std::getline(lines, line)) {
+      const std::string::size_type at = line.find(marker);
+
+      if(at == std::string::npos)
+        continue;
+
+      int value = 0;
+      if(parseInt(line.substr(at + marker.size()), value) && value == expected)
+        matches += 1;
+    }
+
+    return matches;
+  }
+
   /// hold a plugin which contributes metadata of its own to what its output clip comes
   /// back carrying, over every mode it inherits its source clip's metadata under and
   /// every frame of the fixture range, with the image still passed through untouched.
@@ -2669,6 +2693,9 @@ namespace {
 
     if(!report.check(output != NULL, contract + " clip=" kOfxImageEffectOutputClipName))
       return;
+
+    MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(&instance);
+    report.check(effect != NULL, contract + " effect instance");
 
     const std::string dropKey = contributeDropKey();
 
@@ -2705,8 +2732,25 @@ namespace {
                                           MetadataFixture::kFirstFrame, renderScale);
       instance.endInstanceChangedAction(kOfxChangeUserEdited);
 
+      // each clipGetMetadata below fetches a time the invalidation above dropped from
+      // the output clip's cache, so it runs the plugin's getMetadata action and its log
+      // line exactly once per frame; capturing around the loop, the way checkRender
+      // captures around a render pass, is what makes that line observable at all
+      std::string contributedCaptured;
+      if(effect)
+        effect->setMessageCapture(&contributedCaptured);
+
       for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1)
         checkContributed(report, *output, mode, time, dropKey, contributed, where);
+
+      if(effect)
+        effect->setMessageCapture(NULL);
+
+      const int loggedKeyCounts = countContributedKeyLogs(contributedCaptured, kContributedKeyCount);
+
+      report.check(loggedKeyCounts == kFixtureFrames,
+                   where + " contents() logged=" + formatInt(loggedKeyCounts)
+                   + " expected=" + formatInt(kFixtureFrames));
 
       RenderPass pass;
       checkRender(report, instance, &pass);
@@ -4422,7 +4466,7 @@ namespace {
     {"metadata-display", eFilterModeCount * kDisplayFilterCount * 2 + 1, checkMetadataDisplaySupported},
     {"metadata-display-degraded", eFilterModeCount * kDisplayFilterCount * 2, checkMetadataDisplayDegraded},
     {"metadata-contribute",
-     eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + eMetadataModeCount + 1,
+     eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + 2 * eMetadataModeCount + 2,
      checkMetadataContribute},
     {"metadata-modify", eModifyCaseCount * (kFixtureFrames * 2 + 1) + 1, checkMetadataModify},
     {"metadata-timecode",

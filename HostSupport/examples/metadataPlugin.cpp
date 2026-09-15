@@ -155,10 +155,6 @@ static OfxStatus setRetainedKeys(OfxImageEffectHandle effect,
   OfxPropertySetHandle metadata = 0;
   const OfxStatus fetched = gMetadataSuite->clipGetMetadata(clip, time, &metadata);
 
-  // on anything but kOfxStatOK the host has set the handle to NULL and there is
-  // nothing to release
-  if(fetched == kOfxStatReplyDefault)
-    return kOfxStatOK;
   if(fetched != kOfxStatOK)
     return fetched;
 

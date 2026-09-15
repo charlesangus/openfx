@@ -676,16 +676,16 @@ typedef struct OfxMetadataSuiteV1 {
 	 - clip was returned by clipGetHandle
 
 	 \post
-	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
-	 - on other status codes, metadata is set to NULL and there is nothing to release
+	 - on ::kOfxStatOK, metadata is a handle to a property set, possibly empty, to be disposed of by metadataRelease
+	 - on any other status code, metadata is set to NULL and there is nothing to release
 
 	 The property set returned is read-only. The metadataSet entry points fail on it with
 	 ::kOfxStatErrValue; only the set passed to the \ref kOfxImageEffectActionGetMetadata
 	 action in \ref kOfxImageEffectPropMetadataSet may be written to.
 
 	 @returns
-	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
-	 - ::kOfxStatReplyDefault - the clip has no metadata associated with it at the given time,
+	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle, which is
+	   empty if the clip has no metadata associated with it at the given time,
 	 - ::kOfxStatErrBadHandle - the clip handle was invalid,
 	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
 	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
@@ -704,16 +704,16 @@ typedef struct OfxMetadataSuiteV1 {
 	 - image was returned by OfxImageEffectSuiteV1::clipGetImage
 
 	 \post
-	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
-	 - on other status codes, metadata is set to NULL and there is nothing to release
+	 - on ::kOfxStatOK, metadata is a handle to a property set, possibly empty, to be disposed of by metadataRelease
+	 - on any other status code, metadata is set to NULL and there is nothing to release
 
 	 The property set returned is read-only. The metadataSet entry points fail on it with
 	 ::kOfxStatErrValue; only the set passed to the \ref kOfxImageEffectActionGetMetadata
 	 action in \ref kOfxImageEffectPropMetadataSet may be written to.
 
 	 @returns
-	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
-	 - ::kOfxStatReplyDefault - the image has no metadata associated with it,
+	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle, which is
+	   empty if the image has no metadata associated with it,
 	 - ::kOfxStatErrBadHandle - the image handle was invalid,
 	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
 	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.

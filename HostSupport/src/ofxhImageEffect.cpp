@@ -2506,15 +2506,6 @@ namespace OFX {
           return kOfxStatFailed;
         }
 
-        if (set->getProperties().empty()) {
-          // no handle goes back to the plugin, so the reference the clip added for us
-          // is ours to drop
-          set->releaseReference();
-          *metadata = NULL;
-
-          return kOfxStatReplyDefault;
-        }
-
         *metadata = set->getPropHandle();
 
         return kOfxStatOK;
@@ -2562,7 +2553,7 @@ namespace OFX {
         if (!clipInstance) {
           *metadata = NULL;
 
-          return kOfxStatReplyDefault;
+          return kOfxStatErrBadHandle;
         }
 
         return clipGetMetadata(clipInstance->getHandle(), imageBase->getFetchedTime(), metadata);

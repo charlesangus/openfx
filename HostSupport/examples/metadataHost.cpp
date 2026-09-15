@@ -1160,8 +1160,17 @@ namespace {
     OfxPropertySetHandle empty = NULL;
     const OfxStatus st = gMetadataSuite->clipGetMetadata(output.getHandle(), MetadataFixture::kFirstFrame, &empty);
 
-    report.check(st == kOfxStatReplyDefault && empty == NULL,
-                 "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata");
+    if(report.check(st == kOfxStatOK && empty != NULL,
+                     "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata")) {
+      std::set<std::string> found;
+      const OfxStatus enumerated = gMetadataSuite->metadataEnumerate(empty, collectKey, &found);
+
+      report.check(enumerated == kOfxStatOK && found.empty(),
+                   "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata enumerate");
+
+      report.check(gMetadataSuite->metadataRelease(empty) == kOfxStatOK,
+                   "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata release");
+    }
 
     for(size_t i = 0; i < clips.size(); ++i)
       delete clips[i];
@@ -3652,14 +3661,6 @@ namespace {
 
     OfxPropertySetHandle metadata = NULL;
     const OfxStatus fetched = gMetadataSuite->clipGetMetadata(output.getHandle(), time, &metadata);
-
-    // a clip left carrying nothing answers kOfxStatReplyDefault and no handle at all,
-    // which is what the cells that retain nothing on the composed side come back as
-    if(expected.empty()) {
-      report.check(fetched == kOfxStatReplyDefault && metadata == NULL,
-                   where + " keys=none status=" + formatInt(fetched));
-      return;
-    }
 
     if(!report.check(fetched == kOfxStatOK && metadata,
                      where + " fetched status=" + formatInt(fetched)))

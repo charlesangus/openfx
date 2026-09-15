@@ -52,8 +52,6 @@
 
 namespace MyHost {
 
-#ifdef OFX_SUPPORTS_METADATA
-
   /// the clip and key whose published value carries gRevision below
   const char *const kRevisedClip = MetadataFixture::kInputClips[0];
   const char kRevisedKey[] = kOfxMetadataKeyTimecode;
@@ -262,12 +260,6 @@ namespace MyHost {
     }
   }
 
-#else
-
-  typedef Host MetadataHost;
-
-#endif // OFX_SUPPORTS_METADATA
-
 } // MyHost
 
 namespace {
@@ -276,15 +268,6 @@ namespace {
   const OfxMetadataSuiteV1    *gMetadataSuite = NULL;
   const OfxImageEffectSuiteV1 *gEffectSuite = NULL;
   const OfxMessageSuiteV2     *gMessageSuite = NULL;
-
-  /// the metadata suite is vended only by a host built with OFX_SUPPORTS_METADATA
-#ifdef OFX_SUPPORTS_METADATA
-  const bool kMetadataSuiteExpected = true;
-#else
-  const bool kMetadataSuiteExpected = false;
-#endif // OFX_SUPPORTS_METADATA
-
-#ifdef OFX_SUPPORTS_METADATA
 
   /// the effects --upstream chains ahead of the plugin --plugin-id names, head first
   /// with that plugin last, which is how a contract handed one instance reaches the
@@ -299,8 +282,6 @@ namespace {
     for(size_t i = 0; i < gChain.size(); ++i)
       gChain[i]->invalidateMetadata();
   }
-
-#endif // OFX_SUPPORTS_METADATA
 
   ////////////////////////////////////////////////////////////////////////////////
   // formatting, shared by the fixture listing and the values read back so that the
@@ -840,8 +821,6 @@ namespace {
 
     contributed.push_back(one);
   }
-
-#ifdef OFX_SUPPORTS_METADATA
 
   /// check that a metadata set holds exactly the keys, types and values the fixture
   /// gives for this clip at this time, and return what was read for each key
@@ -1446,7 +1425,7 @@ namespace {
   ////////////////////////////////////////////////////////////////////////////////
   // the checks that need the plugin
 
-  const char kPluginId[] = "org.openfx.examples.metadataPlugin";
+  const char kPluginId[] = "net.sf.openfx.metadataPlugin";
 
   /// the plugin's composition order parameter, and the two values of it this checks
   const char kOrderParam[] = "compositionOrder";
@@ -1474,10 +1453,10 @@ namespace {
 
   /// the keys the plugin writes under its own reverse DNS prefix, and the values it
   /// writes into them, the string one being whatever the note parameter holds
-  const char kContributedNote[]   = "org.openfx.examples.metadataPlugin.note";
-  const char kContributedGain[]   = "org.openfx.examples.metadataPlugin.gain";
-  const char kContributedPasses[] = "org.openfx.examples.metadataPlugin.passes";
-  const char kContributedWindow[] = "org.openfx.examples.metadataPlugin.window";
+  const char kContributedNote[]   = "net.sf.openfx.metadataPlugin.note";
+  const char kContributedGain[]   = "net.sf.openfx.metadataPlugin.gain";
+  const char kContributedPasses[] = "net.sf.openfx.metadataPlugin.passes";
+  const char kContributedWindow[] = "net.sf.openfx.metadataPlugin.window";
 
   const double kContributedGainValue     = 1.75;
   const int    kContributedPassesValue   = 5;
@@ -1733,8 +1712,6 @@ namespace {
     return ok;
   }
 
-#endif // OFX_SUPPORTS_METADATA
-
   /// write text through whichever of the host's parameter instances a name resolves to,
   /// so that a check can drive a parameter it knows only by name and value
   bool setParamValue(OFX::Host::ImageEffect::Instance &instance,
@@ -1895,8 +1872,6 @@ namespace {
     return false;
   }
 
-#ifdef OFX_SUPPORTS_METADATA
-
   /// write a value through the host's string and choice parameter instances and read it
   /// straight back, in both the scalar and the at-a-time form. A host that dropped what
   /// was written, or that answered with the declared default instead of it, fails these
@@ -1995,8 +1970,6 @@ namespace {
     report.check(readAfter && is == expectedAfter,
                  "invalidation after value=" + is + " expected=" + expectedAfter);
   }
-
-#endif // OFX_SUPPORTS_METADATA
 
   /// the first clip 'instance' described that is not the output clip, in the order the
   /// effect described them; only the fixture's own plugins are guaranteed to have
@@ -2241,6 +2214,13 @@ namespace {
     void      (*run)(Report &report, OFX::Host::ImageEffect::Instance &instance);
   };
 
+  /// what a contract made of the plugin it was run on: the checks it recorded and how
+  /// many of them failed, both zero when the plugin never got as far as the contract
+  struct ContractRun {
+    int checks = 0;
+    int failures = 0;
+  };
+
   /// the frames of the fixture range, which is what the contract below counts in
   const int kFixtureFrames = int(MetadataFixture::kLastFrame - MetadataFixture::kFirstFrame) + 1;
 
@@ -2329,8 +2309,9 @@ namespace {
   /// fixture gives that clip: every key of every frame, once each, with the fixture's
   /// type and value, in ascending order, and the image passed through untouched. The
   /// timecode check is what a plugin that read its clip once, rather than at the time it
-  /// was handed to render, falls down on. Degraded is the same plugin on a host with no
-  /// metadata suite, where it has nothing to read and so owes an empty log and the image
+  /// was handed to render, falls down on. Degraded holds the same plugin to an empty log
+  /// and the image, which a plugin that reads its clip cannot deliver: CI runs it as the
+  /// negative that proves this contract is able to fail
   void checkMetadataLog(Report &report, OFX::Host::ImageEffect::Instance &instance, bool degraded)
   {
     const std::string clip = kOfxImageEffectSimpleSourceClipName;
@@ -2525,8 +2506,9 @@ namespace {
   /// the fixture gives that clip, over every mode and a sweep of filters, with the image
   /// still passed through untouched. Each display is compared byte for byte, so the
   /// separator, the line order and the absence of a line after the last one are all held.
-  /// Degraded is the same plugin on a host with no metadata suite, where every display it
-  /// composes is empty whatever it is asked for
+  /// Degraded holds the same plugin to an empty display whatever it is asked for, which a
+  /// plugin that shows its metadata cannot deliver: CI runs it as the negative that
+  /// proves this contract is able to fail
   void checkMetadataDisplay(Report &report, OFX::Host::ImageEffect::Instance &instance, bool degraded)
   {
     const std::string clip = kOfxImageEffectSimpleSourceClipName;
@@ -2537,7 +2519,7 @@ namespace {
     renderScale.x = renderScale.y = 1.0;
 
     // the pinned display is a self check on this file's own composition, with no plugin
-    // in it, so a host with nothing to compose from has nothing to pin
+    // in it, so the negative, which expects nothing composed, has nothing to pin
     if(!degraded) {
       const std::string pinned = expectedDisplay(clip, time, kPinnedFilter, kPinnedMode);
 
@@ -2617,7 +2599,7 @@ namespace {
 
   /// the reverse DNS prefix the plugin namespaces every key of its own under, and the
   /// values it writes into them
-  const char kContributePrefix[] = "org.openfx.examples.metadataContribute.";
+  const char kContributePrefix[] = "net.sf.openfx.metadataContribute.";
 
   const int         kContributeRevision       = 1;
   const double      kContributeQuality        = 0.75;
@@ -2879,8 +2861,8 @@ namespace {
 
   /// the two nodes a metadata-chain contract expects --upstream and --plugin-id to have
   /// built, proven by identifier so a mistyped invocation cannot pass vacuously
-  const char kChainHeadId[] = "org.openfx.examples.metadataContribute";
-  const char kChainTailId[] = "org.openfx.examples.metadataView";
+  const char kChainHeadId[] = "net.sf.openfx.metadataContribute";
+  const char kChainTailId[] = "net.sf.openfx.metadataView";
 
   /// the note the contract drives through the head once the initial read is checked,
   /// distinct from metadata-contribute's own note so a chain check cannot be satisfied
@@ -2900,7 +2882,6 @@ namespace {
     if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
       return;
 
-#   ifdef OFX_SUPPORTS_METADATA
     if(!report.check(gChain.size() == 2, contract + " nodes=" + formatInt(int(gChain.size()))))
       return;
 
@@ -3004,9 +2985,6 @@ namespace {
 
     report.check(displayed, contract + " tail display holds " + noteKey + "=" + (note ? note->value : "none")
                  + " shown=" + escapeLines(shown));
-#   else
-    (void) instance;
-#   endif // OFX_SUPPORTS_METADATA
   }
 
   /// the parameter a plugin which edits inherited metadata has to expose for the
@@ -3016,7 +2994,7 @@ namespace {
 
   /// a key the fixture does not carry, so the case which sets it can only be satisfied
   /// by the plugin actually contributing it
-  const char kModifyNewKey[]   = "org.openfx.examples.metadataModify.added";
+  const char kModifyNewKey[]   = "net.sf.openfx.metadataModify.added";
   const char kModifyNewValue[] = "custom-value";
 
   /// the value the case which sets an inherited key writes into it, distinct from the
@@ -3182,9 +3160,8 @@ namespace {
   /// still passed through untouched. The operations parameter is driven through the
   /// instance changed action rather than by invalidating the metadata by hand, so a
   /// host which does not invalidate what a parameter change composed fails these. There
-  /// is no degraded twin: with no metadata suite there is nothing left for a plugin
-  /// which only ever edits what it reads through that suite to be judged on, beyond the
-  /// pass-through the generic preconditions already check
+  /// is no degraded twin: the negative CI runs against this contract is a plugin which
+  /// never edits its metadata
   void checkMetadataModify(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
     const std::string contract = "metadata-modify";
@@ -3504,10 +3481,8 @@ namespace {
   /// driven through the parameter in the second, and that same rate counted from a
   /// start frame of its own in the third, evaluated at every frame of the fixture
   /// range plus the second, four-second, minute and twenty-four-hour rollovers, with
-  /// the image still passed through untouched. There is no degraded twin: with no
-  /// metadata suite there is no source frame rate left to take, and nothing left to read
-  /// the plugin's own output back through, beyond the pass-through the generic
-  /// preconditions already check
+  /// the image still passed through untouched. There is no degraded twin: the negative
+  /// CI runs against this contract is a plugin which never counts a timecode
   void checkMetadataTimecode(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
     const std::string contract = "metadata-timecode";
@@ -3946,7 +3921,6 @@ namespace {
                             OFX::Host::ImageEffect::ClipInstance &output,
                             const std::string &contract)
   {
-#   ifdef OFX_SUPPORTS_METADATA
     const std::string where = contract + " unconnected clip=" + kCopyMaskClip;
 
     MyHost::MetadataEffectInstance *effect = dynamic_cast<MyHost::MetadataEffectInstance *>(&instance);
@@ -4019,12 +3993,6 @@ namespace {
                  pixels.str());
 
     maskClip->setConnected(true);
-#   else
-    (void) report;
-    (void) instance;
-    (void) output;
-    (void) contract;
-#   endif // OFX_SUPPORTS_METADATA
   }
 
   /// hold a plugin which takes its metadata from either of its two inputs or from both
@@ -4032,9 +4000,8 @@ namespace {
   /// at every frame of the fixture range, with the image still passed through untouched.
   /// The parameters are driven through the instance changed actions rather than by
   /// invalidating the metadata by hand, so a host which does not invalidate what a
-  /// parameter change composed fails these. There is no degraded twin: with no metadata
-  /// suite there is nothing for a plugin which only ever narrows what its inputs carry
-  /// to be judged on, beyond the pass-through the generic preconditions already check
+  /// parameter change composed fails these. There is no degraded twin: the negative CI
+  /// runs against this contract is a plugin with a single input
   void checkMetadataCopy(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
     const std::string contract = "metadata-copy";
@@ -4115,7 +4082,7 @@ namespace {
   /// no head there is no Mask only key and no key the two hold identically at any frame
   /// of the range; the head edits Source while Mask stays on the fixture, which is what
   /// puts those two line kinds within reach
-  const char kCompareHeadId[] = "org.openfx.examples.metadataModify";
+  const char kCompareHeadId[] = "net.sf.openfx.metadataModify";
 
   /// the second input a plugin which compares two sets of metadata has to expose
   const char kCompareMaskClip[] = "Mask";
@@ -4274,7 +4241,6 @@ namespace {
     if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
       return NULL;
 
-#   ifdef OFX_SUPPORTS_METADATA
     if(!report.check(gChain.size() == 2, contract + " nodes=" + formatInt(int(gChain.size()))))
       return NULL;
 
@@ -4289,17 +4255,13 @@ namespace {
       return NULL;
 
     return head;
-#   else
-    (void) instance;
-    return NULL;
-#   endif // OFX_SUPPORTS_METADATA
   }
 
   /// the same plugin with Mask unconnected, the head passing Source through unedited:
   /// every key of Source is a Source only line and nothing of what the fixture would
   /// publish for Mask shows, since the harness clip publishes it whether connected or
-  /// not and only the plugin declining to read an unconnected clip keeps it out. On a
-  /// degraded host the display stays empty
+  /// not and only the plugin declining to read an unconnected clip keeps it out. Degraded
+  /// holds the display empty here too
   void checkCompareUnconnected(Report &report,
                                OFX::Host::ImageEffect::Instance &instance,
                                OFX::Host::ImageEffect::Instance *head,
@@ -4330,9 +4292,7 @@ namespace {
                                        MetadataFixture::kFirstFrame, renderScale);
       head->endInstanceChangedAction(kOfxChangeUserEdited);
 
-#     ifdef OFX_SUPPORTS_METADATA
       invalidateChain();
-#     endif // OFX_SUPPORTS_METADATA
     }
 
     maskClip->setConnected(false);
@@ -4391,8 +4351,9 @@ namespace {
   /// plugin through the one for the input the head edits, rather than by invalidating
   /// the metadata by hand, so a host which does not invalidate what a parameter change
   /// composed fails these, as does a plugin which does not recompose on a clip change.
-  /// Degraded is the same plugin on a host with no metadata suite, where it has nothing
-  /// to compare and so owes an empty display
+  /// Degraded holds the same plugin to an empty display, which a plugin that compares its
+  /// inputs cannot deliver: CI runs it as the negative that proves this contract is able
+  /// to fail
   void checkMetadataCompare(Report &report, OFX::Host::ImageEffect::Instance &instance, bool degraded)
   {
     const std::string clip = kOfxImageEffectSimpleSourceClipName;
@@ -4443,9 +4404,7 @@ namespace {
                                            time, renderScale);
           head->endInstanceChangedAction(kOfxChangeUserEdited);
 
-#         ifdef OFX_SUPPORTS_METADATA
           invalidateChain();
-#         endif // OFX_SUPPORTS_METADATA
         }
 
         clipChanged(instance, clip, time);
@@ -4534,10 +4493,10 @@ namespace {
   /// have built, head first, proven by identifier so a mistyped invocation cannot pass
   /// vacuously
   const char *const kGraphNodeIds[] = {
-    "org.openfx.examples.metadataModify",
-    "org.openfx.examples.metadataTimeCode",
-    "org.openfx.examples.metadataCopy",
-    "org.openfx.examples.metadataView"
+    "net.sf.openfx.metadataModify",
+    "net.sf.openfx.metadataTimeCode",
+    "net.sf.openfx.metadataCopy",
+    "net.sf.openfx.metadataView"
   };
 
   const int kGraphNodeCount = sizeof(kGraphNodeIds) / sizeof(kGraphNodeIds[0]);
@@ -4673,8 +4632,8 @@ namespace {
   /// surviving the whole graph rather than only the last node of it. Every node ahead of
   /// the tail is driven through the instance changed actions rather than by invalidating
   /// the metadata by hand, so a host which does not invalidate what a parameter change
-  /// composed fails these. There is no degraded twin: an --upstream chain cannot be
-  /// built at all on a host with no metadata suite
+  /// composed fails these. There is no degraded twin: the negative CI runs against this
+  /// contract is a graph one node short
   void checkMetadataGraph(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
     const std::string contract = "metadata-graph";
@@ -4682,7 +4641,6 @@ namespace {
     if(!report.check(gMetadataSuite != NULL, contract + " host metadatasuite present"))
       return;
 
-#   ifdef OFX_SUPPORTS_METADATA
     if(!report.check(int(gChain.size()) == kGraphNodeCount,
                      contract + " nodes=" + formatInt(int(gChain.size()))))
       return;
@@ -4743,14 +4701,11 @@ namespace {
 
     for(int t = 0; t < kGraphFrames; ++t)
       checkGraphed(report, *output, rate, kGraphTimes[t], contract);
-#   else
-    (void) instance;
-#   endif // OFX_SUPPORTS_METADATA
   }
 
-  /// the degraded contracts are registered in both builds on purpose: each pair is held
-  /// to a host which cannot meet it in the build the other pair passes in, which is what
-  /// shows either of them is able to fail at all
+  /// each degraded contract is a negative: CI holds it to the plugin its non-degraded
+  /// twin passes, under --expect-failure, which is what shows the contract is able to
+  /// fail at all
   const Contract kContractTable[] = {
     {"metadata-log", kFixtureFrames + 3, checkMetadataLogSupported},
     {"metadata-log-degraded", kFixtureFrames + 2, checkMetadataLogDegraded},
@@ -4789,8 +4744,6 @@ namespace {
 
     return NULL;
   }
-
-#ifdef OFX_SUPPORTS_METADATA
 
   /// the effects --upstream builds ahead of the plugin under test, head first
   class ChainNodes {
@@ -4878,17 +4831,14 @@ namespace {
     return true;
   }
 
-#endif // OFX_SUPPORTS_METADATA
-
   /// load an arbitrary plugin by id and drive it far enough to prove the contract any
   /// plugin has to meet, regardless of what it does: it resolves, describes, creates an
   /// instance exposing the clips its context guarantees, and completes a render pass.
   /// It asserts nothing about composition order or retained keys, which a read-only
   /// plugin implements neither of. The effects --upstream names are built ahead of it,
-  /// so that its first input clip carries what the last of them emits. Returns the
-  /// number of checks the contract made, zero if none was asked for or it never got as
-  /// far as running
-  int checkGenericPlugin(Report &report,
+  /// so that its first input clip carries what the last of them emits. Returns what the
+  /// contract made of it, nothing if none was asked for or it never got as far as running
+  ContractRun checkGenericPlugin(Report &report,
                          MyHost::MetadataHost &host,
                          const std::string &pluginDir,
                          const std::string &pluginId,
@@ -4902,36 +4852,29 @@ namespace {
     effectCache.registerInCache(cache);
     cache.scanPluginFiles();
 
-#   ifdef OFX_SUPPORTS_METADATA
     ChainNodes chain;
 
     if(!buildChain(report, effectCache, pluginDir, upstreamIds, chain))
-      return 0;
-#   else
-    if(!upstreamIds.empty())
-      report.check(false, "chain unsupported id="
-                   + joinKeys(std::set<std::string>(upstreamIds.begin(), upstreamIds.end())));
-#   endif // OFX_SUPPORTS_METADATA
+      return ContractRun();
 
     OFX::Host::ImageEffect::ImageEffectPlugin *plugin = findPlugin(report, effectCache, pluginId, pluginDir);
 
     if(!plugin)
-      return 0;
+      return ContractRun();
 
     const std::string context = chooseContext(*plugin);
 
     std::unique_ptr<OFX::Host::ImageEffect::Instance> instance = createPluginInstance(report, plugin, context);
 
     if(!instance.get())
-      return 0;
+      return ContractRun();
 
     report.check(true, "plugin clip=inputclip count=" + formatInt(countInputClips(*instance)));
     report.check(instance->getClip(kOfxImageEffectOutputClipName) != NULL,
                  "plugin clip=" kOfxImageEffectOutputClipName);
 
-#   ifdef OFX_SUPPORTS_METADATA
     if(chain.tail() && !connectUpstream(report, *instance, chain.tail(), pluginId))
-      return 0;
+      return ContractRun();
 
     for(size_t i = 0; i < chain.size(); ++i)
       gChain.push_back(chain.node(i));
@@ -4941,30 +4884,27 @@ namespace {
     // the chain is only whole from here, so anything a node may have derived or
     // cached before it was connected is dropped rather than trusted
     invalidateChain();
-#   endif // OFX_SUPPORTS_METADATA
 
     checkRender(report, *instance);
 
-    int ran = 0;
+    ContractRun ran;
 
     if(contract) {
       const int before = report.mark();
+      const int failedBefore = report.getFailures();
 
       contract->run(report, *instance);
 
-      ran = report.mark() - before;
+      ran.checks = report.mark() - before;
+      ran.failures = report.getFailures() - failedBefore;
 
       report.ranAtLeast(before, contract->leastChecks, std::string("check=") + contract->name);
     }
 
-#   ifdef OFX_SUPPORTS_METADATA
     gChain.clear();
-#   endif // OFX_SUPPORTS_METADATA
 
     return ran;
   }
-
-#ifdef OFX_SUPPORTS_METADATA
 
   /// the number of non overlapping occurrences of what in text
   int countOccurrences(const std::string &text, const std::string &what)
@@ -5342,12 +5282,11 @@ namespace {
     checkUnconnectedInput(report, plugin);
   }
 
-#endif // OFX_SUPPORTS_METADATA
-
   int runChecks(const std::string &pluginDir,
                 const std::string &pluginId,
                 const std::vector<std::string> &upstreamIds,
-                const Contract *contract)
+                const Contract *contract,
+                bool expectFailure)
   {
     MyHost::MetadataHost host;
     OfxHost *handle = host.getHandle();
@@ -5364,15 +5303,12 @@ namespace {
     }
 
     Report report;
+    ContractRun ran;
 
-    // the suite the host vends is what its build option decides, so its absence is a
-    // check like any other rather than a reason not to run
-    const bool suite = gMetadataSuite != NULL;
-    report.check(suite == kMetadataSuiteExpected,
-                 std::string("host metadatasuite ") + (suite ? "present" : "absent"));
+    report.check(gMetadataSuite != NULL,
+                 std::string("host metadatasuite ") + (gMetadataSuite ? "present" : "absent"));
 
     if(pluginId.empty()) {
-#ifdef OFX_SUPPORTS_METADATA
       const bool v2 = handle->fetchSuite(handle->host, kOfxPropertySuite, 2) != NULL;
       report.check(!v2, std::string("host propertysuite v2 ") + (v2 ? "present" : "absent"));
 
@@ -5381,30 +5317,39 @@ namespace {
       checkClips(report);
       checkMetadataWrites(report);
       checkPlugin(report, host, pluginDir);
-#else
-      std::cerr << "metadataHost this build has no metadata suite, so --plugin-id is required"
-                << std::endl;
-      return 2;
-#endif // OFX_SUPPORTS_METADATA
     }
     else {
-      const int ran = checkGenericPlugin(report, host, pluginDir, pluginId, upstreamIds, contract);
+      ran = checkGenericPlugin(report, host, pluginDir, pluginId, upstreamIds, contract);
 
       if(contract)
-        report.check(ran > 0, std::string("check=") + contract->name + " ran");
+        report.check(ran.checks > 0, std::string("check=") + contract->name + " ran");
     }
 
     std::cout << "metadataHost checks=" << report.getChecks()
               << " failures=" << report.getFailures() << std::endl;
-    std::cout << "RESULT " << (report.getFailures() ? "FAIL" : "PASS") << std::endl;
 
-    return report.getFailures() ? 1 : 0;
+    if(!expectFailure) {
+      std::cout << "RESULT " << (report.getFailures() ? "FAIL" : "PASS") << std::endl;
+
+      return report.getFailures() ? 1 : 0;
+    }
+
+    // only a failure the contract itself recorded counts: a plugin which never loaded,
+    // or a contract which never ran, has not been shown to fail anything
+    const bool met = ran.checks > 0 && ran.failures > 0;
+
+    std::cout << "metadataHost expect-failure check=" << contract->name
+              << " ran=" << ran.checks << " failed=" << ran.failures
+              << (met ? " met" : " unmet") << std::endl;
+    std::cout << "RESULT " << (met ? "PASS" : "FAIL") << std::endl;
+
+    return met ? 0 : 1;
   }
 
   void usage(std::ostream &os)
   {
     os << "usage: metadataHost [--list] [--plugin-dir <path>] [--plugin-id <id>]" << std::endl;
-    os << "                   [--upstream <id>]... [--check <name>]" << std::endl;
+    os << "                   [--upstream <id>]... [--check <name>] [--expect-failure]" << std::endl;
     os << "  --list              print the fixture table and exit" << std::endl;
     os << "  --plugin-dir <path> look for the plugin bundle in <path> rather than in"
        << std::endl;
@@ -5435,17 +5380,25 @@ namespace {
        << std::endl;
     os << "                                                   metadata of its source clip"
        << std::endl;
-    os << "                        metadata-log-degraded      the same plugin on a host"
+    os << "                        metadata-log-degraded      the same plugin held to an"
        << std::endl;
-    os << "                                                   with no metadata suite"
+    os << "                                                   empty log: a negative any"
+       << std::endl;
+    os << "                                                   plugin which reads its clip"
+       << std::endl;
+    os << "                                                   must fail"
        << std::endl;
     os << "                        metadata-display           a plugin which shows the"
        << std::endl;
     os << "                                                   metadata in a parameter"
        << std::endl;
-    os << "                        metadata-display-degraded  the same plugin on a host"
+    os << "                        metadata-display-degraded  the same plugin held to an"
        << std::endl;
-    os << "                                                   with no metadata suite"
+    os << "                                                   empty display: a negative"
+       << std::endl;
+    os << "                                                   any plugin which shows its"
+       << std::endl;
+    os << "                                                   metadata must fail"
        << std::endl;
     os << "                        metadata-contribute        a plugin which contributes"
        << std::endl;
@@ -5479,9 +5432,13 @@ namespace {
        << std::endl;
     os << "                                                   an --upstream chain"
        << std::endl;
-    os << "                        metadata-compare-degraded  the same plugin on a host"
+    os << "                        metadata-compare-degraded  the same plugin held to an"
        << std::endl;
-    os << "                                                   with no metadata suite"
+    os << "                                                   empty display: a negative"
+       << std::endl;
+    os << "                                                   any plugin which compares"
+       << std::endl;
+    os << "                                                   its inputs must fail"
        << std::endl;
     os << "                        metadata-chain             a two node --upstream chain,"
        << std::endl;
@@ -5497,6 +5454,14 @@ namespace {
        << std::endl;
     os << "                                                   by frame"
        << std::endl;
+    os << "  --expect-failure    run the --check contract as a negative: exit 0 only if"
+       << std::endl;
+    os << "                      the plugin loaded, the contract ran and at least one of"
+       << std::endl;
+    os << "                      its checks failed. A plugin which never loaded, or a"
+       << std::endl;
+    os << "                      contract which never ran or passed outright, exits 1"
+       << std::endl;
     os << "  with no arguments, publish the fixture through a host, read it back" << std::endl;
     os << "  through the metadata suite, then run it through the metadata plugin and" << std::endl;
     os << "  check what comes back" << std::endl;
@@ -5511,6 +5476,7 @@ int main(int argc, char **argv)
   std::string pluginId;
   std::vector<std::string> upstreamIds;
   std::string checkName;
+  bool expectFailure = false;
 
   for(int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
@@ -5550,6 +5516,9 @@ int main(int argc, char **argv)
       }
       checkName = argv[++i];
     }
+    else if(arg == "--expect-failure") {
+      expectFailure = true;
+    }
     else if(arg == "--help" || arg == "-h") {
       usage(std::cout);
       return 0;
@@ -5565,6 +5534,12 @@ int main(int argc, char **argv)
 
   if(!upstreamIds.empty() && pluginId.empty()) {
     std::cerr << "metadataHost --upstream needs --plugin-id" << std::endl;
+    usage(std::cerr);
+    return 2;
+  }
+
+  if(expectFailure && checkName.empty()) {
+    std::cerr << "metadataHost --expect-failure needs --check" << std::endl;
     usage(std::cerr);
     return 2;
   }
@@ -5590,5 +5565,5 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  return runChecks(pluginDir, pluginId, upstreamIds, contract);
+  return runChecks(pluginDir, pluginId, upstreamIds, contract, expectFailure);
 }

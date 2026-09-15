@@ -61,10 +61,10 @@ static const int kOrderNoSource = 3;
 // observable, and the last is named after the property the host reads the composition
 // order out of, which lives in the action's out args and so cannot be confused with a key
 // of that name
-static const char   kContributedNoteKey[]    = "org.openfx.examples.metadataPlugin.note";
-static const char   kContributedGainKey[]    = "org.openfx.examples.metadataPlugin.gain";
-static const char   kContributedPassesKey[]  = "org.openfx.examples.metadataPlugin.passes";
-static const char   kContributedWindowKey[]  = "org.openfx.examples.metadataPlugin.window";
+static const char   kContributedNoteKey[]    = "net.sf.openfx.metadataPlugin.note";
+static const char   kContributedGainKey[]    = "net.sf.openfx.metadataPlugin.gain";
+static const char   kContributedPassesKey[]  = "net.sf.openfx.metadataPlugin.passes";
+static const char   kContributedWindowKey[]  = "net.sf.openfx.metadataPlugin.window";
 
 static const double kContributedGain         = 1.75;
 static const int    kContributedPasses       = 5;
@@ -403,7 +403,7 @@ static OfxPlugin metadataPlugin =
 {
   kOfxImageEffectPluginApi,
   1,
-  "org.openfx.examples.metadataPlugin",
+  "net.sf.openfx.metadataPlugin",
   1,
   0,
   setHostFunc,

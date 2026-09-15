@@ -8,7 +8,6 @@ set(PLUGINS
 	GPUGain
 	Invert
 	MetadataCompare
-	MetadataContribute
 	MetadataCopy
 	MetadataModify
 	MetadataPrint

@@ -1,36 +1,47 @@
 set(METADATA_PLUGIN_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugins")
 
-# metadataPlugin is a test fixture, not a shipped example: it is laid out as a
+# the plugins here are test fixtures, not shipped examples: each is laid out as a
 # bundle in the build tree for metadataHost to load and is deliberately not
 # installed, so add_ofx_plugin, which installs into PLUGIN_INSTALLDIR, is not
-# used here.
-set(METADATA_PLUGIN_BINDIR
-	"${METADATA_PLUGIN_DIR}/metadataPlugin.ofx.bundle/Contents/${ARCHDIR}")
+# used here
+function(add_metadata_test_plugin TARGET)
+	set(BINDIR "${METADATA_PLUGIN_DIR}/${TARGET}.ofx.bundle/Contents/${ARCHDIR}")
+	if(APPLE)
+		add_library(${TARGET} MODULE ${ARGN})
+	else()
+		add_library(${TARGET} SHARED ${ARGN})
+	endif()
+	target_compile_features(${TARGET} PRIVATE cxx_std_17)
+	set_target_properties(${TARGET} PROPERTIES
+		SUFFIX ".ofx"
+		PREFIX ""
+		C_VISIBILITY_PRESET hidden
+		CXX_VISIBILITY_PRESET hidden
+		LIBRARY_OUTPUT_DIRECTORY "${BINDIR}"
+		RUNTIME_OUTPUT_DIRECTORY "${BINDIR}")
+	# multi config generators otherwise append the config name to the output
+	# directory, which would leave the bundle malformed
+	foreach(config ${CMAKE_CONFIGURATION_TYPES})
+		string(TOUPPER ${config} CONFIG)
+		set_target_properties(${TARGET} PROPERTIES
+			LIBRARY_OUTPUT_DIRECTORY_${CONFIG} "${BINDIR}"
+			RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${BINDIR}")
+	endforeach()
+endfunction()
 
-if(APPLE)
-	add_library(metadataPlugin MODULE metadataPlugin.cpp)
-else()
-	add_library(metadataPlugin SHARED metadataPlugin.cpp)
-endif()
+add_metadata_test_plugin(metadataPlugin metadataPlugin.cpp)
 # no OfxHost here on purpose: the plugin talks the plugin facing C api only, so
 # it cannot be caught out by a mismatch in the host library's build options
 target_include_directories(metadataPlugin PRIVATE ${OFX_HEADER_DIR})
-target_compile_features(metadataPlugin PRIVATE cxx_std_17)
-set_target_properties(metadataPlugin PROPERTIES
-	SUFFIX ".ofx"
-	PREFIX ""
-	C_VISIBILITY_PRESET hidden
-	CXX_VISIBILITY_PRESET hidden
-	LIBRARY_OUTPUT_DIRECTORY "${METADATA_PLUGIN_BINDIR}"
-	RUNTIME_OUTPUT_DIRECTORY "${METADATA_PLUGIN_BINDIR}")
-# multi config generators otherwise append the config name to the output
-# directory, which would leave the bundle malformed
-foreach(config ${CMAKE_CONFIGURATION_TYPES})
-	string(TOUPPER ${config} CONFIG)
-	set_target_properties(metadataPlugin PROPERTIES
-		LIBRARY_OUTPUT_DIRECTORY_${CONFIG} "${METADATA_PLUGIN_BINDIR}"
-		RUNTIME_OUTPUT_DIRECTORY_${CONFIG} "${METADATA_PLUGIN_BINDIR}")
-endforeach()
+
+# emits fixed values for the contribute contract and stands upstream of the
+# example plugins in the chain tests. OfxSupport carries the OFX and Support
+# header dirs as usage requirements; Support/CMakeLists.txt, which sets the
+# variables naming them, is processed after this directory
+add_metadata_test_plugin(MetadataContribute MetadataContribute/metadataContribute.cpp)
+target_include_directories(MetadataContribute
+	PRIVATE ${PROJECT_SOURCE_DIR}/Support/Plugins/include)
+target_link_libraries(MetadataContribute PRIVATE OfxSupport)
 
 add_executable(metadataHost
 	metadataHost.cpp
@@ -42,7 +53,7 @@ target_include_directories(metadataHost PRIVATE ../examples)
 target_link_libraries(metadataHost PRIVATE OfxHost)
 target_compile_definitions(metadataHost
 	PRIVATE METADATA_PLUGIN_DIR="${METADATA_PLUGIN_DIR}")
-add_dependencies(metadataHost metadataPlugin)
+add_dependencies(metadataHost metadataPlugin MetadataContribute)
 if(APPLE)
 	# expat is single-arch here, so this executable can't be linked universal
 	set_target_properties(metadataHost PROPERTIES
@@ -55,10 +66,15 @@ add_test(NAME metadata.fixture
 add_test(NAME metadata.log.rejects-silent-plugin
 	COMMAND metadataHost --plugin-id net.sf.openfx.metadataPlugin --check metadata-log
 		--expect-failure)
+add_test(NAME metadata.contribute
+	COMMAND metadataHost --plugin-id net.sf.openfx.metadataContribute
+		--check metadata-contribute)
 
 # the rest load example plugins from PLUGIN_INSTALLDIR, which only this tree's own
 # install fills; registered without BUILD_EXAMPLE_PLUGINS they would find nothing
-# there, or whatever an earlier install of some other tree left behind
+# there, or whatever an earlier install of some other tree left behind. The
+# harness searches METADATA_PLUGIN_DIR as well, which is where the ones naming
+# metadataContribute find it
 if(BUILD_EXAMPLE_PLUGINS)
 	add_test(NAME metadata.log
 		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
@@ -66,9 +82,6 @@ if(BUILD_EXAMPLE_PLUGINS)
 	add_test(NAME metadata.display
 		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
 			--plugin-id net.sf.openfx.metadataView --check metadata-display)
-	add_test(NAME metadata.contribute
-		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
-			--plugin-id net.sf.openfx.metadataContribute --check metadata-contribute)
 	add_test(NAME metadata.modify
 		COMMAND metadataHost --plugin-dir "${PLUGIN_INSTALLDIR}"
 			--plugin-id net.sf.openfx.metadataModify --check metadata-modify)

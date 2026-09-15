@@ -6,7 +6,6 @@
 #include <windows.h>
 #endif
 
-#include <cstring>
 #include <map>
 #include <memory>
 #include <set>
@@ -16,6 +15,8 @@
 
 #include "ofxsImageEffect.h"
 #include "ofxsMetadata.h"
+
+#include "../include/ofxsPixelCopy.H"
 
 namespace {
 
@@ -96,43 +97,6 @@ namespace {
     }
   }
 
-  int bytesPerPixel(const OFX::Image &image)
-  {
-    int perComponent = 0;
-
-    switch(image.getPixelDepth()) {
-    case OFX::eBitDepthUByte  : perComponent = 1; break;
-    case OFX::eBitDepthUShort : perComponent = 2; break;
-    case OFX::eBitDepthHalf   : perComponent = 2; break;
-    case OFX::eBitDepthFloat  : perComponent = 4; break;
-    default : return 0;
-    }
-
-    return perComponent * image.getPixelComponentCount();
-  }
-
-  void copyPixels(const OFX::Image &src, OFX::Image &dst, const OfxRectI &window)
-  {
-    const int pixelBytes = bytesPerPixel(dst);
-
-    if(pixelBytes == 0 || pixelBytes != bytesPerPixel(src))
-      OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
-
-    for(int y = window.y1; y < window.y2; y++) {
-      for(int x = window.x1; x < window.x2; x++) {
-        void *to = dst.getPixelAddress(x, y);
-
-        if(!to)
-          continue;
-
-        if(const void *from = src.getPixelAddress(x, y))
-          memcpy(to, from, size_t(pixelBytes));
-        else
-          memset(to, 0, size_t(pixelBytes));
-      }
-    }
-  }
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -165,11 +129,11 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
 void
-MetadataModifyPlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance)
+MetadataModifyPlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
     return;
@@ -263,13 +227,7 @@ void MetadataModifyExamplePluginFactory::describeInContext(OFX::ImageEffectDescr
 
   StringParamDescriptor *operations = desc.defineStringParam(kOperationsParam);
   operations->setLabels("operations", "operations", "operations");
-  operations->setHint("one operation per line, either 'set <key> <value>' or 'remove <key>', "
-                      "applied to the metadata inherited from Source in the order written, the "
-                      "last operation on a key winning: 'set k' then 'remove k' leaves k absent, "
-                      "'remove k' then 'set k' leaves it present. Removing a key which is not "
-                      "there does nothing. A value is the literal rest of the line, not an "
-                      "expression, and is contributed as a string. A key is written exactly as "
-                      "typed; name your own under 'ofx/' or a reverse DNS prefix.");
+  operations->setHint("'set key value'/'remove key'");
   operations->setStringType(eStringTypeMultiLine);
   operations->setDefault("");
   operations->setAnimates(false);

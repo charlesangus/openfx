@@ -974,7 +974,7 @@ namespace OFX {
   */
   class MetadataInheritanceSetter {
     OFX::PropertySet outArgs_;
-    bool didSomething_;
+    bool doneSomething_;
     typedef std::map<std::string, std::string> StringStringMap;
     const StringStringMap& clipMetadataRetainedKeysPropNames_;
     const std::string& extractValueForName(const StringStringMap& m, const std::string& name) const;
@@ -982,11 +982,11 @@ namespace OFX {
     MetadataInheritanceSetter( OFX::PropertySet props,
       const StringStringMap& metadataRetainedKeysPropNames)
       : outArgs_(props)
-      , didSomething_(false)
+      , doneSomething_(false)
       , clipMetadataRetainedKeysPropNames_(metadataRetainedKeysPropNames)
     {}
 
-    bool didSomething(void) const {return didSomething_;}
+    bool didSomething(void) const {return doneSomething_;}
 
     /** @brief, force the host to treat \em clips as the ordered list of input clips whose
     metadata the effect inherits, read in increasing precedence: where two clips named in the
@@ -1210,12 +1210,12 @@ namespace OFX {
     /** @brief get the metadata this effect contributes to its output, and the metadata it inherits from its inputs
 
     If the effect wants to contribute keys to its output metadata, it should do so by calling one of the
-    OFX::MetadataSetBuilder setter functions (setString, setDouble, setInt, setStringN, setDoubleN, setIntN
+    OFX::MetadataSetter setter functions (setString, setDouble, setInt, setStringN, setDoubleN, setIntN
     or copyFrom) on the \em metadata argument. If it wants to change which input clips it inherits metadata
     from, it should call OFX::MetadataInheritanceSetter::setSourceClips on the \em inheritance argument.
     An effect that calls neither leaves the host to its own default metadata inheritance rules.
     */
-    virtual void getMetadata(const MetadataArguments &args, MetadataSetBuilder &metadata, MetadataInheritanceSetter &inheritance);
+    virtual void getMetadata(const MetadataArguments &args, MetadataSetter &metadata, MetadataInheritanceSetter &inheritance);
 
     /** @brief the effect is about to be actively edited by a user, called when the first user interface is opened on an instance */
     virtual void beginEdit(void);

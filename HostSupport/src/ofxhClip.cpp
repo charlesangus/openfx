@@ -460,15 +460,11 @@ namespace OFX {
       // MetadataSet
       //
 
-      MetadataSet::MetadataSet(bool writable, bool pluginOwned)
+      MetadataSet::MetadataSet(Access access, Owner owner)
         : Property::Set()
         , _referenceCount(1)
-        , _writable(writable)
-        , _pluginOwned(pluginOwned)
-      {
-      }
-
-      MetadataSet::~MetadataSet()
+        , _writable(access == eWritable)
+        , _pluginOwned(owner == ePluginOwned)
       {
       }
 
@@ -499,7 +495,7 @@ namespace OFX {
           if(_metadataCache.size() >= kMaxCachedMetadataEntries)
             invalidateMetadata();
 
-          metadata = new MetadataSet();
+          metadata = new MetadataSet(MetadataSet::eReadOnly, MetadataSet::ePluginOwned);
 
           try {
             fetchMetadata(time, *metadata);

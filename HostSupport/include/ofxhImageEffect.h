@@ -297,9 +297,8 @@ namespace OFX {
         std::string                                   _outputPreMultiplication;  ///< set by clip prefs
         std::string                                   _outputFielding;  ///< set by clip prefs
         double                                        _outputFrameRate; ///< set by clip prefs
-        std::map<std::string, std::string>            _clipMetadataRetainedKeysPropNames; ///< the retained keys property of each clip, by clip name
 
-      public:        
+      public:
         /// constructor based on clip descriptor
         Instance(ImageEffectPlugin* plugin,
                  Descriptor         &other, 
@@ -667,11 +666,6 @@ namespace OFX {
         /// this effect's clips are dropped, so a host must also call this on the effects
         /// downstream of it, whose input clips have cached what this one derived.
         void invalidateMetadata();
-
-        /// The name of the property listing the metadata keys retained from the named clip.
-        /// The name is composed on first use and kept, as the clip's name is post pended to
-        /// it and so it cannot be a fixed string.
-        const std::string &metadataRetainedKeysPropName(const std::string &clipName);
 
         /// find the best supported bit depth for the given one. Override this if you define
         /// more depths

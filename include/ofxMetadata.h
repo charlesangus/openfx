@@ -13,8 +13,9 @@ extern "C" {
 #endif
 
 /** @file ofxMetadata.h
-API for retrieving host- and format-defined metadata attached to a clip's images,
-for example metadata originating from a file's container or from upstream processing.
+API for reading the host- and format-defined metadata attached to a clip's
+images, and for an effect to contribute metadata of its own through
+\ref kOfxImageEffectActionGetMetadata.
 
 Metadata is a flat property set. Each key is a string, and its value is an int,
 a double or a string, or an array of one of those; there is no nesting and no
@@ -22,21 +23,20 @@ binary blob type.
 
 The key space is divided into namespaces by a prefix ending in a forward slash:
 
-- ``ofx/`` is reserved for the standard, host-independent keys defined in this
+- "ofx/" is reserved for the standard, host-independent keys defined in this
   file. Neither a host nor a plugin may invent new keys in this namespace.
-- ``exr/``, ``exif/``, ``dpx/``, ``cin/``, ``tiff/`` and ``quicktime/`` are
+- "exr/", "exif/", "dpx/", "cin/", "tiff/" and "quicktime/" are
   reserved for keys carried verbatim from the file format an image was read
   from. A host that cannot produce format-prefixed keys may omit them entirely;
   these prefixes are reserved, not mandatory.
 - any other key must be named in reverse DNS form, using a domain the definer
-  controls, for example ``com.example.mytool.regionOfInterest``. This applies
+  controls, for example "com.example.mytool.regionOfInterest". This applies
   equally to host- and plugin-defined keys.
 
-A host publishes a standard key only when it knows the value. A value that is
-not known must be omitted rather than published as an empty string, a zero or
-any other placeholder, so that a plugin can distinguish "not available" from a
-genuine value. Except where a key's documentation states otherwise, a host that
-does know the value of a standard key should publish it under that key rather
+A host publishes a standard key only when it knows the value; a value that is
+not known is omitted rather than published as an empty string, a zero or any
+other placeholder. Except where a key's documentation states otherwise, a host
+that does know the value of a standard key publishes it under that key rather
 than under a vendor-specific name.
 
 @version Added in OpenFX NEXT
@@ -48,30 +48,20 @@ than under a vendor-specific name.
 
 /** @brief Action called to retrieve the metadata an effect contributes for a clip at a given time.
 
-Metadata is a property of an image — a clip at a specific time — and this action is always time-parameterised.
-This action's result for a given time is valid only while the input metadata it was
-composed from, the effect's parameter values and the effect's clip connections remain
-unchanged; the host must re-issue the action after any of those change, so no separate
-invalidation property is required or defined.
+Metadata is a property of an image, that is of a clip at a specific time, so this action is
+always time-parameterised. Its result for a given time is valid only while the input metadata it
+was composed from, the effect's parameter values and the effect's clip connections remain
+unchanged; the host must re-issue the action after any of those change.
 
-An effect writes the metadata it contributes into the metadata property set passed in
-\ref kOfxImageEffectPropMetadataSet, or it may choose not to contribute any metadata at all.
+An effect writes the metadata it contributes into the set passed in
+\ref kOfxImageEffectPropMetadataSet, or contributes nothing. That set arrives empty and is not
+pre-populated with the metadata inherited from the effect's input clips; an effect that needs to
+see what its inputs carry reads it with OfxMetadataSuiteV1::clipGetMetadata.
 
-That set arrives empty. It is not pre-populated with the metadata inherited from the effect's input
-clips: an effect that needs to see what its inputs carry reads it with
-OfxMetadataSuiteV1::clipGetMetadata. Keys are written into the set with the ``metadataSet`` entry
-points of \ref OfxMetadataSuiteV1, which create a key that is not already present; a key cannot be
-created through the generic Property Suite. OfxMetadataSuiteV1::metadataEnumerate is permitted on
-the set, so an effect can read back what it has written.
-
-The handle is valid only for the duration of this action, and must not be released with
-OfxMetadataSuiteV1::metadataRelease.
-
-An effect that does not trap the action returns \ref kOfxStatReplyDefault, and everything it wrote
-is then ignored. The host reads back neither the metadata set the effect contributed into nor
-either of the inheritance controls in ``outArgs``, whether or not the effect wrote to them, and
-composes the output's metadata from the default it initialised ``outArgs`` with. An effect that
-means anything it wrote to be honoured has to return ::kOfxStatOK.
+An effect that does not trap the action returns \ref kOfxStatReplyDefault, and the host then
+ignores everything it wrote: it reads back neither the contributed set nor either inheritance
+control in outArgs, and composes the output's metadata from the defaults it initialised
+outArgs with. An effect that means anything it wrote to be honoured must return ::kOfxStatOK.
 
  @param handle handle to the instance, cast to an \ref OfxImageEffectHandle
 
@@ -81,29 +71,28 @@ means anything it wrote to be honoured has to return ::kOfxStatOK.
        it contributes into
 
  @param outArgs is a property set describing how metadata is inherited from the effect's input
- clips. The metadata the effect contributes is not written here; it goes into the property set
- named by \ref kOfxImageEffectPropMetadataSet. It has the following properties
+ clips, with the following properties
      - \ref kOfxImageEffectPropMetadataSourceClip the ordered list of input clip names whose
-       metadata the output composes, read in increasing precedence, defaulting to a
-       single-element list naming the first connected input clip in the order the effect
-       described them, or the empty list if none is connected
+       metadata the output composes
      - a set of char * X N properties, one for each input clip the effect describes, connected
-       or not, labelled with ``OfxImageClipPropMetadataRetainedKeys_`` post pended with the
-       clip's name, for example ``OfxImageClipPropMetadataRetainedKeys_Source``. Each such
-       property lists the metadata keys retained from that input clip. A key absent from the
-       list on a clip is not carried through from that clip. The host initialises the list for
-       the clip named by the default value of \ref kOfxImageEffectPropMetadataSourceClip to the
-       full set of keys present on that clip, and to the empty list for every other input clip,
-       before the action is called. An input clip that is not connected contributes nothing to
-       the composition, even when the list names it.
+       or not, labelled with \c OfxImageClipPropMetadataRetainedKeys_ post pended with the
+       clip's name, for example \c OfxImageClipPropMetadataRetainedKeys_Source. Each such
+       property lists the metadata keys retained from that input clip; a key absent from the
+       list is not carried through from that clip. Before the action is called the host
+       initialises the list for the clip named by the default value of
+       \ref kOfxImageEffectPropMetadataSourceClip to the full set of keys present on that clip,
+       and to the empty list for every other input clip. An input clip that is not connected
+       contributes nothing to the composition, even when the list names it.
 
  @returns
-     - \ref kOfxStatOK the action was trapped and the effect has populated outArgs with the metadata it contributes,
-     - \ref kOfxStatReplyDefault the action was not trapped, so the host uses its default metadata and
-       discards everything the effect wrote, the contributed metadata set as much as the nominated
-       source clips and the retained-keys lists,
-     - \ref kOfxStatErrMemory the host ran out of memory, in which case the action may be called again after a memory purge,
-     - \ref kOfxStatFailed something went wrong but no error code is appropriate, the plugin should post a message,
+     - \ref kOfxStatOK the action was trapped and the host honours the metadata set and the
+       outArgs the effect wrote,
+     - \ref kOfxStatReplyDefault the action was not trapped, so the host uses its default metadata
+       and discards everything the effect wrote,
+     - \ref kOfxStatErrMemory the host ran out of memory, in which case the action may be
+       called again after a memory purge,
+     - \ref kOfxStatFailed something went wrong but no error code is appropriate, the
+       plugin should post a message,
      - \ref kOfxStatErrFatal
 
  @version Added in OpenFX NEXT
@@ -121,15 +110,14 @@ means anything it wrote to be honoured has to return ::kOfxStatOK.
 
 /** @brief The metadata property set an effect writes its metadata contribution into
 
-The host passes this in the ``inArgs`` of \ref kOfxImageEffectActionGetMetadata. The value is a
-pointer holding an \ref OfxPropertySetHandle, which the effect casts it to before use.
+The host passes this in the inArgs of \ref kOfxImageEffectActionGetMetadata. The value is a
+pointer holding an \ref OfxPropertySetHandle, which the effect casts to before use.
 
-The set arrives empty, and is the only metadata property set an effect may write to. Keys are added
-to it with the ``metadataSet`` entry points of \ref OfxMetadataSuiteV1, which create a key that is
-not already present; a key cannot be created through the generic Property Suite, which fails on a
-property that does not already exist. Once a key has been written, its value can be read back
-through the generic Property Suite, using the type and dimension that
-OfxMetadataSuiteV1::metadataEnumerate reports for it.
+The set arrives empty and is the only metadata property set an effect may write to. Keys are
+added with the \c metadataSet entry points of \ref OfxMetadataSuiteV1, which create a key that
+is not already present; the generic Property Suite cannot create a key, but once a key has been
+written its value can be read back through it, using the type and dimension that
+OfxMetadataSuiteV1::metadataEnumerate reports. Enumeration is permitted on this set.
 
 The handle is owned by the host and is valid only for the duration of the action. It must not be
 released with OfxMetadataSuiteV1::metadataRelease.
@@ -148,22 +136,13 @@ released with OfxMetadataSuiteV1::metadataRelease.
 
 /** @brief The ordered list of input clip names whose metadata the output clip inherits
 
-An effect sets this in the ``outArgs`` of \ref kOfxImageEffectActionGetMetadata to nominate the
-input clips that the output clip's metadata is composed from. Each named clip contributes the
-metadata keys selected by its own ``OfxImageClipPropMetadataRetainedKeys_`` property, described
-in that action; a key absent from a clip's retained-keys list is not carried through from that
-clip.
+An effect sets this in the outArgs of \ref kOfxImageEffectActionGetMetadata to nominate the
+input clips the output clip's metadata is composed from. Each named clip contributes the keys
+selected by its \c OfxImageClipPropMetadataRetainedKeys_ property, described under that action.
 
-The list is read in increasing precedence: where two clips named in the list carry the same key,
-the value from the later entry wins. So to compose a clip named ``Mask`` over one named
-``Source``, an effect sets the list to ``["Source", "Mask"]`` — a key present on both clips takes
-the value from ``Mask``, because it comes later, while a key present on only one of them passes
-through unchanged. Reversing the order to ``["Mask", "Source"]`` composes ``Source`` over
-``Mask`` instead, and gives the opposite result wherever the two clips disagree.
-
-An empty list means the output inherits no metadata at all, from any clip. A name in the list
-that does not match any of the effect's input clips is ignored, exactly as if it were absent from
-the list.
+The list is read in increasing precedence: where two named clips carry the same key, the value
+from the later entry wins. An empty list means the output inherits no metadata from any clip. A
+name that does not match any of the effect's input clips is ignored, as if it were absent.
 
    - Type - string X N
    - Property Set - outArgs property set of the \ref kOfxImageEffectActionGetMetadata action
@@ -182,10 +161,8 @@ the list.
 
 /** @brief The namespace prefix of the standard OFX metadata keys
 
-Every one of the standard metadata keys defined in this file begins with this
-prefix. It is reserved for the standard vocabulary: a host or plugin must not
-define additional keys beginning with it, and must instead use a reverse DNS
-name for anything not defined here.
+Every standard key defined in this file begins with this prefix, and neither a
+host nor a plugin may define further keys beginning with it.
 
  @version Added in OpenFX NEXT
 */
@@ -195,8 +172,7 @@ name for anything not defined here.
 
 Keys under this prefix hold the attributes of the OpenEXR file an image was read
 from, named after the EXR attribute they came from, for example
-``exr/chromaticities``. A host that cannot produce such keys may omit them; the
-prefix is reserved, not mandatory.
+"exr/chromaticities". A host that cannot produce such keys may omit them.
 
  @version Added in OpenFX NEXT
 */
@@ -205,9 +181,8 @@ prefix is reserved, not mandatory.
 /** @brief The namespace prefix for keys carried verbatim from EXIF data
 
 Keys under this prefix hold the EXIF tags found in the file an image was read
-from, named after the EXIF tag they came from, for example ``exif/Make``. A host
-that cannot produce such keys may omit them; the prefix is reserved, not
-mandatory.
+from, named after the EXIF tag they came from, for example "exif/Make". A host
+that cannot produce such keys may omit them.
 
  @version Added in OpenFX NEXT
 */
@@ -217,7 +192,7 @@ mandatory.
 
 Keys under this prefix hold the header fields of the DPX file an image was read
 from, named after the DPX field they came from. A host that cannot produce such
-keys may omit them; the prefix is reserved, not mandatory.
+keys may omit them.
 
  @version Added in OpenFX NEXT
 */
@@ -227,7 +202,7 @@ keys may omit them; the prefix is reserved, not mandatory.
 
 Keys under this prefix hold the header fields of the Cineon file an image was
 read from, named after the Cineon field they came from. A host that cannot
-produce such keys may omit them; the prefix is reserved, not mandatory.
+produce such keys may omit them.
 
  @version Added in OpenFX NEXT
 */
@@ -237,7 +212,7 @@ produce such keys may omit them; the prefix is reserved, not mandatory.
 
 Keys under this prefix hold the tags of the TIFF file an image was read from,
 named after the TIFF tag they came from. A host that cannot produce such keys
-may omit them; the prefix is reserved, not mandatory.
+may omit them.
 
  @version Added in OpenFX NEXT
 */
@@ -247,7 +222,7 @@ may omit them; the prefix is reserved, not mandatory.
 
 Keys under this prefix hold the atoms and track metadata of the QuickTime file
 an image was read from, named after the item they came from. A host that cannot
-produce such keys may omit them; the prefix is reserved, not mandatory.
+produce such keys may omit them.
 
  @version Added in OpenFX NEXT
 */
@@ -257,22 +232,13 @@ produce such keys may omit them; the prefix is reserved, not mandatory.
 
    - Type - string X 1
 
-The value is a single, concrete, fully resolved path to an existing file, in the
-native syntax of the host's filesystem. It is never a pattern: when the image
-comes from a numbered image sequence the value is the path of the one file that
-holds this image, with the frame number already substituted, for example
-``/shots/ab_010/plate/ab_010_plate.0087.exr``. It is not
-``ab_010_plate.%04d.exr``, ``ab_010_plate.####.exr`` or any other sequence
-notation.
-
-This follows from metadata being a property of a single image rather than of a
-clip, and it means a plugin can open the value directly without having to parse
-a host-specific pattern syntax. A plugin that needs the pattern must derive it
-itself, using \ref kOfxMetadataKeySourceFrame to identify the varying part.
-
-When the image comes from a container holding several images, such as a movie
-file, the value is the path of that container, and every image read from it
-carries the same value.
+The value is a single, fully resolved path to an existing file, in the native
+syntax of the host's filesystem, never a sequence pattern: for a numbered image
+sequence it names the one file holding this image, with the frame number
+substituted, and a plugin that needs the pattern must derive it itself, using
+\ref kOfxMetadataKeySourceFrame for the varying part. For a container holding
+several images, such as a movie file, it is the path of the container, and every
+image read from it carries the same value.
 
  @version Added in OpenFX NEXT
 */
@@ -282,20 +248,11 @@ carries the same value.
 
    - Type - int X 1
 
-For a numbered image sequence this is the frame number that appears in the name
-of the file given by \ref kOfxMetadataKeyFilePath, so the two keys agree: the
-value is the number that was substituted into the sequence pattern to produce
-that path.
-
-For a container holding several images, such as a movie file, this is the index
-of the image within the container, counting from 0 for the first image stored in
-it.
-
-For a single-image file that is not part of a sequence, the key is omitted.
-
-This is the frame number in the source's own numbering. It is unrelated to the
-time at which the effect is being rendered, which the plugin already has, and a
-host must not renumber it to match the timeline.
+For a numbered image sequence the value is the frame number in the file name
+given by \ref kOfxMetadataKeyFilePath; for a container holding several images
+it is the index of the image within it, counting from 0. It is the source's own
+numbering, which a host must not renumber to match the timeline, and the key is
+omitted for a single-image file that is not part of a sequence.
 
  @version Added in OpenFX NEXT
 */
@@ -305,19 +262,10 @@ host must not renumber it to match the timeline.
 
    - Type - string X 1
 
-The value is formatted as ``HH:MM:SS:FF`` for non drop frame timecode and
-``HH:MM:SS;FF`` for drop frame timecode, where the separator before the frames
-field is the only thing that distinguishes the two. Each field is written with
-exactly two digits, zero padded, and ``HH`` is in the range 00 to 23.
-
-The frames field counts whole frames at the rate given by
-\ref kOfxMetadataKeyFrameRate, so a plugin needs that key to convert a timecode
-to a time.
-
-The value is the timecode the source records for this image. It is not the
-position of the image on the host's timeline: a host publishes the timecode
-carried by the source rather than one it has computed from where the clip sits
-in a project.
+The value is "HH:MM:SS:FF" for non drop frame and "HH:MM:SS;FF" for drop
+frame timecode, each field two zero padded digits with "HH" from 00 to 23 and
+the frames field counting at the rate given by \ref kOfxMetadataKeyFrameRate. It is
+the timecode the source records, not the image's position on the host's timeline.
 
  @version Added in OpenFX NEXT
 */
@@ -339,15 +287,10 @@ spacing or punctuation.
 
    - Type - double X 1
 
-The value is in seconds since the Unix epoch, that is since
-1970-01-01T00:00:00Z, and is always expressed in UTC rather than in any local
-time zone. It may carry a fractional part if the host knows the time to
-sub-second precision; a host that only knows the time to the second publishes a
-whole number of seconds. Times before the epoch are negative.
-
-The file described is the one named by \ref kOfxMetadataKeyFilePath, so for a
-numbered image sequence this is the modification time of the single file holding
-this image, not of the sequence as a whole.
+The value is in seconds since 1970-01-01T00:00:00Z, in UTC, negative before
+the epoch, with a fractional part when the host knows it to sub-second precision.
+It describes the single file named by \ref kOfxMetadataKeyFilePath, not a
+sequence as a whole.
 
  @version Added in OpenFX NEXT
 */
@@ -357,14 +300,9 @@ this image, not of the sequence as a whole.
 
    - Type - double X 1
 
-The value is the length in bytes of the file named by
-\ref kOfxMetadataKeyFilePath, so for a numbered image sequence it is the size of
-the single file holding this image, not the total size of the sequence.
-
-It is a whole number, carried as a double because file sizes routinely exceed
-the range of an int. A double represents whole numbers exactly up to 2^53, which
-is over eight petabytes, so the value is exact for any file a host will
-encounter.
+The value is the length in bytes of the single file named by
+\ref kOfxMetadataKeyFilePath, not of a sequence as a whole, and is a whole
+number carried as a double.
 
  @version Added in OpenFX NEXT
 */
@@ -375,11 +313,8 @@ encounter.
    - Type - double X 1
 
 The value is the width of a pixel divided by its height, so 1.0 for square
-pixels and 2.0 for pixels twice as wide as they are tall.
-
-This is what the source file declares. It is not necessarily the pixel aspect
-ratio of the image the plugin is given, which is
-\ref kOfxImagePropPixelAspectRatio and which the host may have changed.
+pixels. It is what the source file declares, not necessarily the
+\ref kOfxImagePropPixelAspectRatio of the image the plugin is given.
 
  @version Added in OpenFX NEXT
 */
@@ -401,10 +336,9 @@ of the clip the plugin is connected to.
 
    - Type - double X 1
 
-The value is in degrees, on the usual rotary shutter scale where 360.0 means the
-shutter was open for the whole of the frame's duration and 180.0 means it was
-open for half of it. The exposure in seconds is the angle divided by 360 and by
-\ref kOfxMetadataKeyFrameRate.
+The value is in degrees, where 360.0 means the shutter was open for the whole of
+the frame's duration and 180.0 for half of it. The exposure in seconds is the
+angle divided by 360 and by \ref kOfxMetadataKeyFrameRate.
 
  @version Added in OpenFX NEXT
 */
@@ -414,14 +348,9 @@ open for half of it. The exposure in seconds is the angle divided by 360 and by
 
    - Type - int X 1
 
-The value is a whole number of pixels, and is the width of the image as the
-source file stores it, before any cropping, scaling or proxying the host may
-have applied on the way to the plugin.
-
-Where a format distinguishes a display or format window from a data window that
-may be larger or smaller, the value is the width of the display window, that
-being the picture size the source declares and the one that
-\ref kOfxMetadataKeyPixelAspect applies to.
+The value is a whole number of pixels as the source file stores the image,
+before any cropping, scaling or proxying by the host. Where a format has both
+a display and a data window, it is the width of the display window.
 
  @version Added in OpenFX NEXT
 */
@@ -431,14 +360,9 @@ being the picture size the source declares and the one that
 
    - Type - int X 1
 
-The value is a whole number of pixels, and is the height of the image as the
-source file stores it, before any cropping, scaling or proxying the host may
-have applied on the way to the plugin.
-
-Where a format distinguishes a display or format window from a data window that
-may be larger or smaller, the value is the height of the display window, that
-being the picture size the source declares and the one that
-\ref kOfxMetadataKeyPixelAspect applies to.
+The value is a whole number of pixels as the source file stores the image,
+before any cropping, scaling or proxying by the host. Where a format has both
+a display and a data window, it is the height of the display window.
 
  @version Added in OpenFX NEXT
 */
@@ -448,15 +372,11 @@ being the picture size the source declares and the one that
 
    - Type - int X 1
 
-The value is the number of bits used for one component of one pixel in the
-source file, so 8, 10, 12 or 16 for integer encodings, 16 for half float and 32
-for single precision float. Where a format stores different components at
-different widths, the value is the width of the widest component.
-
-This describes the source, not the pixels handed to the plugin, whose depth is
-given by \ref kOfxImageEffectPropPixelDepth. This key alone does not distinguish
-a numeric format at a given bit depth, for example 16-bit half float from 16-bit
-integer; \ref kOfxMetadataKeySampleType carries that distinction.
+The value is the number of bits per component in the source file, so 8, 10,
+12 or 16 for integer encodings, 16 for half float and 32 for single precision
+float, taking the widest component where they differ. It describes the source,
+not the pixels handed to the plugin (\ref kOfxImageEffectPropPixelDepth), and
+is read with \ref kOfxMetadataKeySampleType, which gives the numeric format.
 
  @version Added in OpenFX NEXT
 */
@@ -466,18 +386,9 @@ integer; \ref kOfxMetadataKeySampleType carries that distinction.
 
    - Type - string X 1
 
-The value is one of exactly three strings, always lowercase:
-
-   - ``"uint"`` for unsigned integer samples
-   - ``"int"`` for signed integer samples
-   - ``"float"`` for IEEE floating-point samples
-
-\ref kOfxMetadataKeyBitDepth alone cannot distinguish these: 16-bit half float
-and 16-bit integer both report a bit depth of 16, and a signed 16-bit integer
-source, such as a TIFF file with a signed ``SampleFormat``, reports the same bit
-depth as an unsigned one. This key supplies the numeric format that
-\ref kOfxMetadataKeyBitDepth omits, and the two keys are meant to be read
-together.
+The value is one of exactly three lowercase strings: "uint" for unsigned
+integer, "int" for signed integer and "float" for IEEE floating-point
+samples. It is read together with \ref kOfxMetadataKeyBitDepth.
 
  @version Added in OpenFX NEXT
 */
@@ -518,9 +429,8 @@ The value is free text, carried through from the source unchanged.
 
    - Type - string X 1
 
-The value is free text, carried through from the source unchanged. It may
-contain newlines. A plugin must not attempt to parse it: it is meant to be shown
-to a person.
+The value is free text, carried through from the source unchanged, and may
+contain newlines. A plugin must not attempt to parse it.
 
  @version Added in OpenFX NEXT
 */
@@ -577,15 +487,11 @@ unchanged and unparsed.
 
    - Type - string X N
 
-Each element is the name of one view, for example ``left`` and ``right``, in the
-order the source stores them.
-
-This key is explicitly not required. A host need not populate it, whether or not
-it supports multiple views, and a plugin must not depend on it being present or
-treat its absence as meaning the source is monoscopic. A plugin that needs to
-know about views must use the multi-view mechanisms of the API rather than this
-key, which exists so that a host that does happen to know the source's view
-names has a standard place to publish them.
+Each element is the name of one view, for example "left" and "right", in the
+order the source stores them. A host need not populate this key, and a plugin
+must not depend on it being present or treat its absence as meaning the source
+is monoscopic; a plugin that needs to know about views must use the multi-view
+mechanisms of the API.
 
  @version Added in OpenFX NEXT
 */
@@ -593,8 +499,7 @@ names has a standard place to publish them.
 
 /** @brief The value type of a metadata key, as reported to OfxMetadataEnumerateFuncV1
 
- There is no "none" or "unknown" value: enumeration only ever visits a key that
- exists, and every existing key has one of these types.
+ Every key present in a metadata property set has exactly one of these types.
 
  @version Added in OpenFX NEXT
  */
@@ -617,55 +522,38 @@ typedef enum OfxMetadataValueType
  \arg \c dimension the number of values the key holds, 1 for a scalar key
  \arg \c userData  the opaque pointer passed to metadataEnumerate by the caller
 
- The host calls this function once for each key present in the metadata property set.
-
- The callback should return ::kOfxStatOK to have enumeration continue with the next key.
- Any other return value stops enumeration immediately, and that same status is
- returned to the caller of metadataEnumerate.
-
- No ordering of keys is guaranteed, and the host is not required to enumerate keys
- in the same order between separate calls, even for the same metadata handle, so a
- plugin must not infer any positional or stable ordering from a particular host's
- observed behaviour.
+ The host calls this function once for each key present in the metadata property set, in
+ no guaranteed order. The callback returns ::kOfxStatOK to have enumeration continue with
+ the next key; any other return value stops enumeration immediately, and that same status
+ is returned to the caller of metadataEnumerate.
  */
-typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, OfxMetadataValueType type, int dimension, void *userData);
+typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, OfxMetadataValueType type,
+                                                int dimension, void *userData);
 
-/** @brief OFX suite that allows an effect to retrieve metadata associated with a clip's images.
+/** @brief OFX suite that lets an effect read the metadata of a clip's images and write the
+    metadata it contributes.
 
- Metadata is exposed as a flat property set of int, double and string properties
- (and arrays thereof); it is a property of a particular image, i.e. of a clip at a
- given time, which is why clipGetMetadata takes a time but imageGetMetadata does not,
- since an image handle already denotes a clip at a specific time.
+ Metadata is a property of a particular image, that is of a clip at a given time, so
+ clipGetMetadata takes a time while imageGetMetadata, whose image handle already denotes a
+ clip at a specific time, does not. Hosts may evaluate metadata lazily.
 
- Hosts may evaluate metadata lazily, for example only reading it from a file the
- first time it is requested for a given clip and time.
+ The sets returned by clipGetMetadata and imageGetMetadata are read-only. The only writable
+ set is the one passed to \ref kOfxImageEffectActionGetMetadata in
+ \ref kOfxImageEffectPropMetadataSet, and keys are created in it only with the six metadataSet
+ entry points below, never through the generic Property Suite. The N forms take a count of at
+ least 1 and an array of that many values, which the host copies, and no index; the scalar
+ forms are exactly the N forms with a count of 1. Either form creates the key if it is absent,
+ and replaces both the value and the dimension of a key that is already present, so that on
+ ::kOfxStatOK the key holds exactly the values given, with count as its dimension. The key
+ must be NULL terminated and in a namespace the caller may define keys in.
 
- A metadata property set is either read-only or writable. The sets returned by
- clipGetMetadata and imageGetMetadata are read-only. The set the host passes to the
- \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet is
- writable, and is the only metadata property set a plugin may write to.
-
- Keys are written with the six metadataSet entry points below. The generic Property Suite
- cannot be used to write them, as it fails on a property that does not already exist and a
- metadata key is by nature not known in advance; creating a key is the business of this
- suite alone.
-
- The N forms are the primitive ones. They take a count and an array of that many values,
- and deliberately take no index: an index presupposes a property that already has a
- dimension, and a key that does not yet exist has none. The scalar forms are exactly the N
- forms with a count of 1. Either form creates the key if it is absent, and replaces both
- the value and the dimension of a key that is already present.
-
- All six share one set of status codes, given here once rather than repeated on each of
- them:
+ All six share one set of status codes:
 
  - ::kOfxStatOK - the key was written, having been created if it was not already present,
  - ::kOfxStatErrBadHandle - metadata is not a metadata property set, or key is NULL,
- - ::kOfxStatErrValue - metadata is a valid metadata property set that does not support the
-   operation. A set returned by clipGetMetadata or imageGetMetadata is read-only and fails
-   with this status, as do an empty key, a count less than 1, a NULL values array and a
-   NULL string among the values. A write which fails leaves the key as it was, present or
-   absent,
+ - ::kOfxStatErrValue - metadata is read-only, key is empty, count is less than 1, values is
+   NULL or a string among the values is NULL. A write which fails leaves the key as it was,
+   present or absent,
  - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, the
    plugin should abort whatever it was doing.
  */
@@ -680,19 +568,18 @@ typedef struct OfxMetadataSuiteV1 {
 	 - clip was returned by clipGetHandle
 
 	 \post
-	 - on ::kOfxStatOK, metadata is a handle to a property set, possibly empty, to be disposed of by metadataRelease
+	 - on ::kOfxStatOK, metadata is a handle to a read-only property set, possibly empty, to be
+	   disposed of by metadataRelease
 	 - on any other status code, metadata is set to NULL and there is nothing to release
-
-	 The property set returned is read-only. The metadataSet entry points fail on it with
-	 ::kOfxStatErrValue; only the set passed to the \ref kOfxImageEffectActionGetMetadata
-	 action in \ref kOfxImageEffectPropMetadataSet may be written to.
 
 	 @returns
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle, which is
 	   empty if the clip has no metadata associated with it at the given time,
 	 - ::kOfxStatErrBadHandle - the clip handle was invalid,
-	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
-	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
+	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin
+	   should abort whatever it was doing.,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin
+	   should post a message.
 	 */
 	OfxStatus (*clipGetMetadata)(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *metadata);
 
@@ -701,26 +588,22 @@ typedef struct OfxMetadataSuiteV1 {
 	 \arg \c image     image handle, as returned by OfxImageEffectSuiteV1::clipGetImage
 	 \arg \c metadata  filled with a handle to the retrieved metadata property set
 
-	 Since an image handle already denotes a clip at a specific time, no time
-	 parameter is required.
-
 	 \pre
 	 - image was returned by OfxImageEffectSuiteV1::clipGetImage
 
 	 \post
-	 - on ::kOfxStatOK, metadata is a handle to a property set, possibly empty, to be disposed of by metadataRelease
+	 - on ::kOfxStatOK, metadata is a handle to a read-only property set, possibly empty, to be
+	   disposed of by metadataRelease
 	 - on any other status code, metadata is set to NULL and there is nothing to release
-
-	 The property set returned is read-only. The metadataSet entry points fail on it with
-	 ::kOfxStatErrValue; only the set passed to the \ref kOfxImageEffectActionGetMetadata
-	 action in \ref kOfxImageEffectPropMetadataSet may be written to.
 
 	 @returns
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle, which is
 	   empty if the image has no metadata associated with it,
 	 - ::kOfxStatErrBadHandle - the image handle was invalid,
-	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
-	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
+	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin
+	   should abort whatever it was doing.,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin
+	   should post a message.
 	 */
 	OfxStatus (*imageGetMetadata)(OfxPropertySetHandle image, OfxPropertySetHandle *metadata);
 
@@ -737,7 +620,8 @@ typedef struct OfxMetadataSuiteV1 {
 	 @returns
 	 - ::kOfxStatOK - the metadata handle was successfully released,
 	 - ::kOfxStatErrBadHandle - the metadata handle was invalid,
-	 - ::kOfxStatErrValue - the metadata handle is not the plugin's to release, being one the host passed to an action.
+	 - ::kOfxStatErrValue - the metadata handle is not the plugin's to release, being one the
+	   host passed to an action.
 	 */
 	OfxStatus (*metadataRelease)(OfxPropertySetHandle metadata);
 
@@ -747,21 +631,14 @@ typedef struct OfxMetadataSuiteV1 {
 	 \arg \c callback  function called once per key present in metadata, with that key's type and dimension
 	 \arg \c userData  opaque pointer passed unchanged to each call of callback
 
-	 The host calls callback once for every key present in metadata, passing the
-	 key name, its value type and dimension, and userData. Enumeration stops as soon as
-	 callback returns a status other than ::kOfxStatOK, and that status becomes this
-	 call's return value.
+	 The host calls callback once for every key present in metadata, passing the key name,
+	 its value type and dimension, and userData. Enumeration stops as soon as callback
+	 returns a status other than ::kOfxStatOK, and that status becomes this call's return
+	 value. Once a key's name, type and dimension are known, its value is read from metadata
+	 with the generic Property Suite.
 
-	 No ordering of keys is guaranteed, and the order need not be stable between
-	 separate calls, even for the same metadata handle, so a plugin must not rely
-	 on a particular host's observed ordering.
-
-	 Once a key's name, type and dimension have been obtained this way, the plugin
-	 can retrieve its value from metadata using the generic Property Suite.
-
-	 Enumeration is permitted on the writable set passed to the
-	 \ref kOfxImageEffectActionGetMetadata action as well as on a read-only one, so a plugin
-	 can read back the keys it has written during that action.
+	 No ordering of keys is guaranteed, and the order need not be stable between separate
+	 calls, even for the same metadata handle.
 
 	 \pre
 	 - metadata was returned by clipGetMetadata or imageGetMetadata, or is the set passed to
@@ -771,10 +648,12 @@ typedef struct OfxMetadataSuiteV1 {
 	 - ::kOfxStatOK - enumeration completed, having visited every key,
 	 - ::kOfxStatErrBadHandle - the metadata handle was invalid,
 	 - ::kOfxStatErrValue - callback is NULL,
-	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin
+	   should post a message,
 	 - any other status returned by callback to stop enumeration early.
 	 */
-	OfxStatus (*metadataEnumerate)(OfxPropertySetHandle metadata, OfxMetadataEnumerateFuncV1 callback, void *userData);
+	OfxStatus (*metadataEnumerate)(OfxPropertySetHandle metadata,
+	                                OfxMetadataEnumerateFuncV1 callback, void *userData);
 
 	/** @brief Writes a single string value to a metadata key, creating the key if needed
 
@@ -783,14 +662,6 @@ typedef struct OfxMetadataSuiteV1 {
 	 \arg \c value     value to give the key
 
 	 Exactly metadataSetStringN with a count of 1.
-
-	 \pre
-	 - metadata is writable, that is it is the set passed to the
-	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
-	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
-
-	 \post
-	 - on ::kOfxStatOK, key is present in metadata as a string of dimension 1 holding value
 
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
@@ -805,14 +676,6 @@ typedef struct OfxMetadataSuiteV1 {
 
 	 Exactly metadataSetDoubleN with a count of 1.
 
-	 \pre
-	 - metadata is writable, that is it is the set passed to the
-	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
-	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
-
-	 \post
-	 - on ::kOfxStatOK, key is present in metadata as a double of dimension 1 holding value
-
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
 	 */
@@ -826,14 +689,6 @@ typedef struct OfxMetadataSuiteV1 {
 
 	 Exactly metadataSetIntN with a count of 1.
 
-	 \pre
-	 - metadata is writable, that is it is the set passed to the
-	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
-	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
-
-	 \post
-	 - on ::kOfxStatOK, key is present in metadata as an int of dimension 1 holding value
-
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
 	 */
@@ -846,23 +701,11 @@ typedef struct OfxMetadataSuiteV1 {
 	 \arg \c count     number of values being written, which becomes the key's dimension
 	 \arg \c values    array of count values to give the key
 
-	 No index is taken: the whole value of the key is written at once, and the key's dimension
-	 becomes count whether or not the key already existed and whatever dimension it had before.
-
-	 \pre
-	 - metadata is writable, that is it is the set passed to the
-	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
-	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
-	 - count is at least 1, and values points to at least count values
-
-	 \post
-	 - on ::kOfxStatOK, key is present in metadata as a string of dimension count holding
-	   the values given, which the host has copied
-
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
 	 */
-	OfxStatus (*metadataSetStringN)(OfxPropertySetHandle metadata, const char *key, int count, const char *const*values);
+	OfxStatus (*metadataSetStringN)(OfxPropertySetHandle metadata, const char *key,
+	                                 int count, const char *const*values);
 
 	/** @brief Writes an array of double values to a metadata key, creating the key if needed
 
@@ -871,23 +714,11 @@ typedef struct OfxMetadataSuiteV1 {
 	 \arg \c count     number of values being written, which becomes the key's dimension
 	 \arg \c values    array of count values to give the key
 
-	 No index is taken: the whole value of the key is written at once, and the key's dimension
-	 becomes count whether or not the key already existed and whatever dimension it had before.
-
-	 \pre
-	 - metadata is writable, that is it is the set passed to the
-	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
-	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
-	 - count is at least 1, and values points to at least count values
-
-	 \post
-	 - on ::kOfxStatOK, key is present in metadata as a double of dimension count holding
-	   the values given, which the host has copied
-
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
 	 */
-	OfxStatus (*metadataSetDoubleN)(OfxPropertySetHandle metadata, const char *key, int count, const double *values);
+	OfxStatus (*metadataSetDoubleN)(OfxPropertySetHandle metadata, const char *key,
+	                                 int count, const double *values);
 
 	/** @brief Writes an array of int values to a metadata key, creating the key if needed
 
@@ -896,23 +727,11 @@ typedef struct OfxMetadataSuiteV1 {
 	 \arg \c count     number of values being written, which becomes the key's dimension
 	 \arg \c values    array of count values to give the key
 
-	 No index is taken: the whole value of the key is written at once, and the key's dimension
-	 becomes count whether or not the key already existed and whatever dimension it had before.
-
-	 \pre
-	 - metadata is writable, that is it is the set passed to the
-	   \ref kOfxImageEffectActionGetMetadata action in \ref kOfxImageEffectPropMetadataSet
-	 - key is a NULL terminated string naming a key in a namespace the caller may define keys in
-	 - count is at least 1, and values points to at least count values
-
-	 \post
-	 - on ::kOfxStatOK, key is present in metadata as an int of dimension count holding
-	   the values given, which the host has copied
-
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
 	 */
-	OfxStatus (*metadataSetIntN)   (OfxPropertySetHandle metadata, const char *key, int count, const int *values);
+	OfxStatus (*metadataSetIntN)   (OfxPropertySetHandle metadata, const char *key,
+	                                 int count, const int *values);
 
 } OfxMetadataSuiteV1;
 

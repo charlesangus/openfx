@@ -6,7 +6,6 @@
 #include <windows.h>
 #endif
 
-#include <cstring>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -14,6 +13,8 @@
 
 #include "ofxsImageEffect.h"
 #include "ofxsMetadata.h"
+
+#include "ofxsPixelCopy.H"
 
 namespace {
 
@@ -29,43 +30,6 @@ namespace {
     eModeDropOneKey,
     eModeInheritNothing
   };
-
-  int bytesPerPixel(const OFX::Image &image)
-  {
-    int perComponent = 0;
-
-    switch(image.getPixelDepth()) {
-    case OFX::eBitDepthUByte  : perComponent = 1; break;
-    case OFX::eBitDepthUShort : perComponent = 2; break;
-    case OFX::eBitDepthHalf   : perComponent = 2; break;
-    case OFX::eBitDepthFloat  : perComponent = 4; break;
-    default : return 0;
-    }
-
-    return perComponent * image.getPixelComponentCount();
-  }
-
-  void copyPixels(const OFX::Image &src, OFX::Image &dst, const OfxRectI &window)
-  {
-    const int pixelBytes = bytesPerPixel(dst);
-
-    if(pixelBytes == 0 || pixelBytes != bytesPerPixel(src))
-      OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
-
-    for(int y = window.y1; y < window.y2; y++) {
-      for(int x = window.x1; x < window.x2; x++) {
-        void *to = dst.getPixelAddress(x, y);
-
-        if(!to)
-          continue;
-
-        if(const void *from = src.getPixelAddress(x, y))
-          memcpy(to, from, size_t(pixelBytes));
-        else
-          memset(to, 0, size_t(pixelBytes));
-      }
-    }
-  }
 
 }
 
@@ -105,11 +69,11 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
 void
-MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance)
+MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
     return;
@@ -117,7 +81,7 @@ MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OF
   std::string note;
   note_->getValue(note);
 
-  // one key through each of the six suite entry points MetadataSetBuilder exposes,
+  // one key through each of the six suite entry points MetadataSetter exposes,
   // plus a framerate that disagrees with the fixture's Source so the two are
   // distinguishable downstream
   metadata.setString(std::string(kKeyPrefix) + "note", note);
@@ -227,7 +191,7 @@ void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectD
 
   StringParamDescriptor *note = desc.defineStringParam(kNoteParam);
   note->setLabels("note", "note", "note");
-  note->setHint("text contributed as net.sf.openfx.metadataContribute.note at every call");
+  note->setHint("text as the note key");
   note->setStringType(eStringTypeSingleLine);
   note->setDefault("");
   note->setAnimates(false);
@@ -235,7 +199,7 @@ void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectD
 
   ChoiceParamDescriptor *mode = desc.defineChoiceParam(kModeParam);
   mode->setLabels("mode", "mode", "mode");
-  mode->setHint("what this effect does to the metadata it inherits from Source, on top of what it always contributes");
+  mode->setHint("how metadata is inherited");
   mode->appendOption("inherit all");
   mode->appendOption("drop one key");
   mode->appendOption("inherit nothing");
@@ -245,7 +209,7 @@ void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectD
 
   StringParamDescriptor *dropKey = desc.defineStringParam(kDropKeyParam);
   dropKey->setLabels("drop key", "drop key", "drop key");
-  dropKey->setHint("the retained key to drop from Source's inherited metadata when mode is 'drop one key'");
+  dropKey->setHint("which key to drop");
   dropKey->setStringType(eStringTypeSingleLine);
   dropKey->setDefault(kOfxMetadataKeySampleType);
   dropKey->setAnimates(false);

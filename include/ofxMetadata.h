@@ -123,8 +123,9 @@ pointer holding an \ref OfxPropertySetHandle, which the effect casts it to befor
 The set arrives empty, and is the only metadata property set an effect may write to. Keys are added
 to it with the ``metadataSet`` entry points of \ref OfxMetadataSuiteV1, which create a key that is
 not already present; a key cannot be created through the generic Property Suite, which fails on a
-property that does not already exist. Once a key has been written, its value can be read back with
-OfxMetadataSuiteV1::metadataEnumerate and the generic Property Suite.
+property that does not already exist. Once a key has been written, its value can be read back
+through the generic Property Suite, using the type and dimension that
+OfxMetadataSuiteV1::metadataEnumerate reports for it.
 
 The handle is owned by the host and is valid only for the duration of the action. It must not be
 released with OfxMetadataSuiteV1::metadataRelease.
@@ -586,9 +587,30 @@ names has a standard place to publish them.
 */
 #define kOfxMetadataKeyViewNames "ofx/viewnames"
 
+/** @brief The value type of a metadata key, as reported to OfxMetadataEnumerateFuncV1
+
+ There is no "none" or "unknown" value: enumeration only ever visits a key that
+ exists, and every existing key has one of these types.
+
+ @version Added in OpenFX NEXT
+ */
+typedef enum OfxMetadataValueType
+{
+	/** @brief The key's value is fetched with OfxPropertySuiteV1::propGetInt or propGetIntN */
+	kOfxMetadataValueTypeInteger = 1,
+
+	/** @brief The key's value is fetched with OfxPropertySuiteV1::propGetDouble or propGetDoubleN */
+	kOfxMetadataValueTypeDouble = 2,
+
+	/** @brief The key's value is fetched with OfxPropertySuiteV1::propGetString or propGetStringN */
+	kOfxMetadataValueTypeString = 3
+} OfxMetadataValueType;
+
 /** @brief Callback used by OfxMetadataSuiteV1::metadataEnumerate to visit each key in a metadata property set
 
  \arg \c key       the name of a metadata key present in the property set being enumerated
+ \arg \c type      the value type of the key
+ \arg \c dimension the number of values the key holds, 1 for a scalar key
  \arg \c userData  the opaque pointer passed to metadataEnumerate by the caller
 
  The host calls this function once for each key present in the metadata property set.
@@ -602,7 +624,7 @@ names has a standard place to publish them.
  plugin must not infer any positional or stable ordering from a particular host's
  observed behaviour.
  */
-typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, void *userData);
+typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, OfxMetadataValueType type, int dimension, void *userData);
 
 /** @brief OFX suite that allows an effect to retrieve metadata associated with a clip's images.
 
@@ -718,19 +740,20 @@ typedef struct OfxMetadataSuiteV1 {
 	/** @brief Enumerates the keys present in a metadata property set
 
 	 \arg \c metadata  metadata handle to enumerate the keys of
-	 \arg \c callback  function called once per key present in metadata
+	 \arg \c callback  function called once per key present in metadata, with that key's type and dimension
 	 \arg \c userData  opaque pointer passed unchanged to each call of callback
 
 	 The host calls callback once for every key present in metadata, passing the
-	 key name and userData. Enumeration stops as soon as callback returns a status
-	 other than ::kOfxStatOK, and that status becomes this call's return value.
+	 key name, its value type and dimension, and userData. Enumeration stops as soon as
+	 callback returns a status other than ::kOfxStatOK, and that status becomes this
+	 call's return value.
 
 	 No ordering of keys is guaranteed, and the order need not be stable between
 	 separate calls, even for the same metadata handle, so a plugin must not rely
 	 on a particular host's observed ordering.
 
-	 Once a key name has been obtained this way, the plugin can retrieve its value
-	 from metadata using the generic Property Suite.
+	 Once a key's name, type and dimension have been obtained this way, the plugin
+	 can retrieve its value from metadata using the generic Property Suite.
 
 	 Enumeration is permitted on the writable set passed to the
 	 \ref kOfxImageEffectActionGetMetadata action as well as on a read-only one, so a plugin

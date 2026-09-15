@@ -432,128 +432,14 @@ jobs:
             cmake --build $BUILD_DIR --target install --parallel
           fi
 
-      - name: Smoke-test metadataHost
+      - name: Run the tests with ctest
         env:
           MATRIX_OSTYPE: ${{ matrix.ostype }}
         run: |
-          BIN=$BUILD_DIR/HostSupport/examples/metadataHost
-          [[ $MATRIX_OSTYPE = windows ]] && BIN="${BIN}.exe"
-          if [[ ! -x "$BIN" ]]; then
-            echo "metadataHost not found at $BIN" >&2
-            exit 1
-          fi
-          "$BIN"
-          echo "Testing metadataHost with generic plugin mode"
-          # metadataPlugin is a build tree fixture which is never installed, so this
-          # relies on the plugin directory baked into the harness
-          "$BIN" --plugin-id net.sf.openfx.metadataPlugin
-          echo "Testing the metadata-log contract against MetadataPrint"
-          # MetadataPrint is a shipped example, so it is loaded from the install tree
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataPrint --check metadata-log
-          echo "Testing the metadata-display contract against MetadataView"
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataView --check metadata-display
-          echo "Testing the metadata-contribute contract against MetadataContribute"
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataContribute --check metadata-contribute
-          echo "Testing the metadata-modify contract against MetadataModify"
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataModify --check metadata-modify
-          echo "Testing the metadata-timecode contract against MetadataTimeCode"
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataTimeCode --check metadata-timecode
-          echo "Testing the metadata-copy contract against MetadataCopy"
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataCopy --check metadata-copy
-          echo "Testing the metadata-compare contract against MetadataCompare downstream of MetadataModify"
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataCompare \
-                 --upstream net.sf.openfx.metadataModify --check metadata-compare
-          echo "Testing that the metadata-log contract fails a plugin which logs nothing"
-          if "$BIN" --plugin-id net.sf.openfx.metadataPlugin --check metadata-log; then
-            echo "metadata-log passed a plugin which renders and logs nothing" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-log-degraded contract fails a plugin which reads metadata"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataPrint --check metadata-log-degraded; then
-            echo "metadata-log-degraded passed a plugin which reads and logs metadata" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-display-degraded contract fails a plugin which reads metadata"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataView --check metadata-display-degraded; then
-            echo "metadata-display-degraded passed a plugin which reads and displays metadata" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-contribute contract fails a plugin which contributes nothing"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataPrint --check metadata-contribute; then
-            echo "metadata-contribute passed a plugin which contributes nothing" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-modify contract fails a plugin which edits nothing"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataPrint --check metadata-modify; then
-            echo "metadata-modify passed a plugin which edits nothing" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-timecode contract fails a plugin which contributes no timecode"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataContribute --check metadata-timecode; then
-            echo "metadata-timecode passed a plugin which contributes no timecode" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-copy contract fails a plugin with only one input"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataContribute --check metadata-copy; then
-            echo "metadata-copy passed a plugin with no Mask clip to compose" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-compare contract fails without --upstream"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataCompare --check metadata-compare; then
-            echo "metadata-compare passed with no head built ahead of the plugin" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-compare-degraded contract fails a plugin which compares metadata"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataCompare \
-                 --upstream net.sf.openfx.metadataModify --check metadata-compare-degraded; then
-            echo "metadata-compare-degraded passed a plugin which shows how its inputs differ" >&2
-            exit 1
-          fi
-          echo "Testing the metadata-chain contract against MetadataView downstream of MetadataContribute"
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataView \
-                 --upstream net.sf.openfx.metadataContribute --check metadata-chain
-          echo "Testing that the metadata-chain contract fails without --upstream"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataView --check metadata-chain; then
-            echo "metadata-chain passed with no chain built ahead of the plugin" >&2
-            exit 1
-          fi
-          echo "Testing that the metadata-chain contract fails a head which contributes nothing"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataView \
-                 --upstream net.sf.openfx.metadataPrint --check metadata-chain; then
-            echo "metadata-chain passed a head which contributes nothing" >&2
-            exit 1
-          fi
-          echo "Testing the metadata-graph contract against a four node chain"
-          "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataView \
-                 --upstream net.sf.openfx.metadataModify \
-                 --upstream net.sf.openfx.metadataTimeCode \
-                 --upstream net.sf.openfx.metadataCopy --check metadata-graph
-          echo "Testing that the metadata-graph contract fails a chain a node short"
-          if "$BIN" --plugin-dir "$(pwd)/build/Install" \
-                 --plugin-id net.sf.openfx.metadataView \
-                 --upstream net.sf.openfx.metadataModify \
-                 --upstream net.sf.openfx.metadataTimeCode --check metadata-graph; then
-            echo "metadata-graph passed a chain with no node combining a second input" >&2
-            exit 1
+          if [[ $MATRIX_OSTYPE = windows ]]; then
+            (cd $BUILD_DIR && ctest --output-on-failure -C Release)
+          else
+            (cd $BUILD_DIR && ctest --output-on-failure)
           fi
 
       - name: Install with cmake

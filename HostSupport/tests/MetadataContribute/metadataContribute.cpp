@@ -14,7 +14,7 @@
 #include "ofxsImageEffect.h"
 #include "ofxsMetadata.h"
 
-#include "../include/ofxsPixelCopy.H"
+#include "ofxsPixelCopy.H"
 
 namespace {
 

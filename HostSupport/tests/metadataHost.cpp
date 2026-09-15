@@ -2145,14 +2145,17 @@ namespace {
   }
 
   /// the plugin cache has no way to replace the default search path, only to add to
-  /// it, and this must load the plugin built alongside it rather than whatever the
-  /// machine happens to have installed
+  /// it, and this must load the plugins built alongside it rather than whatever the
+  /// machine happens to have installed. --plugin-dir adds a second directory for the
+  /// installed example plugins, so a chain can mix them with the build tree ones
   class BuildTreePluginCache : public OFX::Host::PluginCache {
   public :
     explicit BuildTreePluginCache(const std::string &dir)
     {
       _pluginPath.clear();
-      addFileToPath(dir, false);
+      addFileToPath(METADATA_PLUGIN_DIR, false);
+      if(dir != METADATA_PLUGIN_DIR)
+        addFileToPath(dir, false);
     }
   };
 
@@ -5388,10 +5391,10 @@ namespace {
     os << "usage: metadataHost [--list] [--plugin-dir <path>] [--plugin-id <id>]" << std::endl;
     os << "                   [--upstream <id>]... [--check <name>] [--expect-failure]" << std::endl;
     os << "  --list              print the fixture table and exit" << std::endl;
-    os << "  --plugin-dir <path> look for the plugin bundle in <path> rather than in"
+    os << "  --plugin-dir <path> look for plugin bundles in <path> as well as in"
        << std::endl;
     os << "                      " << METADATA_PLUGIN_DIR << std::endl;
-    os << "  --plugin-id <id>    load <id> from --plugin-dir and check the general"
+    os << "  --plugin-id <id>    load <id> from those dirs and check the general"
        << std::endl;
     os << "                      preconditions any plugin has to meet - describe,"
        << std::endl;
@@ -5401,7 +5404,7 @@ namespace {
        << std::endl;
     os << "                      plugin's own composition order and retained-key checks"
        << std::endl;
-    os << "  --upstream <id>     load <id> from --plugin-dir and chain it ahead of the"
+    os << "  --upstream <id>     load <id> from those dirs and chain it ahead of the"
        << std::endl;
     os << "                      plugin --plugin-id names, so that plugin's source clip"
        << std::endl;

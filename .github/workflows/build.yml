@@ -636,7 +636,8 @@ jobs:
 
       - name: Check documentation warnings for metadata symbols
         run: |
-          EXPECTED_ERRS='Explicit markup ends without|Duplicate C.*declaration|Declaration is|cpp:func targets a member|undefined label'
+          # The parenthesised function-typedef form, typedef T (Name)(args), trips Sphinx's C++ parser
+          EXPECTED_ERRS='Explicit markup ends without|Duplicate C.*declaration|Declaration is|cpp:func targets a member|undefined label|Invalid C\+\+ declaration: Expected end of definition'
           METADATA_ERRS='doxygen|breathe|ofxMetadata|OfxMetadata|kOfxMetadata|kOfxImageEffectPropMetadata|kOfxImageEffectActionGetMetadata'
           WARNINGS=$(grep -E "WARNING|ERROR" /tmp/ofx-doc-build.out | grep -v -E "$EXPECTED_ERRS" || true)
           OFFENDING=$(printf '%s\n' "$WARNINGS" | grep -E "$METADATA_ERRS" || true)

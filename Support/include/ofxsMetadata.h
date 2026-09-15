@@ -42,28 +42,24 @@ namespace OFX {
   text is numeric, and a key which is absent or which will not convert reads back as the
   default you passed.
 
-  A set which carries no metadata is empty rather than an error: it has no keys, and every
-  getter returns its default. That is what you get from a clip or an image the host has no
-  metadata for, and from any clip or image if the host has no metadata suite at all.
+  A set which carries no metadata has no keys, and every getter returns its default. That
+  is what a clip or an image the host holds no metadata for gives, and what any clip or
+  image gives when the host has no metadata suite.
 
   The methods which read a value never throw. The ones which describe the shape of the set,
   fetchFromClip, fetchFromImage, entries and keys, throw an OFX::Exception::Suite if the
   host fails the underlying call.
 
   A set built by the public constructor, by fetchFromClip or by fetchFromImage owns the
-  handle it wraps, and releases it on reset() or destruction as described above. A set
-  built by borrow() instead wraps a handle owned by something else -- neither reset() nor
-  the destructor release it -- for reading a set that outlives this object and that the
-  host would refuse to release a second time, such as the writable set a
-  MetadataSetBuilder exposes through contents().
+  handle it wraps and releases it on reset() and on destruction. A set built by borrow()
+  does not own its handle, and neither reset() nor the destructor release it.
   */
   class MetadataSet {
   protected :
     /** @brief The raw metadata property set handle */
     OfxPropertySetHandle _metadataHandle;
 
-    /** @brief whether this object releases _metadataHandle on reset(), rather than only
-    borrowing it from something else that owns it */
+    /** @brief whether reset() releases _metadataHandle */
     bool _owned;
 
     /** @brief the type and dimension of every key seen on _metadataHandle by the last enumeration */
@@ -79,11 +75,10 @@ namespace OFX {
     /** @brief construct over handle, owning it exactly when owned is true */
     MetadataSet(OfxPropertySetHandle handle, bool owned);
 
-    /** @brief drop key from _entries, so the next read of it re-enumerates rather than
-    answering from a cached entry a writer elsewhere on the same handle has since changed */
+    /** @brief drop key from _entries, so that the next read of it re-enumerates */
     void forget(const std::string &key);
 
-    friend class MetadataSetBuilder;
+    friend class MetadataSetter;
 
   public :
     /** @brief construct an empty set, carrying no metadata */
@@ -103,20 +98,20 @@ namespace OFX {
     /** @brief fetch the metadata a clip carries at the given time */
     static MetadataSet fetchFromClip(OfxImageClipHandle clip, OfxTime time);
 
-    /** @brief fetch the metadata an image carries, the image handle already naming a time */
+    /** @brief fetch the metadata an image carries */
     static MetadataSet fetchFromImage(OfxPropertySetHandle image);
 
-    /** @brief wrap handle without taking ownership of it, for reading a set something
-    else keeps alive and will release itself */
+    /** @brief wrap handle without taking ownership of it: neither reset() nor the
+    destructor release it */
     static MetadataSet borrow(OfxPropertySetHandle handle);
 
     /** @brief does this set carry metadata at all */
     bool isValid(void) const {return _metadataHandle != 0;}
 
-    /** @brief the raw handle, for a plugin which needs to call the suites directly */
+    /** @brief the raw handle */
     OfxPropertySetHandle getHandle(void) const {return _metadataHandle;}
 
-    /** @brief release the metadata now rather than at the end of the scope, leaving the set empty */
+    /** @brief release the metadata and leave the set empty */
     void reset(void);
 
     /** @brief is the key present in this set */
@@ -157,47 +152,40 @@ namespace OFX {
   \ref kOfxImageEffectActionGetMetadata action's inArgs, under kOfxImageEffectPropMetadataSet,
   and offers the six key-writing entry points OfxMetadataSuiteV1 declares for it.
 
-  The handle is owned by the host, not by this object: unlike MetadataSet it is never
-  released, neither by a destructor nor by any other method, and this class does not derive
-  from or otherwise share code with MetadataSet, whose destructor releases the handle it
-  wraps and which the host makes return kOfxStatErrValue if asked to release this one.
+  The handle is owned by the host and is never released by this object.
 
-  There is no indexed setter to match MetadataSet's indexed getters: setString, setDouble and
-  setInt take no index parameter, because a key that does not yet exist has no dimension to
-  index into. The N forms are the primitives; the scalar forms are exactly those calls with a
-  single value. Writing part of an existing key's value is not possible either way -- every
-  setter replaces the key's whole value and dimension at once.
+  Every setter replaces the key's whole value and dimension at once, creating the key if it
+  is absent; the scalar forms are the N forms called with a single value.
 
-  A setter which fails, whether because the metadata suite is absent, because this builder was
+  A setter which fails, whether because the metadata suite is absent, because this setter was
   constructed from a NULL handle, or because the host rejects the call, does nothing and never
-  throws. didSomething distinguishes a builder that has made at least one successful call from
-  one that has not.
+  throws. didSomething is true once at least one call has succeeded.
 
-  contents() offers a read-only view of the same handle, for a plugin that wants to read back
-  what it has written, which the C header permits on this set even though it forbids writing
-  it through anything but the setters above. The view is a MetadataSet built with borrow(), so
-  it never releases the handle either, and it reflects every write made through this builder's
-  setters, however that write's key was previously read through the view.
+  contents() is a read-only view of the same handle, a MetadataSet built with borrow(), and
+  reflects every write made through the setters.
   */
-  class MetadataSetBuilder {
+  class MetadataSetter {
   protected :
     /** @brief The raw metadata property set handle, owned by the host and never released by this object */
     OfxPropertySetHandle _metadataHandle;
 
-    /** @brief whether any setter on this builder has yet succeeded */
-    bool _didSomething;
+    /** @brief whether any setter on this object has yet succeeded */
+    bool doneSomething_;
 
     /** @brief a read-only, non-owning view of _metadataHandle, for contents() */
     MetadataSet _contents;
 
+    /** @brief log a failed write of key; on success set doneSomething_ and drop key from _contents */
+    void record(const std::string &key, OfxStatus stat);
+
   public :
     /** @brief wrap a host-owned handle, typically the value of kOfxImageEffectPropMetadataSet found in an inArgs property set */
-    explicit MetadataSetBuilder(OfxPropertySetHandle handle);
+    explicit MetadataSetter(OfxPropertySetHandle handle);
 
-    /** @brief has any setter on this builder yet succeeded */
-    bool didSomething(void) const {return _didSomething;}
+    /** @brief has any setter on this object yet succeeded */
+    bool didSomething(void) const {return doneSomething_;}
 
-    /** @brief a read-only view of what this builder has written to its set so far */
+    /** @brief a read-only view of the set, reflecting what this object has written so far */
     const MetadataSet &contents(void) const {return _contents;}
 
     /** @brief write a single string value to key, creating it if absent */
@@ -218,11 +206,9 @@ namespace OFX {
     /** @brief write all of key's values as ints at once, creating it if absent and replacing its dimension */
     void setIntN(const std::string &key, const std::vector<int> &values);
 
-    /** @brief re-emit every key of source through the setter matching its MetadataEntry::type and dimension
+    /** @brief write every key of source through the setter matching its MetadataEntry::type and dimension
 
-    Bulk-copies an input's metadata onto this builder's set, the most common operation a
-    plugin that passes an input's metadata through to its output will need. Reading source
-    may throw, exactly as MetadataSet::entries does; writing to this builder never does.
+    Reading source may throw, exactly as MetadataSet::entries does; writing never does.
     */
     void copyFrom(const MetadataSet &source);
   };

@@ -7,7 +7,6 @@
 #endif
 
 #include <cmath>
-#include <cstring>
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -15,6 +14,8 @@
 
 #include "ofxsImageEffect.h"
 #include "ofxsMetadata.h"
+
+#include "../include/ofxsPixelCopy.H"
 
 namespace {
 
@@ -98,43 +99,6 @@ namespace {
     return os.str();
   }
 
-  int bytesPerPixel(const OFX::Image &image)
-  {
-    int perComponent = 0;
-
-    switch(image.getPixelDepth()) {
-    case OFX::eBitDepthUByte  : perComponent = 1; break;
-    case OFX::eBitDepthUShort : perComponent = 2; break;
-    case OFX::eBitDepthHalf   : perComponent = 2; break;
-    case OFX::eBitDepthFloat  : perComponent = 4; break;
-    default : return 0;
-    }
-
-    return perComponent * image.getPixelComponentCount();
-  }
-
-  void copyPixels(const OFX::Image &src, OFX::Image &dst, const OfxRectI &window)
-  {
-    const int pixelBytes = bytesPerPixel(dst);
-
-    if(pixelBytes == 0 || pixelBytes != bytesPerPixel(src))
-      OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
-
-    for(int y = window.y1; y < window.y2; y++) {
-      for(int x = window.x1; x < window.x2; x++) {
-        void *to = dst.getPixelAddress(x, y);
-
-        if(!to)
-          continue;
-
-        if(const void *from = src.getPixelAddress(x, y))
-          memcpy(to, from, size_t(pixelBytes));
-        else
-          memset(to, 0, size_t(pixelBytes));
-      }
-    }
-  }
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -179,15 +143,12 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
 void
-MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &/*inheritance*/)
+MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &/*inheritance*/)
 {
-  if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return;
-
   double rate = 0;
   rate_->getValue(rate);
 
@@ -289,9 +250,7 @@ void MetadataTimeCodeExamplePluginFactory::describeInContext(OFX::ImageEffectDes
 
   StringParamDescriptor *startTimecode = desc.defineStringParam(kStartTimecodeParam);
   startTimecode->setLabels("start timecode", "start timecode", "start timecode");
-  startTimecode->setHint("the non drop frame HH:MM:SS:FF the count starts from, carried at the "
-                         "origin frame and counted on by one frame for each frame after it, "
-                         "wrapping back to 00:00:00:00 after 23:59:59:FF");
+  startTimecode->setHint("non-drop-frame timecode");
   startTimecode->setStringType(eStringTypeSingleLine);
   startTimecode->setDefault("01:00:00:00");
   startTimecode->setAnimates(false);
@@ -299,9 +258,7 @@ void MetadataTimeCodeExamplePluginFactory::describeInContext(OFX::ImageEffectDes
 
   DoubleParamDescriptor *rate = desc.defineDoubleParam(kRateParam);
   rate->setLabels("rate", "rate", "rate");
-  rate->setHint("the frames per second the count runs at, used when the rate is not being "
-                "taken from the source's metadata. The frames field counts to the nearest "
-                "whole number of it");
+  rate->setHint("the frame rate the count uses");
   rate->setDefault(24);
   rate->setRange(1, 1000);
   rate->setDisplayRange(1, 120);
@@ -310,28 +267,21 @@ void MetadataTimeCodeExamplePluginFactory::describeInContext(OFX::ImageEffectDes
 
   BooleanParamDescriptor *rateFromMetadata = desc.defineBooleanParam(kRateFromMetadataParam);
   rateFromMetadata->setLabels("rate from metadata", "rate from metadata", "rate from metadata");
-  rateFromMetadata->setHint("read the frame rate off Source's metadata rather than from the rate "
-                            "parameter, falling back to the parameter where Source carries none. "
-                            "The rate read is what the frames field counts to and what the start "
-                            "timecode is read at, so it moves the timecode as well as the rate "
-                            "reported with it");
+  rateFromMetadata->setHint("use Source's rate");
   rateFromMetadata->setDefault(true);
   rateFromMetadata->setAnimates(false);
   page->addChild(*rateFromMetadata);
 
   IntParamDescriptor *startFrame = desc.defineIntParam(kStartFrameParam);
   startFrame->setLabels("start frame", "start frame", "start frame");
-  startFrame->setHint("the frame the start timecode lands on, used only when 'use start frame' "
-                      "is on. Frames before it count backwards from the start timecode");
+  startFrame->setHint("frame the start code is at");
   startFrame->setDefault(1);
   startFrame->setAnimates(false);
   page->addChild(*startFrame);
 
   BooleanParamDescriptor *useStartFrame = desc.defineBooleanParam(kUseStartFrameParam);
   useStartFrame->setLabels("use start frame", "use start frame", "use start frame");
-  useStartFrame->setHint("count from the start frame rather than from frame 1. With this off the "
-                         "start timecode always lands on frame 1 and the start frame parameter is "
-                         "ignored, whatever frame the clip or the project begins at");
+  useStartFrame->setHint("count from start frame");
   useStartFrame->setDefault(false);
   useStartFrame->setAnimates(false);
   page->addChild(*useStartFrame);

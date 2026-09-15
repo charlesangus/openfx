@@ -1752,16 +1752,6 @@ namespace OFX {
         return true;
       }
 
-      const std::string &Instance::metadataRetainedKeysPropName(const std::string &clipName)
-      {
-        std::string &propName = _clipMetadataRetainedKeysPropNames[clipName];
-
-        if(propName.empty())
-          propName = std::string("OfxImageClipPropMetadataRetainedKeys_") + clipName;
-
-        return propName;
-      }
-
       void Instance::invalidateMetadata()
       {
         for(std::map<std::string, ClipInstance*>::iterator it = _clips.begin();
@@ -1862,7 +1852,7 @@ namespace OFX {
         std::vector<std::string> retainedKeysPropNames;
 
         for(size_t i = 0; i < inputs.size(); ++i) {
-          const std::string &propName = metadataRetainedKeysPropName(inputs[i]->getName());
+          std::string propName = "OfxImageClipPropMetadataRetainedKeys_" + inputs[i]->getName();
           retainedKeysPropNames.push_back(propName);
 
           Property::PropSpec keysSpec = { propName.c_str(), Property::eString, 0, false, "" };
@@ -1874,7 +1864,7 @@ namespace OFX {
 
         /// the set the effect writes the metadata it contributes into. The host owns it, so
         /// the effect cannot release it and it does not outlive the action
-        MetadataSet *contribution = new MetadataSet(true, false);
+        MetadataSet *contribution = new MetadataSet(MetadataSet::eWritable, MetadataSet::eHostOwned);
 
         try {
           /// the list starts as the first connected input clip in the order the effect

@@ -6,8 +6,6 @@
 #include <windows.h>
 #endif
 
-#include <cctype>
-#include <cstring>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -15,6 +13,8 @@
 
 #include "ofxsImageEffect.h"
 #include "ofxsMetadata.h"
+
+#include "../include/ofxsPixelCopy.H"
 
 namespace {
 
@@ -28,11 +28,6 @@ namespace {
     eFilterModeValuesOnly
   };
 
-  char lowerCase(char c)
-  {
-    return char(tolower((unsigned char) c));
-  }
-
   /** @brief does text hold needle, ignoring case? An empty needle is held by anything */
   bool containsNoCase(const std::string &text, const std::string &needle)
   {
@@ -42,7 +37,7 @@ namespace {
     for(size_t at = 0; at + needle.size() <= text.size(); at++) {
       size_t i = 0;
 
-      while(i < needle.size() && lowerCase(text[at + i]) == lowerCase(needle[i]))
+      while(i < needle.size() && OFX::lowerCase(text[at + i]) == OFX::lowerCase(needle[i]))
         i++;
 
       if(i == needle.size())
@@ -50,62 +45,6 @@ namespace {
     }
 
     return false;
-  }
-
-  /** @brief every value of a key, comma separated, read back as the type the host holds it as */
-  std::string valueText(const OFX::MetadataSet &metadata, const OFX::MetadataEntry &entry)
-  {
-    std::ostringstream text;
-
-    for(int i = 0; i < entry.dimension; i++) {
-      if(i)
-        text << ",";
-
-      switch(entry.type) {
-      case OFX::eMetadataTypeInt    : text << metadata.getInt(entry.key, i); break;
-      case OFX::eMetadataTypeDouble : text << metadata.getDouble(entry.key, i); break;
-      default                       : text << metadata.getString(entry.key, i); break;
-      }
-    }
-
-    return text.str();
-  }
-
-  int bytesPerPixel(const OFX::Image &image)
-  {
-    int perComponent = 0;
-
-    switch(image.getPixelDepth()) {
-    case OFX::eBitDepthUByte  : perComponent = 1; break;
-    case OFX::eBitDepthUShort : perComponent = 2; break;
-    case OFX::eBitDepthHalf   : perComponent = 2; break;
-    case OFX::eBitDepthFloat  : perComponent = 4; break;
-    default : return 0;
-    }
-
-    return perComponent * image.getPixelComponentCount();
-  }
-
-  void copyPixels(const OFX::Image &src, OFX::Image &dst, const OfxRectI &window)
-  {
-    const int pixelBytes = bytesPerPixel(dst);
-
-    if(pixelBytes == 0 || pixelBytes != bytesPerPixel(src))
-      OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
-
-    for(int y = window.y1; y < window.y2; y++) {
-      for(int x = window.x1; x < window.x2; x++) {
-        void *to = dst.getPixelAddress(x, y);
-
-        if(!to)
-          continue;
-
-        if(const void *from = src.getPixelAddress(x, y))
-          memcpy(to, from, size_t(pixelBytes));
-        else
-          memset(to, 0, size_t(pixelBytes));
-      }
-    }
   }
 
 }
@@ -157,9 +96,6 @@ public :
 std::string
 MetadataViewPlugin::displayText(double time)
 {
-  if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return std::string();
-
   const OFX::MetadataSet metadata = srcClip_->getMetadata(time);
   const std::vector<OFX::MetadataEntry> entries = metadata.entries();
 
@@ -268,7 +204,7 @@ void MetadataViewExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   StringParamDescriptor *filter = desc.defineStringParam(kFilterParam);
   filter->setLabels("filter", "filter", "filter");
-  filter->setHint("show only the keys holding this text, ignoring case; empty shows every key");
+  filter->setHint("keys holding this text, ignoring case");
   filter->setStringType(eStringTypeSingleLine);
   filter->setDefault("");
   filter->setAnimates(false);
@@ -276,7 +212,7 @@ void MetadataViewExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   ChoiceParamDescriptor *mode = desc.defineChoiceParam(kFilterModeParam);
   mode->setLabels("filter mode", "filter mode", "filter mode");
-  mode->setHint("what to show for each key the filter matches");
+  mode->setHint("what to display per matching key");
   mode->appendOption("keys and values");
   mode->appendOption("keys only");
   mode->appendOption("values only");

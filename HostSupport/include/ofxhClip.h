@@ -108,6 +108,9 @@ namespace OFX {
       /// This is reference counted in the same way as ImageBase: it is constructed with a
       /// count of one, addReference() takes a further reference, and releaseReference()
       /// drops one and deletes the set when the last is gone.
+      ///
+      /// As with images, the host serialises all access to a given metadata set and to
+      /// its reference count.
       class MetadataSet : public Property::Set {
       protected :
         int _referenceCount;  ///< reference count on this metadata set

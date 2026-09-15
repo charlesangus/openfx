@@ -6,6 +6,7 @@
 #include <windows.h>
 #endif
 
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <memory>
@@ -264,6 +265,10 @@ MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Metadat
     clips.push_back(kSourceClip);
     break;
   }
+
+  // an unconnected Mask carries nothing, and reading it at all is an error
+  if(!maskClip_->isConnected())
+    clips.erase(std::remove(clips.begin(), clips.end(), std::string(kMaskClip)), clips.end());
 
   inheritance.setSourceClips(clips);
 

@@ -64,5 +64,7 @@ plug-ins main entry point.
 
 .. doxygendefine:: kOfxImageEffectActionGetClipPreferences
 
+.. doxygendefine:: kOfxImageEffectActionGetMetadata
+
 .. doxygendefine:: kOfxImageEffectActionGetTimeDomain
 

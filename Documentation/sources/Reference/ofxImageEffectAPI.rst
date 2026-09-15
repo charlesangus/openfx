@@ -48,6 +48,8 @@ The header files used to define the OFX Image Effect API are...
    Defines a suite and set of actions that draws all the above together to create an visual effect plug-in.
 -  `ofxDrawSuite.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/include/ofxDrawSuite.h>`__
    Provides an optional suite that allows a plug-in to draw their own interactive GUI tools without using OpenGL
+-  `ofxMetadata.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/include/ofxMetadata.h>`__
+   Provides an optional suite and action that let a plug-in read the metadata of a clip's images and contribute its own
 
 These contain the suite definitions, property definitions and action
 definitions that are used by the API.

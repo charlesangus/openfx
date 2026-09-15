@@ -158,10 +158,10 @@ MetadataCopyPlugin::retainMatchingKeys(double time,
   filterParam.getValue(pattern);
   filterModeParam.getValue(filterMode);
 
-  // The host fills in a retained-keys list only for the first input clip the effect
-  // described and leaves every other clip's empty, so the candidates have to come from
-  // the clip's own metadata: filtering what getRetainedKeys reports would contribute
-  // nothing at all from Mask.
+  // The host pre-fills a retained-keys list only for the first connected input clip in
+  // described order and leaves the others empty, so the candidates have to come from
+  // the clip's own metadata: filtering what getRetainedKeys reports could contribute
+  // nothing at all from the other clip.
   const OFX::MetadataSet metadata = clip.getMetadata(time);
   const std::vector<OFX::MetadataEntry> entries = metadata.entries();
 
@@ -175,6 +175,7 @@ MetadataCopyPlugin::retainMatchingKeys(double time,
   inheritance.setRetainedKeys(clip, kept);
 }
 
+// guide: begin getMetadata
 void
 MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &/*metadata*/, OFX::MetadataInheritanceSetter &inheritance)
 {
@@ -218,6 +219,7 @@ MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Metadat
       retainMatchingKeys(args.time, *maskClip_, *maskFilter_, *maskFilterMode_, inheritance);
   }
 }
+// guide: end getMetadata
 
 // the overridden render function
 void

@@ -227,13 +227,7 @@ void MetadataModifyExamplePluginFactory::describeInContext(OFX::ImageEffectDescr
 
   StringParamDescriptor *operations = desc.defineStringParam(kOperationsParam);
   operations->setLabels("operations", "operations", "operations");
-  operations->setHint("one operation per line, either 'set <key> <value>' or 'remove <key>', "
-                      "applied to the metadata inherited from Source in the order written, the "
-                      "last operation on a key winning: 'set k' then 'remove k' leaves k absent, "
-                      "'remove k' then 'set k' leaves it present. Removing a key which is not "
-                      "there does nothing. A value is the literal rest of the line, not an "
-                      "expression, and is contributed as a string. A key is written exactly as "
-                      "typed; name your own under 'ofx/' or a reverse DNS prefix.");
+  operations->setHint("'set key value'/'remove key'");
   operations->setStringType(eStringTypeMultiLine);
   operations->setDefault("");
   operations->setAnimates(false);

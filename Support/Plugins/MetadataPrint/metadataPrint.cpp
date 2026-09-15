@@ -61,9 +61,6 @@ public :
 void
 MetadataPrintPlugin::logMetadata(double time)
 {
-  if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return;
-
   const OFX::MetadataSet metadata = srcClip_->getMetadata(time);
   const std::vector<OFX::MetadataEntry> entries = metadata.entries();
 

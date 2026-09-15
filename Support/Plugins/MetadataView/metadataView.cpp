@@ -96,9 +96,6 @@ public :
 std::string
 MetadataViewPlugin::displayText(double time)
 {
-  if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return std::string();
-
   const OFX::MetadataSet metadata = srcClip_->getMetadata(time);
   const std::vector<OFX::MetadataEntry> entries = metadata.entries();
 
@@ -207,7 +204,7 @@ void MetadataViewExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   StringParamDescriptor *filter = desc.defineStringParam(kFilterParam);
   filter->setLabels("filter", "filter", "filter");
-  filter->setHint("show only the keys holding this text, ignoring case; empty shows every key");
+  filter->setHint("keys holding this text, ignoring case");
   filter->setStringType(eStringTypeSingleLine);
   filter->setDefault("");
   filter->setAnimates(false);
@@ -215,7 +212,7 @@ void MetadataViewExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   ChoiceParamDescriptor *mode = desc.defineChoiceParam(kFilterModeParam);
   mode->setLabels("filter mode", "filter mode", "filter mode");
-  mode->setHint("what to show for each key the filter matches");
+  mode->setHint("what to display per matching key");
   mode->appendOption("keys and values");
   mode->appendOption("keys only");
   mode->appendOption("values only");

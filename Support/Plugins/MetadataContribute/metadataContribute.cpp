@@ -191,7 +191,7 @@ void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectD
 
   StringParamDescriptor *note = desc.defineStringParam(kNoteParam);
   note->setLabels("note", "note", "note");
-  note->setHint("text contributed as net.sf.openfx.metadataContribute.note at every call");
+  note->setHint("text as the note key");
   note->setStringType(eStringTypeSingleLine);
   note->setDefault("");
   note->setAnimates(false);
@@ -199,7 +199,7 @@ void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectD
 
   ChoiceParamDescriptor *mode = desc.defineChoiceParam(kModeParam);
   mode->setLabels("mode", "mode", "mode");
-  mode->setHint("what this effect does to the metadata it inherits from Source, on top of what it always contributes");
+  mode->setHint("how metadata is inherited");
   mode->appendOption("inherit all");
   mode->appendOption("drop one key");
   mode->appendOption("inherit nothing");
@@ -209,7 +209,7 @@ void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectD
 
   StringParamDescriptor *dropKey = desc.defineStringParam(kDropKeyParam);
   dropKey->setLabels("drop key", "drop key", "drop key");
-  dropKey->setHint("the retained key to drop from Source's inherited metadata when mode is 'drop one key'");
+  dropKey->setHint("which key to drop");
   dropKey->setStringType(eStringTypeSingleLine);
   dropKey->setDefault(kOfxMetadataKeySampleType);
   dropKey->setAnimates(false);

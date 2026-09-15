@@ -83,9 +83,6 @@ public :
 std::string
 MetadataComparePlugin::displayText(double time)
 {
-  if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return std::string();
-
   const OFX::MetadataSet source = srcClip_->getMetadata(time);
   const OFX::MetadataSet mask = maskClip_->isConnected() ? maskClip_->getMetadata(time)
                                                          : OFX::MetadataSet();
@@ -219,9 +216,7 @@ void MetadataCompareExamplePluginFactory::describeInContext(OFX::ImageEffectDesc
 
   StringParamDescriptor *display = desc.defineStringParam(kDisplayParam);
   display->setLabels("differences", "differences", "differences");
-  display->setHint("one line per key that Source and Mask disagree on: a key held by "
-                   "only one of them, or held by both with different values. A key both "
-                   "hold with the same value is not shown");
+  display->setHint("differing keys between inputs");
   display->setStringType(eStringTypeMultiLine);
   display->setDefault("");
   display->setAnimates(false);

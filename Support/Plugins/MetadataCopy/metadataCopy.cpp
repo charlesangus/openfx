@@ -292,12 +292,7 @@ void MetadataCopyExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   ChoiceParamDescriptor *mode = desc.defineChoiceParam(kModeParam);
   mode->setLabels("mode", "mode", "mode");
-  mode->setHint("which input's metadata the output carries. The two combined modes keep "
-                "every key of both inputs, the named-first input losing any key the other "
-                "carries too; the two single-input modes pass that input's metadata "
-                "through on its own and discard the other's entirely, so the other's "
-                "unique keys are gone rather than merely overridden. The image always "
-                "comes from Source whichever is chosen");
+  mode->setHint("which input's metadata is kept");
   mode->appendOption("Source only");
   mode->appendOption("Mask only");
   mode->appendOption("Source over Mask");
@@ -308,12 +303,7 @@ void MetadataCopyExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   StringParamDescriptor *sourceFilter = desc.defineStringParam(kSourceFilterParam);
   sourceFilter->setLabels("source filter", "source filter", "source filter");
-  sourceFilter->setHint("keep only the keys of Source this pattern matches, ignoring case, "
-                        "'*' standing for any run of characters. The whole of the text has "
-                        "to match, so 'timecode' matches that key alone and '*time*' matches "
-                        "every key holding it. This is one pattern rather than a list: a line "
-                        "of several names separated by spaces is one literal string and "
-                        "matches nothing. Empty keeps every key");
+  sourceFilter->setHint("a glob filter for Source keys");
   sourceFilter->setStringType(eStringTypeSingleLine);
   sourceFilter->setDefault("");
   sourceFilter->setAnimates(false);
@@ -321,11 +311,7 @@ void MetadataCopyExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   ChoiceParamDescriptor *sourceFilterMode = desc.defineChoiceParam(kSourceFilterModeParam);
   sourceFilterMode->setLabels("source filter mode", "source filter mode", "source filter mode");
-  sourceFilterMode->setHint("what the source filter is matched against: a key's name, its "
-                            "values, or either of them. Metadata View labels its own filter "
-                            "mode the same way for a different thing: there the mode picks "
-                            "what is displayed for a key already matched, here it picks what "
-                            "the pattern is matched against");
+  sourceFilterMode->setHint("what the filter matches");
   sourceFilterMode->appendOption("keys and values");
   sourceFilterMode->appendOption("keys only");
   sourceFilterMode->appendOption("values only");
@@ -335,9 +321,7 @@ void MetadataCopyExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   StringParamDescriptor *maskFilter = desc.defineStringParam(kMaskFilterParam);
   maskFilter->setLabels("mask filter", "mask filter", "mask filter");
-  maskFilter->setHint("the same pattern for Mask, applied to Mask's keys before the two "
-                      "inputs are combined. Each input is filtered on its own, so the two "
-                      "filters need not agree. Empty keeps every key");
+  maskFilter->setHint("a glob filter for Mask keys");
   maskFilter->setStringType(eStringTypeSingleLine);
   maskFilter->setDefault("");
   maskFilter->setAnimates(false);
@@ -345,9 +329,7 @@ void MetadataCopyExamplePluginFactory::describeInContext(OFX::ImageEffectDescrip
 
   ChoiceParamDescriptor *maskFilterMode = desc.defineChoiceParam(kMaskFilterModeParam);
   maskFilterMode->setLabels("mask filter mode", "mask filter mode", "mask filter mode");
-  maskFilterMode->setHint("what the mask filter is matched against: a key's name, its "
-                          "values, or either of them, as for the source filter mode above "
-                          "and not as Metadata View means the same labels");
+  maskFilterMode->setHint("what the filter matches");
   maskFilterMode->appendOption("keys and values");
   maskFilterMode->appendOption("keys only");
   maskFilterMode->appendOption("values only");

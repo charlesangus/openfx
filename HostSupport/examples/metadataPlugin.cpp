@@ -82,15 +82,25 @@ static const int  kDetailDefault  = 0;
 
 static OfxHost                      *gHost = 0;
 static const OfxImageEffectSuiteV1  *gEffectSuite = 0;
-static const OfxPropertySuiteV2     *gPropSuite = 0;
+static const OfxPropertySuiteV1     *gPropSuite = 0;
 static const OfxParameterSuiteV1    *gParamSuite = 0;
 static const OfxMetadataSuiteV1     *gMetadataSuite = 0;
 static const OfxMessageSuiteV2      *gMessageSuite = 0;
 
-static OfxStatus collectKey(const char *key, void *userData)
+struct KeyInfo {
+  std::string key;
+  OfxMetadataValueType type;
+  int dimension;
+};
+
+static OfxStatus collectKey(const char *key, OfxMetadataValueType type, int dimension, void *userData)
 {
   try {
-    ((std::vector<std::string> *) userData)->push_back(key);
+    KeyInfo info;
+    info.key = key;
+    info.type = type;
+    info.dimension = dimension;
+    ((std::vector<KeyInfo> *) userData)->push_back(info);
   }
   catch (...) {
     return kOfxStatErrMemory;
@@ -98,21 +108,15 @@ static OfxStatus collectKey(const char *key, void *userData)
   return kOfxStatOK;
 }
 
-/// read a key back by the type the host reports for it, rather than by knowing in
-/// advance what type it should be
-static bool readValue(OfxPropertySetHandle metadata, const char *key)
+/// read a key back by the type and dimension metadataEnumerate reported for it, rather
+/// than by knowing in advance what type it should be
+static bool readValue(OfxPropertySetHandle metadata, const char *key, OfxMetadataValueType type, int dimension)
 {
-  OfxPropDataType type = kOfxPropDataTypeNone;
-  int dimension = 0;
-
-  if(gPropSuite->propGetType(metadata, key, &type) != kOfxStatOK)
-    return false;
-
-  if(gPropSuite->propGetDimension(metadata, key, &dimension) != kOfxStatOK || dimension < 1)
+  if(dimension < 1)
     return false;
 
   switch(type) {
-  case kOfxPropDataTypeString : {
+  case kOfxMetadataValueTypeString : {
     for(int i = 0; i < dimension; ++i) {
       char *v = 0;
       if(gPropSuite->propGetString(metadata, key, i, &v) != kOfxStatOK || !v)
@@ -121,12 +125,12 @@ static bool readValue(OfxPropertySetHandle metadata, const char *key)
     return true;
   }
 
-  case kOfxPropDataTypeDouble : {
+  case kOfxMetadataValueTypeDouble : {
     std::vector<double> v(dimension);
     return gPropSuite->propGetDoubleN(metadata, key, dimension, &v[0]) == kOfxStatOK;
   }
 
-  case kOfxPropDataTypeInteger : {
+  case kOfxMetadataValueTypeInteger : {
     std::vector<int> v(dimension);
     return gPropSuite->propGetIntN(metadata, key, dimension, &v[0]) == kOfxStatOK;
   }
@@ -158,20 +162,20 @@ static OfxStatus setRetainedKeys(OfxImageEffectHandle effect,
   if(fetched != kOfxStatOK)
     return fetched;
 
-  std::vector<std::string> keys;
+  std::vector<KeyInfo> keys;
   OfxStatus status = gMetadataSuite->metadataEnumerate(metadata, collectKey, &keys);
 
   std::vector<const char *> retained;
   const size_t standardLen = strlen(kOfxMetadataKeyPrefixStandard);
 
   for(size_t i = 0; status == kOfxStatOK && i < keys.size(); ++i) {
-    if(!readValue(metadata, keys[i].c_str())) {
+    if(!readValue(metadata, keys[i].key.c_str(), keys[i].type, keys[i].dimension)) {
       status = kOfxStatFailed;
       break;
     }
 
-    if(keys[i].compare(0, standardLen, kOfxMetadataKeyPrefixStandard) == 0)
-      retained.push_back(keys[i].c_str());
+    if(keys[i].key.compare(0, standardLen, kOfxMetadataKeyPrefixStandard) == 0)
+      retained.push_back(keys[i].key.c_str());
   }
 
   if(status == kOfxStatOK) {
@@ -202,7 +206,7 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
   if(gPropSuite->propGetPointer(inArgs, kOfxImageEffectPropMetadataSet, 0, &vended) != kOfxStatOK || !vended)
     return kOfxStatFailed;
 
-  std::vector<std::string> written;
+  std::vector<KeyInfo> written;
 
   if(gMetadataSuite->metadataEnumerate((OfxPropertySetHandle) vended, collectKey, &written) != kOfxStatOK)
     return kOfxStatFailed;
@@ -351,9 +355,7 @@ static OfxStatus onLoad(void)
     return kOfxStatErrMissingHostFeature;
 
   gEffectSuite   = (const OfxImageEffectSuiteV1 *) gHost->fetchSuite(gHost->host, kOfxImageEffectSuite, 1);
-  // v2 of the property suite is the one carrying propGetType, which reading a key of
-  // an unknown type needs
-  gPropSuite     = (const OfxPropertySuiteV2 *)    gHost->fetchSuite(gHost->host, kOfxPropertySuite, 2);
+  gPropSuite     = (const OfxPropertySuiteV1 *)    gHost->fetchSuite(gHost->host, kOfxPropertySuite, 1);
   gParamSuite    = (const OfxParameterSuiteV1 *)   gHost->fetchSuite(gHost->host, kOfxParameterSuite, 1);
   gMetadataSuite = (const OfxMetadataSuiteV1 *)    gHost->fetchSuite(gHost->host, kOfxMetadataSuite, 1);
   gMessageSuite  = (const OfxMessageSuiteV2 *)     gHost->fetchSuite(gHost->host, kOfxMessageSuite, 2);

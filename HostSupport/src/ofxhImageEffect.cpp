@@ -2627,15 +2627,36 @@ namespace OFX {
 
         // the callback may call back into the suite, and may release this very handle,
         // so walk a copy of the key list rather than the map itself
-        std::vector<std::string> keys;
+        struct KeyInfo {
+          std::string key;
+          OfxMetadataValueType type;
+          int dimension;
+        };
+        std::vector<KeyInfo> keys;
         const Property::PropertyMap &map = set->getProperties();
         Property::PropertyMap::const_iterator i;
-        for(i = map.begin(); i != map.end(); ++i)
-          keys.push_back((*i).first);
+        for(i = map.begin(); i != map.end(); ++i) {
+          OfxMetadataValueType type;
+          switch((*i).second->getType()) {
+          case Property::eInt:
+            type = kOfxMetadataValueTypeInteger;
+            break;
+          case Property::eDouble:
+            type = kOfxMetadataValueTypeDouble;
+            break;
+          case Property::eString:
+            type = kOfxMetadataValueTypeString;
+            break;
+          default:
+            continue;
+          }
+          KeyInfo info = { (*i).first, type, (*i).second->getDimension() };
+          keys.push_back(info);
+        }
 
-        std::vector<std::string>::const_iterator k;
+        std::vector<KeyInfo>::const_iterator k;
         for(k = keys.begin(); k != keys.end(); ++k) {
-          OfxStatus st = callback((*k).c_str(), userData);
+          OfxStatus st = callback(k->key.c_str(), k->type, k->dimension, userData);
           if(st != kOfxStatOK)
             return st;
         }

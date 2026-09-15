@@ -204,7 +204,7 @@ namespace MyHost {
 
 namespace {
 
-  const OfxPropertySuiteV2    *gPropSuite = NULL;
+  const OfxPropertySuiteV1    *gPropSuite = NULL;
   const OfxMetadataSuiteV1    *gMetadataSuite = NULL;
   const OfxImageEffectSuiteV1 *gEffectSuite = NULL;
   const OfxMessageSuiteV2     *gMessageSuite = NULL;
@@ -404,33 +404,54 @@ namespace {
     return joined;
   }
 
-  OfxStatus collectKey(const char *key, void *userData)
+  OfxStatus collectKey(const char *key, OfxMetadataValueType /*type*/, int /*dimension*/, void *userData)
   {
     ((std::set<std::string> *) userData)->insert(key);
     return kOfxStatOK;
   }
 
-  /// read a key back the way a plugin has to, by asking the host what type and dimension
-  /// it has rather than by knowing in advance
+  struct FindKeyState {
+    std::string key;
+    bool found;
+    OfxMetadataValueType type;
+    int dimension;
+  };
+
+  OfxStatus captureKeyInfo(const char *key, OfxMetadataValueType type, int dimension, void *userData)
+  {
+    FindKeyState *state = (FindKeyState *) userData;
+    if(!state->found && state->key == key) {
+      state->found = true;
+      state->type = type;
+      state->dimension = dimension;
+    }
+    return kOfxStatOK;
+  }
+
+  /// read a key back the way a plugin has to, by learning its type and dimension from
+  /// metadataEnumerate rather than by knowing in advance
   bool readValueN(OfxPropertySetHandle metadata,
                   const char *key,
                   std::string &type,
                   int &dimension,
                   std::string &value)
   {
-    OfxPropDataType dataType = kOfxPropDataTypeNone;
-
     dimension = 0;
     value.clear();
 
-    if(gPropSuite->propGetType(metadata, key, &dataType) != kOfxStatOK)
+    FindKeyState state;
+    state.key = key;
+    state.found = false;
+
+    if(gMetadataSuite->metadataEnumerate(metadata, captureKeyInfo, &state) != kOfxStatOK || !state.found)
       return false;
 
-    if(gPropSuite->propGetDimension(metadata, key, &dimension) != kOfxStatOK || dimension < 1)
+    dimension = state.dimension;
+    if(dimension < 1)
       return false;
 
-    switch(dataType) {
-    case kOfxPropDataTypeString : {
+    switch(state.type) {
+    case kOfxMetadataValueTypeString : {
       std::vector<char *> v(dimension, (char *) NULL);
       if(gPropSuite->propGetStringN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
@@ -444,7 +465,7 @@ namespace {
       return true;
     }
 
-    case kOfxPropDataTypeDouble : {
+    case kOfxMetadataValueTypeDouble : {
       std::vector<double> v(dimension, 0.0);
       if(gPropSuite->propGetDoubleN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
@@ -456,7 +477,7 @@ namespace {
       return true;
     }
 
-    case kOfxPropDataTypeInteger : {
+    case kOfxMetadataValueTypeInteger : {
       std::vector<int> v(dimension, 0);
       if(gPropSuite->propGetIntN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
@@ -4797,7 +4818,7 @@ namespace {
     MyHost::MetadataHost host;
     OfxHost *handle = host.getHandle();
 
-    gPropSuite = (const OfxPropertySuiteV2 *) handle->fetchSuite(handle->host, kOfxPropertySuite, 2);
+    gPropSuite = (const OfxPropertySuiteV1 *) handle->fetchSuite(handle->host, kOfxPropertySuite, 1);
     gMetadataSuite = (const OfxMetadataSuiteV1 *) handle->fetchSuite(handle->host, kOfxMetadataSuite, 1);
     gEffectSuite = (const OfxImageEffectSuiteV1 *) handle->fetchSuite(handle->host, kOfxImageEffectSuite, 1);
     gMessageSuite = (const OfxMessageSuiteV2 *) handle->fetchSuite(handle->host, kOfxMessageSuite, 2);
@@ -4818,6 +4839,9 @@ namespace {
 
     if(pluginId.empty()) {
 #ifdef OFX_SUPPORTS_METADATA
+      const bool v2 = handle->fetchSuite(handle->host, kOfxPropertySuite, 2) != NULL;
+      report.check(!v2, std::string("host propertysuite v2 ") + (v2 ? "present" : "absent"));
+
       checkFixture(report);
       checkComparators(report);
       checkClips(report);

@@ -104,14 +104,14 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual bool getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
-bool
+void
 MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return false;
+    return;
 
   std::string note;
   note_->getValue(note);
@@ -153,8 +153,6 @@ MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OF
     // inherit all: leave outArgs untouched
     break;
   }
-
-  return true;
 }
 
 // the overridden render function

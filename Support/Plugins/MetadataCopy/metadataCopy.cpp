@@ -194,7 +194,7 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual bool getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
 
 protected :
   /* narrow what is inherited from one clip to the keys its own filter matches */
@@ -235,11 +235,11 @@ MetadataCopyPlugin::retainMatchingKeys(double time,
   inheritance.setRetainedKeys(clip, kept);
 }
 
-bool
+void
 MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &/*metadata*/, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return false;
+    return;
 
   int mode = eModeSourceOverMask;
   mode_->getValue(mode);
@@ -273,8 +273,6 @@ MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Metadat
     else
       retainMatchingKeys(args.time, *maskClip_, *maskFilter_, *maskFilterMode_, inheritance);
   }
-
-  return true;
 }
 
 // the overridden render function

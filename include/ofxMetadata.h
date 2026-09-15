@@ -232,10 +232,13 @@ produce such keys may omit them.
 
    - Type - string X 1
 
-The value is a single, fully resolved path in the native syntax of the host's
-filesystem, never a sequence pattern: for a numbered image sequence it names the
-one file holding this image, with the frame number substituted. For a container
-holding several images, such as a movie file, it is the path of the container.
+The value is a single, fully resolved path to an existing file, in the native
+syntax of the host's filesystem, never a sequence pattern: for a numbered image
+sequence it names the one file holding this image, with the frame number
+substituted, and a plugin that needs the pattern must derive it itself, using
+\ref kOfxMetadataKeySourceFrame for the varying part. For a container holding
+several images, such as a movie file, it is the path of the container, and every
+image read from it carries the same value.
 
  @version Added in OpenFX NEXT
 */
@@ -486,8 +489,9 @@ unchanged and unparsed.
 
 Each element is the name of one view, for example "left" and "right", in the
 order the source stores them. A host need not populate this key, and a plugin
-must not treat its absence as meaning the source is monoscopic; a plugin that
-needs to know about views must use the multi-view mechanisms of the API.
+must not depend on it being present or treat its absence as meaning the source
+is monoscopic; a plugin that needs to know about views must use the multi-view
+mechanisms of the API.
 
  @version Added in OpenFX NEXT
 */

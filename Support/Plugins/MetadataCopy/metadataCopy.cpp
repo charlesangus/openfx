@@ -6,6 +6,7 @@
 #include <windows.h>
 #endif
 
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <memory>
@@ -194,7 +195,7 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual bool getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
 
 protected :
   /* narrow what is inherited from one clip to the keys its own filter matches */
@@ -235,11 +236,11 @@ MetadataCopyPlugin::retainMatchingKeys(double time,
   inheritance.setRetainedKeys(clip, kept);
 }
 
-bool
+void
 MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &/*metadata*/, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return false;
+    return;
 
   int mode = eModeSourceOverMask;
   mode_->getValue(mode);
@@ -265,6 +266,10 @@ MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Metadat
     break;
   }
 
+  // an unconnected Mask carries nothing, and reading it at all is an error
+  if(!maskClip_->isConnected())
+    clips.erase(std::remove(clips.begin(), clips.end(), std::string(kMaskClip)), clips.end());
+
   inheritance.setSourceClips(clips);
 
   for(size_t i = 0; i < clips.size(); i++) {
@@ -273,8 +278,6 @@ MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Metadat
     else
       retainMatchingKeys(args.time, *maskClip_, *maskFilter_, *maskFilterMode_, inheritance);
   }
-
-  return true;
 }
 
 // the overridden render function

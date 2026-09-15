@@ -667,20 +667,25 @@ namespace OFX {
       gGetClipPreferencesOutArgProps, sizeof(gGetClipPreferencesOutArgProps)/sizeof(PropertyDescription),
       NULLPTR);
 
-    /** @brief kOfxImageEffectActionGetMetadata action's outargs properties
+    /** @brief kOfxImageEffectActionGetMetadata action's inargs properties */
+    static PropertyDescription gGetMetadataActionInArgProps[ ] =
+    {
+      PropertyDescription(kOfxPropTime,                           OFX::eDouble,  1, eDescFinished),
+      PropertyDescription(kOfxImageEffectPropMetadataSet,         OFX::ePointer, 1, eDescFinished),
+    };
 
-    The retained-keys property, OfxImageClipPropMetadataRetainedKeys_<clip>, is not described
-    here: its name depends on the attached clip and so cannot appear in a static table. The
-    per-clip names are built descriptor-side by ImageEffectDescriptor::defineClip into
-    _clipMetadataRetainedKeysPropNames, exposed via getClipMetadataRetainedKeysPropNames(); using
-    them here would require passing the descriptor into validateActionArgumentsProperties, which
-    it does not currently take. */
+    /** @brief kOfxImageEffectActionGetMetadata in argument property set */
+    static PropertySetDescription gGetMetadataActionInArgPropSet(kOfxImageEffectActionGetMetadata " in argument",
+      gGetMetadataActionInArgProps, sizeof(gGetMetadataActionInArgProps)/sizeof(PropertyDescription),
+      NULLPTR);
+
+    /** @brief kOfxImageEffectActionGetMetadata action's outargs properties; the per-clip OfxImageClipPropMetadataRetainedKeys_<clip> properties are not listed as their names depend on the clips the effect describes */
     static PropertyDescription gGetMetadataActionOutArgProps[ ] =
     {
       PropertyDescription(kOfxImageEffectPropMetadataSourceClip, OFX::eString, -1, eDescFinished),
     };
 
-    /** @brief kOfxImageEffectActionGetMetadata property set */
+    /** @brief kOfxImageEffectActionGetMetadata out argument property set */
     static PropertySetDescription gGetMetadataActionOutArgPropSet(kOfxImageEffectActionGetMetadata " out argument",
       gGetMetadataActionOutArgProps, sizeof(gGetMetadataActionOutArgProps)/sizeof(PropertyDescription),
       NULLPTR);
@@ -1191,6 +1196,7 @@ namespace OFX {
         gGetClipPreferencesOutArgPropSet.validate(outArgs);
       }
       else if(action == kOfxImageEffectActionGetMetadata) {
+        gGetMetadataActionInArgPropSet.validate(inArgs);
         gGetMetadataActionOutArgPropSet.validate(outArgs);
       }
       else if(action == kOfxImageEffectActionIsIdentity) {

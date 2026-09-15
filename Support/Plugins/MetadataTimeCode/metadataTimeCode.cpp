@@ -179,14 +179,14 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual bool getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
-bool
+void
 MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &/*inheritance*/)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return false;
+    return;
 
   double rate = 0;
   rate_->getValue(rate);
@@ -222,8 +222,6 @@ MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Met
   metadata.setString(kOfxMetadataKeyTimecode,
                      framesToTimecode(timecodeToFrames(startTimecode, counted) + offset, counted));
   metadata.setDouble(kOfxMetadataKeyFrameRate, rate);
-
-  return true;
 }
 
 // the overridden render function

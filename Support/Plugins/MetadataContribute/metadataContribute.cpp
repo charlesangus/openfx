@@ -8,6 +8,7 @@
 
 #include <cstring>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -104,14 +105,14 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual bool getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
-bool
+void
 MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
-    return false;
+    return;
 
   std::string note;
   note_->getValue(note);
@@ -126,6 +127,12 @@ MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OF
   metadata.setIntN(std::string(kKeyPrefix) + "renderRegion", std::vector<int>({0, 0, 1280, 720}));
   metadata.setDoubleN(std::string(kKeyPrefix) + "weights", std::vector<double>({1.0, 0.5, 0.25}));
   metadata.setDouble(kOfxMetadataKeyFrameRate, 30.0);
+
+  // the host rejects metadataRelease on this action's writable set but still permits
+  // metadataEnumerate on it, so contents() can read back what was just written above
+  std::ostringstream contributedLog;
+  contributedLog << "contributed keys=" << metadata.contents().keys().size();
+  sendMessage(OFX::Message::eMessageLog, "", contributedLog.str());
 
   int mode = eModeInheritAll;
   mode_->getValue(mode);
@@ -153,8 +160,6 @@ MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OF
     // inherit all: leave outArgs untouched
     break;
   }
-
-  return true;
 }
 
 // the overridden render function

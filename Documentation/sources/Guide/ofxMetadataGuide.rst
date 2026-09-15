@@ -45,11 +45,11 @@ a clip at one specific time, so there is nothing left to parameterise.
 Checking whether the host can supply metadata
 ==============================================
 
-Reading a key of a type the plugin didn't ask for relies on the generic
-Property Suite to report what type the host actually holds it as, so a
-host only qualifies as supporting metadata if it exposes both
-:c:macro:`kOfxMetadataSuite` and ``OfxPropertySuiteV2``. The support
-library checks both suites for you and folds them into a single flag:
+Reading a key back as a type the plugin didn't ask for relies on
+``OfxMetadataSuiteV1::metadataEnumerate`` to report what type the host
+actually holds it as, so a host only qualifies as supporting metadata if
+it exposes :c:macro:`kOfxMetadataSuite`. The support library checks for
+that suite and folds the result into a single flag:
 
 .. code:: c++
 
@@ -344,11 +344,11 @@ forgets to return true loses all of it silently, with no error to
 signal that anything was ignored.
 
 There is no property to say when a previous answer from this action has
-gone stale. The host does not need one: it re-calls
-:c:macro:`kOfxImageEffectActionGetMetadata` whenever the effect's
-parameter or input state changes, using the same hash it already
-maintains for its render cache, so there is nothing for a plugin to
-invalidate by hand.
+gone stale. Instead, an answer stays valid only as long as the input
+metadata it was composed from, the effect's parameter values and the
+effect's clip connections are unchanged, and the host must re-call
+:c:macro:`kOfxImageEffectActionGetMetadata` after any of those change,
+so there is nothing for a plugin to invalidate by hand.
 
 Finally, the handle backing both ``metadata`` and ``inheritance`` is
 owned by the host for the duration of the action only. As with a

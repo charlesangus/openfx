@@ -147,6 +147,9 @@ public :
   /* Override changedParam */
   virtual void changedParam(const OFX::InstanceChangedArgs &args, const std::string &paramName);
 
+  /* Override changedClip */
+  virtual void changedClip(const OFX::InstanceChangedArgs &args, const std::string &clipName);
+
   /* the matching metadata of the source clip at the given time, one entry per line */
   std::string displayText(double time);
 };
@@ -185,13 +188,19 @@ MetadataViewPlugin::displayText(double time)
   return text;
 }
 
-// a render must not write a parameter, so the display is composed here instead, at
-// whatever time the host reports the change at
+// a render must not write a parameter, so the display is composed on a change instead,
+// at whatever time the host reports the change at
 void
 MetadataViewPlugin::changedParam(const OFX::InstanceChangedArgs &args, const std::string &paramName)
 {
   if(paramName == kFilterParam || paramName == kFilterModeParam)
     display_->setValue(displayText(args.time));
+}
+
+void
+MetadataViewPlugin::changedClip(const OFX::InstanceChangedArgs &args, const std::string &/*clipName*/)
+{
+  display_->setValue(displayText(args.time));
 }
 
 // the overridden render function

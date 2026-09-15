@@ -1012,63 +1012,8 @@ namespace OFX {
         }
       }
 
-      /// static functions for the suite
-      static OfxStatus propGetType(OfxPropertySetHandle properties, const char *property, OfxPropDataType *type) {
-#       ifdef OFX_DEBUG_PROPERTIES
-        std::cout << "OFX: propGetType - " << properties << ' ' << property << " ...";
-#       endif
-        if (!properties) {
-#         ifdef OFX_DEBUG_PARAMETERS
-          std::cout << ' ' << StatStr(kOfxStatErrBadHandle) << std::endl;
-#         endif
-          return kOfxStatErrBadHandle;
-        }
-        try {
-          Set *thisSet = reinterpret_cast<Set*>(properties);
-          Property *prop = thisSet->fetchProperty(property, true);
-          if(!prop) {
-#           ifdef OFX_DEBUG_PROPERTIES
-            std::cout << "unknown property\n";
-#           endif
-            return kOfxStatErrUnknown;
-          }
-          switch(prop->getType()) {
-          case eInt:
-            *type = kOfxPropDataTypeInteger;
-            break;
-          case eDouble:
-            *type = kOfxPropDataTypeDouble;
-            break;
-          case eString:
-            *type = kOfxPropDataTypeString;
-            break;
-          case ePointer:
-            *type = kOfxPropDataTypePointer;
-            break;
-          case eNone:
-          default:
-            *type = kOfxPropDataTypeNone;
-            break;
-          }
-#         ifdef OFX_DEBUG_PROPERTIES
-          std::cout << *type << ' ' << StatStr(kOfxStatOK) << std::endl;
-#         endif
-          return kOfxStatOK;
-        } catch (const Exception& e) {
-#         ifdef OFX_DEBUG_PROPERTIES
-          std::cout << ' ' << StatStr(e.getStatus()) << std::endl;
-#         endif
-          return e.getStatus();
-        } catch (...) {
-#         ifdef OFX_DEBUG_PROPERTIES
-          std::cout << ' ' << StatStr(kOfxStatErrUnknown) << std::endl;
-#         endif
-          return kOfxStatErrUnknown;
-        }
-      }
-
       /// the actual suite that is passed across the API to manage properties
-      struct OfxPropertySuiteV2 gSuite = {
+      struct OfxPropertySuiteV1 gSuite = {
         propSet<PointerValue>,
         propSet<StringValue>,
         propSet<DoubleValue>,
@@ -1086,14 +1031,13 @@ namespace OFX {
         propGetN<DoubleValue>,
         propGetN<IntValue>,
         propReset,
-        propGetDimension,
-        propGetType
-      };
-
+        propGetDimension
+      };     
+      
       /// return the OFX function suite that manages properties
       const void *GetSuite(int version)
       {
-        if(version == 1 || version == 2)
+        if(version == 1)
           return (void *)(&gSuite);
         return NULL;
       }

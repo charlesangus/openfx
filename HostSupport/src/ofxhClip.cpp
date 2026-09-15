@@ -216,7 +216,7 @@ namespace OFX {
       ClipInstance::~ClipInstance()
       {
 #       ifdef OFX_SUPPORTS_METADATA
-        invalidateMetadata();
+        releaseMetadataCache();
 #       endif
       }
 
@@ -519,11 +519,16 @@ namespace OFX {
         return metadata;
       }
 
-      void ClipInstance::invalidateMetadata()
+      void ClipInstance::releaseMetadataCache()
       {
         for(std::map<OfxTime, MetadataSet*>::iterator it = _metadataCache.begin(); it != _metadataCache.end(); ++it)
           it->second->releaseReference();
         _metadataCache.clear();
+      }
+
+      void ClipInstance::invalidateMetadata()
+      {
+        releaseMetadataCache();
 
         // the effect's output clip holds copies of what its inputs carry, so dropping an
         // input clip's sets has to drop the ones derived from it too. The recursion stops

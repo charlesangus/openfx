@@ -49,8 +49,10 @@ than under a vendor-specific name.
 /** @brief Action called to retrieve the metadata an effect contributes for a clip at a given time.
 
 Metadata is a property of an image — a clip at a specific time — and this action is always time-parameterised.
-The host calls this action whenever the effect's parameter or input state changes, using the same hash it
-already uses for the render cache, so no separate invalidation property is required or defined.
+This action's result for a given time is valid only while the input metadata it was
+composed from, the effect's parameter values and the effect's clip connections remain
+unchanged; the host must re-issue the action after any of those change, so no separate
+invalidation property is required or defined.
 
 An effect writes the metadata it contributes into the metadata property set passed in
 \ref kOfxImageEffectPropMetadataSet, or it may choose not to contribute any metadata at all.
@@ -83,15 +85,17 @@ means anything it wrote to be honoured has to return ::kOfxStatOK.
  named by \ref kOfxImageEffectPropMetadataSet. It has the following properties
      - \ref kOfxImageEffectPropMetadataSourceClip the ordered list of input clip names whose
        metadata the output composes, read in increasing precedence, defaulting to a
-       single-element list naming the first input clip described by the effect
-     - a set of char * X N properties, one for each of the input clips currently attached,
-       labelled with ``OfxImageClipPropMetadataRetainedKeys_`` post pended with the clip's name,
-       for example ``OfxImageClipPropMetadataRetainedKeys_Source``. Each such property lists the
-       metadata keys retained from that input clip. A key absent from the list on a clip is not
-       carried through from that clip. The host initialises the list for the effect's first
-       input clip, the clip named by the default value of \ref kOfxImageEffectPropMetadataSourceClip,
-       to the full set of keys present on that clip, and to the empty list for every other input
-       clip, before the action is called.
+       single-element list naming the first connected input clip in the order the effect
+       described them, or the empty list if none is connected
+     - a set of char * X N properties, one for each input clip the effect describes, connected
+       or not, labelled with ``OfxImageClipPropMetadataRetainedKeys_`` post pended with the
+       clip's name, for example ``OfxImageClipPropMetadataRetainedKeys_Source``. Each such
+       property lists the metadata keys retained from that input clip. A key absent from the
+       list on a clip is not carried through from that clip. The host initialises the list for
+       the clip named by the default value of \ref kOfxImageEffectPropMetadataSourceClip to the
+       full set of keys present on that clip, and to the empty list for every other input clip,
+       before the action is called. An input clip that is not connected contributes nothing to
+       the composition, even when the list names it.
 
  @returns
      - \ref kOfxStatOK the action was trapped and the effect has populated outArgs with the metadata it contributes,
@@ -123,8 +127,9 @@ pointer holding an \ref OfxPropertySetHandle, which the effect casts it to befor
 The set arrives empty, and is the only metadata property set an effect may write to. Keys are added
 to it with the ``metadataSet`` entry points of \ref OfxMetadataSuiteV1, which create a key that is
 not already present; a key cannot be created through the generic Property Suite, which fails on a
-property that does not already exist. Once a key has been written, its value can be read back with
-OfxMetadataSuiteV1::metadataEnumerate and the generic Property Suite.
+property that does not already exist. Once a key has been written, its value can be read back
+through the generic Property Suite, using the type and dimension that
+OfxMetadataSuiteV1::metadataEnumerate reports for it.
 
 The handle is owned by the host and is valid only for the duration of the action. It must not be
 released with OfxMetadataSuiteV1::metadataRelease.
@@ -164,8 +169,8 @@ the list.
    - Property Set - outArgs property set of the \ref kOfxImageEffectActionGetMetadata action
    - Valid Values - the name of any of the effect's input clips, each may appear at most once and
                     in any order; the empty list is valid and means no metadata is inherited
-   - Default - a single-element list naming the first input clip described by the effect, or the
-               empty list if the effect has no input clips
+   - Default - a single-element list naming the first connected input clip in the order the
+               effect described them, or the empty list if no input clip is connected
 
  @version Added in OpenFX NEXT
 
@@ -586,9 +591,30 @@ names has a standard place to publish them.
 */
 #define kOfxMetadataKeyViewNames "ofx/viewnames"
 
+/** @brief The value type of a metadata key, as reported to OfxMetadataEnumerateFuncV1
+
+ There is no "none" or "unknown" value: enumeration only ever visits a key that
+ exists, and every existing key has one of these types.
+
+ @version Added in OpenFX NEXT
+ */
+typedef enum OfxMetadataValueType
+{
+	/** @brief The key's value is fetched with OfxPropertySuiteV1::propGetInt or propGetIntN */
+	kOfxMetadataValueTypeInteger = 1,
+
+	/** @brief The key's value is fetched with OfxPropertySuiteV1::propGetDouble or propGetDoubleN */
+	kOfxMetadataValueTypeDouble = 2,
+
+	/** @brief The key's value is fetched with OfxPropertySuiteV1::propGetString or propGetStringN */
+	kOfxMetadataValueTypeString = 3
+} OfxMetadataValueType;
+
 /** @brief Callback used by OfxMetadataSuiteV1::metadataEnumerate to visit each key in a metadata property set
 
  \arg \c key       the name of a metadata key present in the property set being enumerated
+ \arg \c type      the value type of the key
+ \arg \c dimension the number of values the key holds, 1 for a scalar key
  \arg \c userData  the opaque pointer passed to metadataEnumerate by the caller
 
  The host calls this function once for each key present in the metadata property set.
@@ -602,7 +628,7 @@ names has a standard place to publish them.
  plugin must not infer any positional or stable ordering from a particular host's
  observed behaviour.
  */
-typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, void *userData);
+typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, OfxMetadataValueType type, int dimension, void *userData);
 
 /** @brief OFX suite that allows an effect to retrieve metadata associated with a clip's images.
 
@@ -654,16 +680,16 @@ typedef struct OfxMetadataSuiteV1 {
 	 - clip was returned by clipGetHandle
 
 	 \post
-	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
-	 - on other status codes, metadata is set to NULL and there is nothing to release
+	 - on ::kOfxStatOK, metadata is a handle to a property set, possibly empty, to be disposed of by metadataRelease
+	 - on any other status code, metadata is set to NULL and there is nothing to release
 
 	 The property set returned is read-only. The metadataSet entry points fail on it with
 	 ::kOfxStatErrValue; only the set passed to the \ref kOfxImageEffectActionGetMetadata
 	 action in \ref kOfxImageEffectPropMetadataSet may be written to.
 
 	 @returns
-	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
-	 - ::kOfxStatReplyDefault - the clip has no metadata associated with it at the given time,
+	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle, which is
+	   empty if the clip has no metadata associated with it at the given time,
 	 - ::kOfxStatErrBadHandle - the clip handle was invalid,
 	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
 	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
@@ -682,16 +708,16 @@ typedef struct OfxMetadataSuiteV1 {
 	 - image was returned by OfxImageEffectSuiteV1::clipGetImage
 
 	 \post
-	 - on ::kOfxStatOK, metadata is a handle to a property set containing at least one key, to be disposed of by metadataRelease
-	 - on other status codes, metadata is set to NULL and there is nothing to release
+	 - on ::kOfxStatOK, metadata is a handle to a property set, possibly empty, to be disposed of by metadataRelease
+	 - on any other status code, metadata is set to NULL and there is nothing to release
 
 	 The property set returned is read-only. The metadataSet entry points fail on it with
 	 ::kOfxStatErrValue; only the set passed to the \ref kOfxImageEffectActionGetMetadata
 	 action in \ref kOfxImageEffectPropMetadataSet may be written to.
 
 	 @returns
-	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle,
-	 - ::kOfxStatReplyDefault - the image has no metadata associated with it,
+	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle, which is
+	   empty if the image has no metadata associated with it,
 	 - ::kOfxStatErrBadHandle - the image handle was invalid,
 	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
 	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
@@ -718,19 +744,20 @@ typedef struct OfxMetadataSuiteV1 {
 	/** @brief Enumerates the keys present in a metadata property set
 
 	 \arg \c metadata  metadata handle to enumerate the keys of
-	 \arg \c callback  function called once per key present in metadata
+	 \arg \c callback  function called once per key present in metadata, with that key's type and dimension
 	 \arg \c userData  opaque pointer passed unchanged to each call of callback
 
 	 The host calls callback once for every key present in metadata, passing the
-	 key name and userData. Enumeration stops as soon as callback returns a status
-	 other than ::kOfxStatOK, and that status becomes this call's return value.
+	 key name, its value type and dimension, and userData. Enumeration stops as soon as
+	 callback returns a status other than ::kOfxStatOK, and that status becomes this
+	 call's return value.
 
 	 No ordering of keys is guaranteed, and the order need not be stable between
 	 separate calls, even for the same metadata handle, so a plugin must not rely
 	 on a particular host's observed ordering.
 
-	 Once a key name has been obtained this way, the plugin can retrieve its value
-	 from metadata using the generic Property Suite.
+	 Once a key's name, type and dimension have been obtained this way, the plugin
+	 can retrieve its value from metadata using the generic Property Suite.
 
 	 Enumeration is permitted on the writable set passed to the
 	 \ref kOfxImageEffectActionGetMetadata action as well as on a read-only one, so a plugin
@@ -743,6 +770,8 @@ typedef struct OfxMetadataSuiteV1 {
 	 @returns
 	 - ::kOfxStatOK - enumeration completed, having visited every key,
 	 - ::kOfxStatErrBadHandle - the metadata handle was invalid,
+	 - ::kOfxStatErrValue - callback is NULL,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message,
 	 - any other status returned by callback to stop enumeration early.
 	 */
 	OfxStatus (*metadataEnumerate)(OfxPropertySetHandle metadata, OfxMetadataEnumerateFuncV1 callback, void *userData);

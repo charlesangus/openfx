@@ -87,6 +87,20 @@ namespace MyHost {
     virtual void fetchMetadata(OfxTime time, OFX::Host::Property::Set &metadata);
   };
 
+  /// the inheritance the metadata action's out args describe: what the host offered,
+  /// taken before the plugin could write over it, or what the plugin answered, taken
+  /// once it had
+  struct MetadataOffer {
+    bool taken;
+    std::vector<std::string> sources;
+    std::map<std::string, std::vector<std::string> > retained; ///< by clip; no entry when the clip's
+                                                                 ///< retained-keys property is absent from
+                                                                 ///< outArgs, an empty vector when it is
+                                                                 ///< present but names no keys
+
+    MetadataOffer() : taken(false) {}
+  };
+
   /// an effect whose clips publish the fixture
   class MetadataEffectInstance : public MyEffectInstance {
   public :
@@ -94,6 +108,8 @@ namespace MyHost {
                            OFX::Host::ImageEffect::Descriptor &desc,
                            const std::string &context)
       : MyEffectInstance(plugin, desc, context)
+      , _offer(NULL)
+      , _answer(NULL)
     {
     }
 
@@ -102,6 +118,28 @@ namespace MyHost {
                                                                   int)
     {
       return new MetadataClipInstance(descriptor, this);
+    }
+
+    /// take what the host offers each metadata action into *offer, NULL to stop
+    void setOfferCapture(MetadataOffer *offer) { _offer = offer; }
+
+    /// take what the plugin answers each metadata action with into *answer, NULL to stop
+    void setAnswerCapture(MetadataOffer *answer) { _answer = answer; }
+
+    virtual void setCustomOutArgs(const std::string &action, OFX::Host::Property::Set &outArgs)
+    {
+      MyEffectInstance::setCustomOutArgs(action, outArgs);
+
+      if(_offer && action == kOfxImageEffectActionGetMetadata)
+        readInheritance(outArgs, *_offer);
+    }
+
+    virtual void examineOutArgs(const std::string &action, OfxStatus stat, const OFX::Host::Property::Set &outArgs)
+    {
+      MyEffectInstance::examineOutArgs(action, stat, outArgs);
+
+      if(_answer && action == kOfxImageEffectActionGetMetadata)
+        readInheritance(outArgs, *_answer);
     }
 
     /// make the named input clip carry what the output clip of 'upstream' emits, rather
@@ -121,7 +159,37 @@ namespace MyHost {
     }
 
   private :
+    void readInheritance(const OFX::Host::Property::Set &outArgs, MetadataOffer &into)
+    {
+      into = MetadataOffer();
+      into.taken = true;
+
+      const int nSources = outArgs.getDimension(kOfxImageEffectPropMetadataSourceClip);
+
+      for(int i = 0; i < nSources; ++i)
+        into.sources.push_back(outArgs.getStringProperty(kOfxImageEffectPropMetadataSourceClip, i));
+
+      for(std::map<std::string, OFX::Host::ImageEffect::ClipInstance *>::const_iterator it = _clips.begin();
+          it != _clips.end(); ++it) {
+        if(it->second->isOutput())
+          continue;
+
+        const std::string &propName = metadataRetainedKeysPropName(it->first);
+
+        if(!outArgs.fetchProperty(propName))
+          continue;
+
+        std::vector<std::string> &keys = into.retained[it->first];
+        const int nKeys = outArgs.getDimension(propName);
+
+        for(int k = 0; k < nKeys; ++k)
+          keys.push_back(outArgs.getStringProperty(propName, k));
+      }
+    }
+
     std::map<std::string, OFX::Host::ImageEffect::Instance *> _upstream; ///< what each input clip is connected to
+    MetadataOffer *_offer;
+    MetadataOffer *_answer;
   };
 
   class MetadataHost : public Host {
@@ -204,7 +272,7 @@ namespace MyHost {
 
 namespace {
 
-  const OfxPropertySuiteV2    *gPropSuite = NULL;
+  const OfxPropertySuiteV1    *gPropSuite = NULL;
   const OfxMetadataSuiteV1    *gMetadataSuite = NULL;
   const OfxImageEffectSuiteV1 *gEffectSuite = NULL;
   const OfxMessageSuiteV2     *gMessageSuite = NULL;
@@ -404,33 +472,54 @@ namespace {
     return joined;
   }
 
-  OfxStatus collectKey(const char *key, void *userData)
+  OfxStatus collectKey(const char *key, OfxMetadataValueType /*type*/, int /*dimension*/, void *userData)
   {
     ((std::set<std::string> *) userData)->insert(key);
     return kOfxStatOK;
   }
 
-  /// read a key back the way a plugin has to, by asking the host what type and dimension
-  /// it has rather than by knowing in advance
+  struct FindKeyState {
+    std::string key;
+    bool found;
+    OfxMetadataValueType type;
+    int dimension;
+  };
+
+  OfxStatus captureKeyInfo(const char *key, OfxMetadataValueType type, int dimension, void *userData)
+  {
+    FindKeyState *state = (FindKeyState *) userData;
+    if(!state->found && state->key == key) {
+      state->found = true;
+      state->type = type;
+      state->dimension = dimension;
+    }
+    return kOfxStatOK;
+  }
+
+  /// read a key back the way a plugin has to, by learning its type and dimension from
+  /// metadataEnumerate rather than by knowing in advance
   bool readValueN(OfxPropertySetHandle metadata,
                   const char *key,
                   std::string &type,
                   int &dimension,
                   std::string &value)
   {
-    OfxPropDataType dataType = kOfxPropDataTypeNone;
-
     dimension = 0;
     value.clear();
 
-    if(gPropSuite->propGetType(metadata, key, &dataType) != kOfxStatOK)
+    FindKeyState state;
+    state.key = key;
+    state.found = false;
+
+    if(gMetadataSuite->metadataEnumerate(metadata, captureKeyInfo, &state) != kOfxStatOK || !state.found)
       return false;
 
-    if(gPropSuite->propGetDimension(metadata, key, &dimension) != kOfxStatOK || dimension < 1)
+    dimension = state.dimension;
+    if(dimension < 1)
       return false;
 
-    switch(dataType) {
-    case kOfxPropDataTypeString : {
+    switch(state.type) {
+    case kOfxMetadataValueTypeString : {
       std::vector<char *> v(dimension, (char *) NULL);
       if(gPropSuite->propGetStringN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
@@ -444,7 +533,7 @@ namespace {
       return true;
     }
 
-    case kOfxPropDataTypeDouble : {
+    case kOfxMetadataValueTypeDouble : {
       std::vector<double> v(dimension, 0.0);
       if(gPropSuite->propGetDoubleN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
@@ -456,7 +545,7 @@ namespace {
       return true;
     }
 
-    case kOfxPropDataTypeInteger : {
+    case kOfxMetadataValueTypeInteger : {
       std::vector<int> v(dimension, 0);
       if(gPropSuite->propGetIntN(metadata, key, dimension, &v[0]) != kOfxStatOK)
         return false;
@@ -1139,8 +1228,20 @@ namespace {
     OfxPropertySetHandle empty = NULL;
     const OfxStatus st = gMetadataSuite->clipGetMetadata(output.getHandle(), MetadataFixture::kFirstFrame, &empty);
 
-    report.check(st == kOfxStatReplyDefault && empty == NULL,
-                 "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata");
+    if(report.check(st == kOfxStatOK && empty != NULL,
+                     "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata")) {
+      std::set<std::string> found;
+      const OfxStatus enumerated = gMetadataSuite->metadataEnumerate(empty, collectKey, &found);
+
+      report.check(enumerated == kOfxStatOK && found.empty(),
+                   "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata enumerate");
+
+      report.check(gMetadataSuite->metadataEnumerate(empty, NULL, &found) == kOfxStatErrValue,
+                   "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata enumerate nullcallback");
+
+      report.check(gMetadataSuite->metadataRelease(empty) == kOfxStatOK,
+                   "clip=" + output.getName() + " time=" + formatTime(MetadataFixture::kFirstFrame) + " nometadata release");
+    }
 
     for(size_t i = 0; i < clips.size(); ++i)
       delete clips[i];
@@ -1897,6 +1998,41 @@ namespace {
 
 #endif // OFX_SUPPORTS_METADATA
 
+  /// the first clip 'instance' described that is not the output clip, in the order the
+  /// effect described them; only the fixture's own plugins are guaranteed to have
+  /// named it kOfxImageEffectSimpleSourceClipName, so this is what a check driving an
+  /// arbitrary plugin has to ask for instead. NULL for a plugin that described no
+  /// input clip at all, which a Generator-context effect and an input-less General one
+  /// both may do
+  OFX::Host::ImageEffect::ClipInstance *firstInputClip(OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::vector<OFX::Host::ImageEffect::ClipDescriptor *> &clips =
+      instance.getDescriptor().getClipsByOrder();
+
+    for(size_t i = 0; i < clips.size(); ++i) {
+      if(!clips[i]->isOutput())
+        return instance.getClip(clips[i]->getName());
+    }
+
+    return NULL;
+  }
+
+  /// how many clips 'instance' described that are not the output clip
+  int countInputClips(OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::vector<OFX::Host::ImageEffect::ClipDescriptor *> &clips =
+      instance.getDescriptor().getClipsByOrder();
+
+    int count = 0;
+
+    for(size_t i = 0; i < clips.size(); ++i) {
+      if(!clips[i]->isOutput())
+        count += 1;
+    }
+
+    return count;
+  }
+
   /// what a render pass produced, for a caller with more to say about it than checkRender
   /// says on its own
   struct RenderPass {
@@ -1933,8 +2069,7 @@ namespace {
     roi.x1 = roi.y1 = 0;
     roi.x2 = roi.y2 = 4;
 
-    MyHost::MyClipInstance *source =
-      dynamic_cast<MyHost::MyClipInstance *>(instance.getClip(kOfxImageEffectSimpleSourceClipName));
+    OFX::Host::ImageEffect::ClipInstance *source = firstInputClip(instance);
     MyHost::MyClipInstance *output =
       dynamic_cast<MyHost::MyClipInstance *>(instance.getClip(kOfxImageEffectOutputClipName));
 
@@ -1960,30 +2095,40 @@ namespace {
         report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
                      "render frame=" + formatTime(time) + " roi");
 
-        // a plugin which has yet to fetch its output image has left nothing to compare,
-        // and comparing what it renders against what it started from says nothing unless
-        // the two differed to begin with
-        MyHost::MyImage *held = output ? output->getOutputImage() : NULL;
+        // whatever the output clip is holding before this frame renders is leftover
+        // from a previous render, so comparing it against this frame's source says
+        // nothing about this frame unless the two already differ; a plugin that has
+        // never fetched its output image has left nothing to establish that with,
+        // which is expected on the first frame and not itself a fault
+        MyHost::MyImage *before = output ? output->getOutputImage() : NULL;
         MyHost::MyImage *wanted =
-          held && source ? dynamic_cast<MyHost::MyImage *>(source->getImage(time, NULL)) : NULL;
+          source ? dynamic_cast<MyHost::MyImage *>(source->getImage(time, NULL)) : NULL;
 
-        const bool comparable = wanted && !imagesEqual(*held, *wanted, renderWindow);
-
-        if(wanted)
-          report.check(comparable, "render frame=" + formatTime(time) + " pixels differ");
+        if(before && wanted)
+          report.check(!imagesEqual(*before, *wanted, renderWindow),
+                       "render frame=" + formatTime(time) + " pixels differ");
 
         stat = instance.renderAction(time, kOfxImageFieldBoth, renderWindow, renderScale,
                                      /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
         report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
                      "render frame=" + formatTime(time));
 
-        if(comparable) {
+        // fetch again now that render has had its chance to produce one, rather than
+        // trust the pre-render snapshot above: that makes this comparison
+        // self-sufficient on every frame, including the first, instead of silently
+        // skipped whenever there was nothing to compare beforehand
+        MyHost::MyImage *held = output ? output->getOutputImage() : NULL;
+
+        if(held && wanted) {
           const bool identical = imagesEqual(*held, *wanted, renderWindow);
 
           if(identical)
             passedThrough += 1;
 
           report.check(identical, "render frame=" + formatTime(time) + " pixels rendered");
+        }
+        else {
+          report.check(true, "render frame=" + formatTime(time) + " pixels not comparable");
         }
 
         if(wanted)
@@ -2098,6 +2243,33 @@ namespace {
 
   /// the frames of the fixture range, which is what the contract below counts in
   const int kFixtureFrames = int(MetadataFixture::kLastFrame - MetadataFixture::kFirstFrame) + 1;
+
+  /// drive one effect's parameters through the actions a host raises around a user edit
+  void paramsChanged(OFX::Host::ImageEffect::Instance &instance, const char *const *params, int count)
+  {
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+
+    for(int i = 0; i < count; ++i)
+      instance.paramInstanceChangedAction(params[i], kOfxChangeUserEdited,
+                                          MetadataFixture::kFirstFrame, renderScale);
+
+    instance.endInstanceChangedAction(kOfxChangeUserEdited);
+  }
+
+  /// what a host raises at an effect when one of its input clips changed: a connection
+  /// made or broken, or something upstream of it now emitting differently
+  void clipChanged(OFX::Host::ImageEffect::Instance &instance, const std::string &clip, OfxTime time)
+  {
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    instance.beginInstanceChangedAction(kOfxChangeUserEdited);
+    instance.clipInstanceChangedAction(clip, kOfxChangeUserEdited, time, renderScale);
+    instance.endInstanceChangedAction(kOfxChangeUserEdited);
+  }
 
   /// the keys the fixture gives a clip at a time
   void fixtureKeySet(const std::string &clip, OfxTime time, std::set<std::string> &keys)
@@ -2260,6 +2432,27 @@ namespace {
     }
 
     return escaped;
+  }
+
+  /// the first line of text opening with prefix, empty if it carries none
+  std::string lineWith(const std::string &text, const std::string &prefix)
+  {
+    std::string::size_type at = 0;
+
+    while(at <= text.size()) {
+      const std::string::size_type end = text.find('\n', at);
+      const std::string line = text.substr(at, end == std::string::npos ? end : end - at);
+
+      if(line.compare(0, prefix.size(), prefix) == 0)
+        return line;
+
+      if(end == std::string::npos)
+        break;
+
+      at = end + 1;
+    }
+
+    return std::string();
   }
 
   char lowerCase(char c)
@@ -2570,6 +2763,30 @@ namespace {
     report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
   }
 
+  /// how many lines of captured log text read exactly "contributed keys=<expected>", the
+  /// shape MetadataContribute logs after reading its own writes back through
+  /// MetadataSetBuilder::contents(), so that a wrong count or a stray extra digit misses
+  int countContributedKeyLogs(const std::string &text, int expected)
+  {
+    const std::string marker = "contributed keys=";
+    std::istringstream lines(text);
+    std::string line;
+    int matches = 0;
+
+    while(std::getline(lines, line)) {
+      const std::string::size_type at = line.find(marker);
+
+      if(at == std::string::npos)
+        continue;
+
+      int value = 0;
+      if(parseInt(line.substr(at + marker.size()), value) && value == expected)
+        matches += 1;
+    }
+
+    return matches;
+  }
+
   /// hold a plugin which contributes metadata of its own to what its output clip comes
   /// back carrying, over every mode it inherits its source clip's metadata under and
   /// every frame of the fixture range, with the image still passed through untouched.
@@ -2588,6 +2805,9 @@ namespace {
 
     if(!report.check(output != NULL, contract + " clip=" kOfxImageEffectOutputClipName))
       return;
+
+    MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(&instance);
+    report.check(effect != NULL, contract + " effect instance");
 
     const std::string dropKey = contributeDropKey();
 
@@ -2624,8 +2844,25 @@ namespace {
                                           MetadataFixture::kFirstFrame, renderScale);
       instance.endInstanceChangedAction(kOfxChangeUserEdited);
 
+      // each clipGetMetadata below fetches a time the invalidation above dropped from
+      // the output clip's cache, so it runs the plugin's getMetadata action and its log
+      // line exactly once per frame; capturing around the loop, the way checkRender
+      // captures around a render pass, is what makes that line observable at all
+      std::string contributedCaptured;
+      if(effect)
+        effect->setMessageCapture(&contributedCaptured);
+
       for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1)
         checkContributed(report, *output, mode, time, dropKey, contributed, where);
+
+      if(effect)
+        effect->setMessageCapture(NULL);
+
+      const int loggedKeyCounts = countContributedKeyLogs(contributedCaptured, kContributedKeyCount);
+
+      report.check(loggedKeyCounts == kFixtureFrames,
+                   where + " contents() logged=" + formatInt(loggedKeyCounts)
+                   + " expected=" + formatInt(kFixtureFrames));
 
       RenderPass pass;
       checkRender(report, instance, &pass);
@@ -2653,8 +2890,9 @@ namespace {
   /// hold a two node --upstream chain to what a node downstream of another has to see:
   /// the tail's output clip carrying the union of what the fixture publishes for its
   /// source and what the head contributes, the head's contributed values winning over
-  /// the fixture's own, and a change to the head reaching the tail only once the chain
-  /// has been invalidated
+  /// the fixture's own, a change to the head reaching the tail only once the chain has
+  /// been invalidated, and the tail's own display taking that change up when its source
+  /// clip is reported changed
   void checkMetadataChain(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
     const std::string contract = "metadata-chain";
@@ -2756,6 +2994,16 @@ namespace {
 
     if(revised)
       report.check(gMetadataSuite->metadataRelease(revised) == kOfxStatOK, contract + " downstream released");
+
+    clipChanged(instance, kOfxImageEffectSimpleSourceClipName, MetadataFixture::kFirstFrame);
+
+    std::string shown = "none";
+    const bool displayed = sees
+                           && getParamValue(instance, kDisplayParam, shown)
+                           && lineWith(shown, noteKey + "=") == noteKey + "=" + note->value;
+
+    report.check(displayed, contract + " tail display holds " + noteKey + "=" + (note ? note->value : "none")
+                 + " shown=" + escapeLines(shown));
 #   else
     (void) instance;
 #   endif // OFX_SUPPORTS_METADATA
@@ -3614,6 +3862,26 @@ namespace {
     return true;
   }
 
+  /// the keys an effect's output clip carries at one frame
+  bool readOutputKeys(OFX::Host::ImageEffect::ClipInstance &output, OfxTime time, std::set<std::string> &keys)
+  {
+    OfxPropertySetHandle metadata = NULL;
+
+    if(gMetadataSuite->clipGetMetadata(output.getHandle(), time, &metadata) != kOfxStatOK || !metadata)
+      return false;
+
+    const bool ok = gMetadataSuite->metadataEnumerate(metadata, collectKey, &keys) == kOfxStatOK;
+
+    gMetadataSuite->metadataRelease(metadata);
+
+    return ok;
+  }
+
+  std::string joinKeys(const std::vector<std::string> &keys)
+  {
+    return joinKeys(std::set<std::string>(keys.begin(), keys.end()));
+  }
+
   /// read the effect's output clip at one frame and check it carries what the mode and
   /// the cell leave of the two inputs, and that the collided key came off the input the
   /// mode put on top rather than off the other
@@ -3631,14 +3899,6 @@ namespace {
 
     OfxPropertySetHandle metadata = NULL;
     const OfxStatus fetched = gMetadataSuite->clipGetMetadata(output.getHandle(), time, &metadata);
-
-    // a clip left carrying nothing answers kOfxStatReplyDefault and no handle at all,
-    // which is what the cells that retain nothing on the composed side come back as
-    if(expected.empty()) {
-      report.check(fetched == kOfxStatReplyDefault && metadata == NULL,
-                   where + " keys=none status=" + formatInt(fetched));
-      return;
-    }
 
     if(!report.check(fetched == kOfxStatOK && metadata,
                      where + " fetched status=" + formatInt(fetched)))
@@ -3672,6 +3932,99 @@ namespace {
     }
 
     report.check(gMetadataSuite->metadataRelease(metadata) == kOfxStatOK, where + " released");
+  }
+
+  /// the same plugin with Mask unconnected, under the default mode with nothing
+  /// filtered: the output carries Source's keys alone, and the plugin's answer names
+  /// Source as the one clip composed and retains nothing from Mask. The harness clip
+  /// publishes the fixture for Mask whether connected or not, and the host composes
+  /// nothing from an unconnected clip whatever an answer retains from it, so the answer
+  /// is what shows the plugin declined to read the clip rather than the host having
+  /// covered for it
+  void checkCopyUnconnected(Report &report,
+                            OFX::Host::ImageEffect::Instance &instance,
+                            OFX::Host::ImageEffect::ClipInstance &output,
+                            const std::string &contract)
+  {
+#   ifdef OFX_SUPPORTS_METADATA
+    const std::string where = contract + " unconnected clip=" + kCopyMaskClip;
+
+    MyHost::MetadataEffectInstance *effect = dynamic_cast<MyHost::MetadataEffectInstance *>(&instance);
+    MyHost::MyClipInstance *maskClip = dynamic_cast<MyHost::MyClipInstance *>(instance.getClip(kCopyMaskClip));
+
+    if(!report.check(effect != NULL && maskClip != NULL, where + " instance"))
+      return;
+
+    const bool driven =
+      setParamValue(instance, kCopyModeParam, formatInt(eCopyModeSourceOverMask))
+      && setParamValue(instance, kCopySourceFilterParam, "")
+      && setParamValue(instance, kCopySourceFilterModeParam, formatInt(eFilterModeKeysAndValues))
+      && setParamValue(instance, kCopyMaskFilterParam, "")
+      && setParamValue(instance, kCopyMaskFilterModeParam, formatInt(eFilterModeKeysAndValues));
+
+    if(!report.check(driven, where + " parameters set"))
+      return;
+
+    const char *const params[] = {kCopyModeParam,
+                                  kCopySourceFilterParam, kCopySourceFilterModeParam,
+                                  kCopyMaskFilterParam, kCopyMaskFilterModeParam};
+
+    paramsChanged(instance, params, sizeof(params) / sizeof(params[0]));
+
+    maskClip->setConnected(false);
+
+    MyHost::MetadataOffer answer;
+    effect->setAnswerCapture(&answer);
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      const std::string at = where + " time=" + formatTime(time);
+
+      clipChanged(instance, kCopyMaskClip, time);
+
+      answer = MyHost::MetadataOffer();
+
+      std::set<std::string> found;
+      const bool fetched = readOutputKeys(output, time, found);
+
+      std::set<std::string> expected;
+      fixtureKeySet(kCopySourceClip, time, expected);
+
+      report.check(fetched && found == expected, at + " keys=" + joinKeys(found));
+
+      if(!report.check(answer.taken, at + " answered"))
+        continue;
+
+      const std::map<std::string, std::vector<std::string> >::const_iterator
+        maskKeys = answer.retained.find(kCopyMaskClip);
+
+      report.check(answer.sources.size() == 1 && answer.sources[0] == kCopySourceClip,
+                   at + " answer sources=" + joinKeys(answer.sources));
+
+      report.check(maskKeys == answer.retained.end() || maskKeys->second.empty(),
+                   at + " answer retained clip=" + kCopyMaskClip
+                   + " keys=" + (maskKeys != answer.retained.end() ? joinKeys(maskKeys->second) : "none"));
+    }
+
+    effect->setAnswerCapture(NULL);
+
+    RenderPass pass;
+    checkRender(report, instance, &pass);
+
+    std::ostringstream pixels;
+    pixels << where << " passthrough frames=" << pass.framesRendered
+           << " identical=" << pass.framesPassedThrough;
+
+    report.check(pass.framesRendered == kFixtureFrames
+                 && pass.framesPassedThrough == pass.framesRendered,
+                 pixels.str());
+
+    maskClip->setConnected(true);
+#   else
+    (void) report;
+    (void) instance;
+    (void) output;
+    (void) contract;
+#   endif // OFX_SUPPORTS_METADATA
   }
 
   /// hold a plugin which takes its metadata from either of its two inputs or from both
@@ -3753,6 +4106,8 @@ namespace {
                    && pass.framesPassedThrough == pass.framesRendered,
                    pixels.str());
     }
+
+    checkCopyUnconnected(report, instance, *output, contract);
   }
 
   /// the head a metadata-compare invocation has to have built ahead of the plugin.
@@ -3908,27 +4263,6 @@ namespace {
     return int(std::count(text.begin(), text.end(), '\n')) + 1;
   }
 
-  /// the first line of text opening with prefix, empty if it carries none
-  std::string compareLineWith(const std::string &text, const std::string &prefix)
-  {
-    std::string::size_type at = 0;
-
-    while(at <= text.size()) {
-      const std::string::size_type end = text.find('\n', at);
-      const std::string line = text.substr(at, end == std::string::npos ? end : end - at);
-
-      if(line.compare(0, prefix.size(), prefix) == 0)
-        return line;
-
-      if(end == std::string::npos)
-        break;
-
-      at = end + 1;
-    }
-
-    return std::string();
-  }
-
   /// the preconditions the contract below needs met before it can compose anything: the
   /// suite, the one node chain --upstream built ahead of the plugin, proven by
   /// identifier so a mistyped invocation cannot pass vacuously, and the second input the
@@ -3961,15 +4295,104 @@ namespace {
 #   endif // OFX_SUPPORTS_METADATA
   }
 
+  /// the same plugin with Mask unconnected, the head passing Source through unedited:
+  /// every key of Source is a Source only line and nothing of what the fixture would
+  /// publish for Mask shows, since the harness clip publishes it whether connected or
+  /// not and only the plugin declining to read an unconnected clip keeps it out. On a
+  /// degraded host the display stays empty
+  void checkCompareUnconnected(Report &report,
+                               OFX::Host::ImageEffect::Instance &instance,
+                               OFX::Host::ImageEffect::Instance *head,
+                               bool degraded,
+                               const std::string &contract)
+  {
+    const std::string clip = kOfxImageEffectSimpleSourceClipName;
+    const std::string where = contract + " unconnected clip=" + kCompareMaskClip;
+
+    MyHost::MyClipInstance *maskClip =
+      dynamic_cast<MyHost::MyClipInstance *>(instance.getClip(kCompareMaskClip));
+
+    if(!report.check(maskClip != NULL, where + " instance"))
+      return;
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    if(head) {
+      const std::string operations = compareOperations(eCompareCaseUnedited, MetadataFixture::kFirstFrame);
+
+      if(!report.check(setParamValue(*head, kModifyOperationsParam, operations),
+                       where + " head operations=" + escapeLines(operations)))
+        return;
+
+      head->beginInstanceChangedAction(kOfxChangeUserEdited);
+      head->paramInstanceChangedAction(kModifyOperationsParam, kOfxChangeUserEdited,
+                                       MetadataFixture::kFirstFrame, renderScale);
+      head->endInstanceChangedAction(kOfxChangeUserEdited);
+
+#     ifdef OFX_SUPPORTS_METADATA
+      invalidateChain();
+#     endif // OFX_SUPPORTS_METADATA
+    }
+
+    maskClip->setConnected(false);
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      const std::string at = where + " time=" + formatTime(time);
+
+      clipChanged(instance, kCompareMaskClip, time);
+
+      std::string shown = "none";
+      const bool read = getParamValue(instance, kDisplayParam, shown);
+
+      if(degraded) {
+        report.check(read && shown.empty(), at + " display=" + escapeLines(shown));
+        continue;
+      }
+
+      std::map<std::string, std::string> source;
+      std::map<std::string, std::string> mask;
+      int lines = 0;
+
+      compareValues(clip, time, source);
+
+      const std::string wanted = compareDisplay(source, mask, lines);
+
+      report.check(read && shown == wanted,
+                   at + " display=" + escapeLines(shown) + " expected=" + escapeLines(wanted));
+
+      report.check(compareLineCount(shown) == lines
+                   && lineWith(shown, kCompareMaskOnlyPrefix).empty()
+                   && lineWith(shown, kCompareDiffersPrefix).empty(),
+                   at + " lines=" + formatInt(compareLineCount(shown))
+                   + " sourceonly=" + formatInt(lines));
+    }
+
+    RenderPass pass;
+    checkRender(report, instance, &pass);
+
+    std::ostringstream pixels;
+    pixels << where << " passthrough frames=" << pass.framesRendered
+           << " identical=" << pass.framesPassedThrough;
+
+    report.check(pass.framesRendered == kFixtureFrames
+                 && pass.framesPassedThrough == pass.framesRendered,
+                 pixels.str());
+
+    maskClip->setConnected(true);
+  }
+
   /// hold a plugin which shows how the metadata of its two inputs differ to what the
   /// fixture, edited by the head, gives them: one line per key only one of them holds or
   /// they hold different values at, and nothing at all for a key they agree on. Each
   /// display is compared byte for byte and its line count against the number of
   /// differences, so a spurious line is caught even in the cases which owe none. The
-  /// head and the plugin are both driven through the instance changed actions rather
-  /// than by invalidating the metadata by hand, so a host which does not invalidate what
-  /// a parameter change composed fails these. Degraded is the same plugin on a host with
-  /// no metadata suite, where it has nothing to compare and so owes an empty display
+  /// head is driven through the instance changed action for its parameter and the
+  /// plugin through the one for the input the head edits, rather than by invalidating
+  /// the metadata by hand, so a host which does not invalidate what a parameter change
+  /// composed fails these, as does a plugin which does not recompose on a clip change.
+  /// Degraded is the same plugin on a host with no metadata suite, where it has nothing
+  /// to compare and so owes an empty display
   void checkMetadataCompare(Report &report, OFX::Host::ImageEffect::Instance &instance, bool degraded)
   {
     const std::string clip = kOfxImageEffectSimpleSourceClipName;
@@ -3992,7 +4415,7 @@ namespace {
       compareEdit(kComparePinnedCase, mask, source);
 
       const std::string pinned =
-        compareLineWith(compareDisplay(source, mask, lines), kCompareMaskOnlyPrefix);
+        lineWith(compareDisplay(source, mask, lines), kCompareMaskOnlyPrefix);
 
       report.check(pinned == kComparePinnedLine,
                    contract + " pinned case=" + compareCaseName(kComparePinnedCase)
@@ -4025,9 +4448,7 @@ namespace {
 #         endif // OFX_SUPPORTS_METADATA
         }
 
-        instance.beginInstanceChangedAction(kOfxChangeUserEdited);
-        instance.paramInstanceChangedAction(kDisplayParam, kOfxChangeUserEdited, time, renderScale);
-        instance.endInstanceChangedAction(kOfxChangeUserEdited);
+        clipChanged(instance, clip, time);
 
         std::string shown = "none";
         const bool read = getParamValue(instance, kDisplayParam, shown);
@@ -4055,7 +4476,7 @@ namespace {
                      where + " lines=" + formatInt(compareLineCount(shown))
                      + " differences=" + formatInt(lines));
 
-        const std::string only = compareLineWith(shown, kCompareMaskOnlyPrefix);
+        const std::string only = lineWith(shown, kCompareMaskOnlyPrefix);
 
         switch(index) {
         case eCompareCaseMaskOnly : {
@@ -4095,6 +4516,8 @@ namespace {
                    && pass.framesPassedThrough == pass.framesRendered,
                    pixels.str());
     }
+
+    checkCompareUnconnected(report, instance, head, degraded, contract);
   }
 
   void checkMetadataCompareSupported(Report &report, OFX::Host::ImageEffect::Instance &instance)
@@ -4171,21 +4594,6 @@ namespace {
     keys.insert(kModifyNewKey);
 
     fixtureKeySet(kCopyMaskClip, time, keys);
-  }
-
-  /// drive one node's parameters through the actions a host raises around a user edit
-  void graphChanged(OFX::Host::ImageEffect::Instance &node, const char *const *params, int count)
-  {
-    OfxPointD renderScale;
-    renderScale.x = renderScale.y = 1.0;
-
-    node.beginInstanceChangedAction(kOfxChangeUserEdited);
-
-    for(int i = 0; i < count; ++i)
-      node.paramInstanceChangedAction(params[i], kOfxChangeUserEdited,
-                                      MetadataFixture::kFirstFrame, renderScale);
-
-    node.endInstanceChangedAction(kOfxChangeUserEdited);
   }
 
   /// read the tail's output clip at one frame and check it carries the exact key set the
@@ -4327,9 +4735,9 @@ namespace {
                                       kCopySourceFilterParam, kCopySourceFilterModeParam,
                                       kCopyMaskFilterParam, kCopyMaskFilterModeParam};
 
-    graphChanged(*gChain[0], headParams, sizeof(headParams) / sizeof(headParams[0]));
-    graphChanged(*gChain[1], timecodeParams, sizeof(timecodeParams) / sizeof(timecodeParams[0]));
-    graphChanged(*gChain[2], copyParams, sizeof(copyParams) / sizeof(copyParams[0]));
+    paramsChanged(*gChain[0], headParams, sizeof(headParams) / sizeof(headParams[0]));
+    paramsChanged(*gChain[1], timecodeParams, sizeof(timecodeParams) / sizeof(timecodeParams[0]));
+    paramsChanged(*gChain[2], copyParams, sizeof(copyParams) / sizeof(copyParams[0]));
 
     invalidateChain();
 
@@ -4349,22 +4757,22 @@ namespace {
     {"metadata-display", eFilterModeCount * kDisplayFilterCount * 2 + 1, checkMetadataDisplaySupported},
     {"metadata-display-degraded", eFilterModeCount * kDisplayFilterCount * 2, checkMetadataDisplayDegraded},
     {"metadata-contribute",
-     eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + eMetadataModeCount + 1,
+     eMetadataModeCount * kFixtureFrames * (kContributedKeyCount + 2) + 2 * eMetadataModeCount + 2,
      checkMetadataContribute},
     {"metadata-modify", eModifyCaseCount * (kFixtureFrames * 2 + 1) + 1, checkMetadataModify},
     {"metadata-timecode",
      kTimecodeCellCount * (kFixtureFrames + kTimecodeExtraTimeCount) * 3 + kTimecodeCellCount + 1,
      checkMetadataTimecode},
     {"metadata-copy",
-     kCopyModeCount * kCopyFilterCount * kFixtureFrames * 2 + kCopyModeCount + 1,
+     kCopyModeCount * kCopyFilterCount * kFixtureFrames * 2 + kCopyModeCount + kFixtureFrames * 4 + 4,
      checkMetadataCopy},
     {"metadata-compare",
-     eCompareCaseCount * (kFixtureFrames * 4 + 1) + 5,
+     eCompareCaseCount * (kFixtureFrames * 4 + 1) + kFixtureFrames * 2 + 8,
      checkMetadataCompareSupported},
     {"metadata-compare-degraded",
-     eCompareCaseCount * (kFixtureFrames + 1),
+     eCompareCaseCount * (kFixtureFrames + 1) + kFixtureFrames + 2,
      checkMetadataCompareDegraded},
-    {"metadata-chain", kFixtureFrames * 2 + 4, checkMetadataChain},
+    {"metadata-chain", kFixtureFrames * 2 + 5, checkMetadataChain},
     {"metadata-graph", kGraphFrames * 4 + kGraphNodeCount + 1, checkMetadataGraph}
   };
 
@@ -4412,28 +4820,33 @@ namespace {
     std::vector<std::unique_ptr<OFX::Host::ImageEffect::Instance> > _nodes;
   };
 
-  /// make the source clip of 'instance' carry what 'upstream' emits, reporting the one
-  /// precondition an effect downstream of another has to meet
+  /// make the first input clip of 'instance' carry what 'upstream' emits, reporting the
+  /// one precondition an effect downstream of another has to meet: that it described
+  /// an input clip at all, since only the fixture's own plugins are guaranteed to have
+  /// named it kOfxImageEffectSimpleSourceClipName
   bool connectUpstream(Report &report,
                        OFX::Host::ImageEffect::Instance &instance,
                        OFX::Host::ImageEffect::Instance *upstream,
                        const std::string &pluginId)
   {
     MyHost::MetadataEffectInstance *effect = dynamic_cast<MyHost::MetadataEffectInstance *>(&instance);
+    OFX::Host::ImageEffect::ClipInstance *input = firstInputClip(instance);
+    const std::string named = input ? input->getName() : std::string("(none)");
 
     if(!report.check(effect != NULL
-                     && instance.getClip(kOfxImageEffectSimpleSourceClipName) != NULL
+                     && input != NULL
                      && upstream->getClip(kOfxImageEffectOutputClipName) != NULL,
-                     "chain id=" + pluginId + " clip=" kOfxImageEffectSimpleSourceClipName))
+                     "chain id=" + pluginId + " inputclip=" + named))
       return false;
 
-    effect->connect(kOfxImageEffectSimpleSourceClipName, upstream);
+    effect->connect(named, upstream);
 
     return true;
   }
 
-  /// build the effects --upstream names, head first, each one's source clip carrying
-  /// what the one before it emits, and report the preconditions each has to meet
+  /// build the effects --upstream names, head first, each one's first input clip
+  /// carrying what the one before it emits, and report the preconditions each has to
+  /// meet
   bool buildChain(Report &report,
                   OFX::Host::ImageEffect::PluginCache &effectCache,
                   const std::string &pluginDir,
@@ -4472,9 +4885,9 @@ namespace {
   /// instance exposing the clips its context guarantees, and completes a render pass.
   /// It asserts nothing about composition order or retained keys, which a read-only
   /// plugin implements neither of. The effects --upstream names are built ahead of it,
-  /// so that its source clip carries what the last of them emits. Returns the number of
-  /// checks the contract made, zero if none was asked for or it never got as far as
-  /// running
+  /// so that its first input clip carries what the last of them emits. Returns the
+  /// number of checks the contract made, zero if none was asked for or it never got as
+  /// far as running
   int checkGenericPlugin(Report &report,
                          MyHost::MetadataHost &host,
                          const std::string &pluginDir,
@@ -4512,8 +4925,7 @@ namespace {
     if(!instance.get())
       return 0;
 
-    report.check(instance->getClip(kOfxImageEffectSimpleSourceClipName) != NULL,
-                 "plugin clip=" kOfxImageEffectSimpleSourceClipName);
+    report.check(true, "plugin clip=inputclip count=" + formatInt(countInputClips(*instance)));
     report.check(instance->getClip(kOfxImageEffectOutputClipName) != NULL,
                  "plugin clip=" kOfxImageEffectOutputClipName);
 
@@ -4568,6 +4980,145 @@ namespace {
     return found;
   }
 
+  /// hold the host to offering the first connected input clip when the one the plugin
+  /// described first is unconnected: the offer names the second clip with the whole of
+  /// its key set retained, the first clip's retained-keys property is there and empty,
+  /// the output carries the second clip's keys when the action is not trapped, and the
+  /// first clip contributes nothing when the plugin does trap the action and names it
+  void checkUnconnectedInput(Report &report, OFX::Host::ImageEffect::ImageEffectPlugin *plugin)
+  {
+    const std::string unconnected = MetadataFixture::kInputClips[0];
+    const std::string connected = MetadataFixture::kInputClips[1];
+    const std::string where = "unconnected clip=" + unconnected;
+
+    std::unique_ptr<OFX::Host::ImageEffect::Instance>
+      instance = createPluginInstance(report, plugin, kOfxImageEffectContextGeneral);
+
+    if(!instance.get())
+      return;
+
+    MyHost::MetadataEffectInstance *effect = dynamic_cast<MyHost::MetadataEffectInstance *>(instance.get());
+    MyHost::MyClipInstance *first = dynamic_cast<MyHost::MyClipInstance *>(instance->getClip(unconnected));
+    OFX::Host::ImageEffect::ClipInstance *output = instance->getClip(kOfxImageEffectOutputClipName);
+
+    if(!report.check(effect != NULL && first != NULL && output != NULL, where + " instance"))
+      return;
+
+    report.check(first->isOptional(), where + " optional");
+    first->setConnected(false);
+
+    std::string note = "none";
+    report.check(getParamValue(*instance, kNoteParam, note), where + " param=" + kNoteParam);
+
+    OfxPointD renderScale;
+    renderScale.x = renderScale.y = 1.0;
+
+    MyHost::MetadataOffer offer;
+    effect->setOfferCapture(&offer);
+
+    report.check(setParamValue(*instance, kOrderParam, formatInt(kUntrappedOrder)),
+                 where + " order=" + formatInt(kUntrappedOrder) + " parameter set");
+
+    instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+    instance->paramInstanceChangedAction(kOrderParam, kOfxChangeUserEdited, MetadataFixture::kFirstFrame, renderScale);
+    instance->endInstanceChangedAction(kOfxChangeUserEdited);
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      std::ostringstream os;
+      os << where << " order=" << kUntrappedOrder << " time=" << formatTime(time);
+      const std::string at = os.str();
+
+      offer = MyHost::MetadataOffer();
+
+      std::set<std::string> found;
+      const bool fetched = readOutputKeys(*output, time, found);
+
+      std::set<std::string> expected;
+      fixtureKeySet(connected, time, expected);
+
+      if(!report.check(offer.taken, at + " offer taken"))
+        continue;
+
+      report.check(offer.sources.size() == 1 && offer.sources[0] == connected,
+                   at + " offer sources=" + joinKeys(offer.sources));
+
+      const std::map<std::string, std::vector<std::string> >::const_iterator
+        firstKeys = offer.retained.find(unconnected),
+        secondKeys = offer.retained.find(connected);
+
+      report.check(firstKeys != offer.retained.end() && firstKeys->second.empty(),
+                   at + " offer retained clip=" + unconnected
+                   + " present=" + (firstKeys != offer.retained.end() ? "1" : "0")
+                   + " keys=" + (firstKeys != offer.retained.end() ? joinKeys(firstKeys->second) : "none"));
+
+      report.check(secondKeys != offer.retained.end()
+                   && std::set<std::string>(secondKeys->second.begin(), secondKeys->second.end()) == expected,
+                   at + " offer retained clip=" + connected
+                   + " keys=" + (secondKeys != offer.retained.end() ? joinKeys(secondKeys->second) : "none"));
+
+      report.check(fetched && found == expected, at + " keys=" + joinKeys(found));
+    }
+
+    report.check(setParamValue(*instance, kOrderParam, formatInt(kMaskOverSource)),
+                 where + " order=" + formatInt(kMaskOverSource) + " parameter set");
+
+    instance->beginInstanceChangedAction(kOfxChangeUserEdited);
+    instance->paramInstanceChangedAction(kOrderParam, kOfxChangeUserEdited, MetadataFixture::kFirstFrame, renderScale);
+    instance->endInstanceChangedAction(kOfxChangeUserEdited);
+
+    std::vector<Contributed> contributed;
+    contributedKeys(note, contributed);
+
+    for(OfxTime time = MetadataFixture::kFirstFrame; time <= MetadataFixture::kLastFrame; time += 1) {
+      std::ostringstream os;
+      os << where << " order=" << kMaskOverSource << " time=" << formatTime(time);
+      const std::string at = os.str();
+
+      std::set<std::string> found;
+      const bool fetched = readOutputKeys(*output, time, found);
+
+      std::set<std::string> expected;
+      std::set<std::string> named;
+      fixtureKeySet(connected, time, named);
+
+      for(std::set<std::string>::const_iterator it = named.begin(); it != named.end(); ++it) {
+        if(isStandardKey(*it))
+          expected.insert(*it);
+      }
+
+      for(size_t c = 0; c < contributed.size(); ++c)
+        expected.insert(contributed[c].key);
+
+      report.check(fetched && found == expected, at + " keys=" + joinKeys(found));
+    }
+
+    effect->setOfferCapture(NULL);
+  }
+
+  /// vmessage has to capture a message of any length whole rather than truncate it
+  /// silently, so drive one well past a kilobyte and check every byte of it arrives
+  void checkLongMessage(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(&instance);
+
+    if(!report.check(effect != NULL, "message effect instance"))
+      return;
+
+    const std::string body(1200, 'x');
+
+    std::string captured;
+    effect->setMessageCapture(&captured);
+
+    if(gMessageSuite)
+      gMessageSuite->message(instance.getHandle(), kOfxMessageLog, "metadataHost",
+                             "metadataHost longmessage %s", body.c_str());
+
+    effect->setMessageCapture(NULL);
+
+    report.check(captured.find(body) != std::string::npos,
+                 "message longmessage length=" + formatInt(int(body.size())));
+  }
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -4589,6 +5140,8 @@ namespace {
 
     if(!instance.get())
       return;
+
+    checkLongMessage(report, *instance);
 
     OFX::Host::ImageEffect::ClipInstance *output = instance->getClip(kOfxImageEffectOutputClipName);
     std::string orderValue = "none";
@@ -4785,6 +5338,8 @@ namespace {
     checkInvalidation(report, *instance);
 
     checkRender(report, *instance);
+
+    checkUnconnectedInput(report, plugin);
   }
 
 #endif // OFX_SUPPORTS_METADATA
@@ -4797,7 +5352,7 @@ namespace {
     MyHost::MetadataHost host;
     OfxHost *handle = host.getHandle();
 
-    gPropSuite = (const OfxPropertySuiteV2 *) handle->fetchSuite(handle->host, kOfxPropertySuite, 2);
+    gPropSuite = (const OfxPropertySuiteV1 *) handle->fetchSuite(handle->host, kOfxPropertySuite, 1);
     gMetadataSuite = (const OfxMetadataSuiteV1 *) handle->fetchSuite(handle->host, kOfxMetadataSuite, 1);
     gEffectSuite = (const OfxImageEffectSuiteV1 *) handle->fetchSuite(handle->host, kOfxImageEffectSuite, 1);
     gMessageSuite = (const OfxMessageSuiteV2 *) handle->fetchSuite(handle->host, kOfxMessageSuite, 2);
@@ -4818,6 +5373,9 @@ namespace {
 
     if(pluginId.empty()) {
 #ifdef OFX_SUPPORTS_METADATA
+      const bool v2 = handle->fetchSuite(handle->host, kOfxPropertySuite, 2) != NULL;
+      report.check(!v2, std::string("host propertysuite v2 ") + (v2 ? "present" : "absent"));
+
       checkFixture(report);
       checkComparators(report);
       checkClips(report);

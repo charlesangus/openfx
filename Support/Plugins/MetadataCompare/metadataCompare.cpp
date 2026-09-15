@@ -126,8 +126,12 @@ public :
   /* Override changedParam */
   virtual void changedParam(const OFX::InstanceChangedArgs &args, const std::string &paramName);
 
+  /* Override changedClip */
+  virtual void changedClip(const OFX::InstanceChangedArgs &args, const std::string &clipName);
+
   /* one line per key that differs between Source and Mask at the given time, in
-  ascending key order */
+  ascending key order. An unconnected Mask holds nothing, so every key of Source is then
+  a Source only line */
   std::string displayText(double time);
 };
 
@@ -138,7 +142,8 @@ MetadataComparePlugin::displayText(double time)
     return std::string();
 
   const OFX::MetadataSet source = srcClip_->getMetadata(time);
-  const OFX::MetadataSet mask = maskClip_->getMetadata(time);
+  const OFX::MetadataSet mask = maskClip_->isConnected() ? maskClip_->getMetadata(time)
+                                                         : OFX::MetadataSet();
 
   const std::vector<OFX::MetadataEntry> sourceEntries = source.entries();
   const std::vector<OFX::MetadataEntry> maskEntries = mask.entries();
@@ -177,16 +182,22 @@ MetadataComparePlugin::displayText(double time)
   return text;
 }
 
-// a render must not write a parameter, so the display is composed here instead, at
-// whatever time the host reports the change at. The host re-enters this action with
-// eChangePluginEdit for the plugin's own setValue below, so that reason is the echo of
-// this call rather than a fresh edit and is ignored
+// a render must not write a parameter, so the display is composed on a change instead,
+// at whatever time the host reports the change at. The host re-enters changedParam with
+// eChangePluginEdit for the plugin's own setValue, so that reason is the echo of the
+// call rather than a fresh edit and is ignored; a clip change is never such an echo
 void
 MetadataComparePlugin::changedParam(const OFX::InstanceChangedArgs &args, const std::string &/*paramName*/)
 {
   if(args.reason == OFX::eChangePluginEdit)
     return;
 
+  display_->setValue(displayText(args.time));
+}
+
+void
+MetadataComparePlugin::changedClip(const OFX::InstanceChangedArgs &args, const std::string &/*clipName*/)
+{
   display_->setValue(displayText(args.time));
 }
 

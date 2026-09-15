@@ -172,7 +172,7 @@ namespace MyHost {
         if(it->second->isOutput())
           continue;
 
-        const std::string &propName = metadataRetainedKeysPropName(it->first);
+        const std::string propName = "OfxImageClipPropMetadataRetainedKeys_" + it->first;
 
         if(!outArgs.fetchProperty(propName))
           continue;
@@ -1312,7 +1312,8 @@ namespace {
   /// metadata action and would have to misbehave to reach the cases which must fail
   void checkMetadataWrites(Report &report)
   {
-    OFX::Host::ImageEffect::MetadataSet *set = new OFX::Host::ImageEffect::MetadataSet(true, false);
+    OFX::Host::ImageEffect::MetadataSet *set = new OFX::Host::ImageEffect::MetadataSet(
+      OFX::Host::ImageEffect::MetadataSet::eWritable, OFX::Host::ImageEffect::MetadataSet::eHostOwned);
     OfxPropertySetHandle writable = set->getPropHandle();
 
     checkWritten(report, writable, kWrittenString,

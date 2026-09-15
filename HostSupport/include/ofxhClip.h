@@ -111,6 +111,13 @@ namespace OFX {
       /// As with images, the host serialises all access to a given metadata set and to
       /// its reference count.
       class MetadataSet : public Property::Set {
+      public :
+        /// may the metadata suite's set entry points write keys into this
+        enum Access { eReadOnly, eWritable };
+
+        /// is a plugin holding a reference which metadataRelease drops
+        enum Owner { ePluginOwned, eHostOwned };
+
       protected :
         int _referenceCount;  ///< reference count on this metadata set
         bool _writable;       ///< may the metadata suite's set entry points write keys into this
@@ -118,9 +125,7 @@ namespace OFX {
 
       public :
         /// ctor, makes an empty metadata set
-        MetadataSet(bool writable = false, bool pluginOwned = true);
-
-        virtual ~MetadataSet();
+        MetadataSet(Access access, Owner owner);
 
         /// get a handle on the metadata set for the C api
         OfxPropertySetHandle getPropHandle() const { return Property::Set::getHandle(); }

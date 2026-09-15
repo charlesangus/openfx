@@ -114,6 +114,10 @@ metadata and nothing from any other input. An input clip that is not
 connected contributes nothing to the composition, even when the source-clip
 list names it.
 
+The keys the effect contributes in :c:macro:`kOfxImageEffectPropMetadataSet`
+are written over the inherited keys, so a key the effect writes replaces the
+inherited value of the same key.
+
 The Key Vocabulary
 ------------------
 

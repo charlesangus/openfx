@@ -55,7 +55,7 @@ namespace OFX {
   built by borrow() instead wraps a handle owned by something else -- neither reset() nor
   the destructor release it -- for reading a set that outlives this object and that the
   host would refuse to release a second time, such as the writable set a
-  MetadataSetBuilder exposes through contents().
+  MetadataSetter exposes through contents().
   */
   class MetadataSet {
   protected :
@@ -83,7 +83,7 @@ namespace OFX {
     answering from a cached entry a writer elsewhere on the same handle has since changed */
     void forget(const std::string &key);
 
-    friend class MetadataSetBuilder;
+    friend class MetadataSetter;
 
   public :
     /** @brief construct an empty set, carrying no metadata */
@@ -179,13 +179,13 @@ namespace OFX {
   it never releases the handle either, and it reflects every write made through this builder's
   setters, however that write's key was previously read through the view.
   */
-  class MetadataSetBuilder {
+  class MetadataSetter {
   protected :
     /** @brief The raw metadata property set handle, owned by the host and never released by this object */
     OfxPropertySetHandle _metadataHandle;
 
     /** @brief whether any setter on this builder has yet succeeded */
-    bool _didSomething;
+    bool doneSomething_;
 
     /** @brief a read-only, non-owning view of _metadataHandle, for contents() */
     MetadataSet _contents;
@@ -196,10 +196,10 @@ namespace OFX {
 
   public :
     /** @brief wrap a host-owned handle, typically the value of kOfxImageEffectPropMetadataSet found in an inArgs property set */
-    explicit MetadataSetBuilder(OfxPropertySetHandle handle);
+    explicit MetadataSetter(OfxPropertySetHandle handle);
 
     /** @brief has any setter on this builder yet succeeded */
-    bool didSomething(void) const {return _didSomething;}
+    bool didSomething(void) const {return doneSomething_;}
 
     /** @brief a read-only view of what this builder has written to its set so far */
     const MetadataSet &contents(void) const {return _contents;}

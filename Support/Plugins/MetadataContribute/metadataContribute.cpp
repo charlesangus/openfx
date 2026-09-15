@@ -105,11 +105,11 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
 void
-MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance)
+MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
     return;
@@ -117,7 +117,7 @@ MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OF
   std::string note;
   note_->getValue(note);
 
-  // one key through each of the six suite entry points MetadataSetBuilder exposes,
+  // one key through each of the six suite entry points MetadataSetter exposes,
   // plus a framerate that disagrees with the fixture's Source so the two are
   // distinguishable downstream
   metadata.setString(std::string(kKeyPrefix) + "note", note);

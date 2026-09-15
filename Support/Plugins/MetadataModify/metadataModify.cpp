@@ -165,11 +165,11 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
 };
 
 void
-MetadataModifyPlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance)
+MetadataModifyPlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
     return;

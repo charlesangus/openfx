@@ -425,39 +425,39 @@ namespace OFX {
     return result;
   }
 
-  MetadataSetBuilder::MetadataSetBuilder(OfxPropertySetHandle handle)
+  MetadataSetter::MetadataSetter(OfxPropertySetHandle handle)
     : _metadataHandle(handle)
-    , _didSomething(false)
+    , doneSomething_(false)
     , _contents(MetadataSet::borrow(handle))
   {
   }
 
-  void MetadataSetBuilder::record(const std::string &key, OfxStatus stat)
+  void MetadataSetter::record(const std::string &key, OfxStatus stat)
   {
     Log::error(stat != kOfxStatOK, "Failed to set metadata key %s, host returned status %s.", key.c_str(), mapStatusToString(stat));
 
     if(stat == kOfxStatOK) {
-      _didSomething = true;
+      doneSomething_ = true;
       _contents.forget(key);
     }
   }
 
-  void MetadataSetBuilder::setString(const std::string &key, const std::string &value)
+  void MetadataSetter::setString(const std::string &key, const std::string &value)
   {
     setStringN(key, std::vector<std::string>(1, value));
   }
 
-  void MetadataSetBuilder::setDouble(const std::string &key, double value)
+  void MetadataSetter::setDouble(const std::string &key, double value)
   {
     setDoubleN(key, std::vector<double>(1, value));
   }
 
-  void MetadataSetBuilder::setInt(const std::string &key, int value)
+  void MetadataSetter::setInt(const std::string &key, int value)
   {
     setIntN(key, std::vector<int>(1, value));
   }
 
-  void MetadataSetBuilder::setStringN(const std::string &key, const std::vector<std::string> &values)
+  void MetadataSetter::setStringN(const std::string &key, const std::vector<std::string> &values)
   {
     if(!_metadataHandle || !gMetadataSuite)
       return;
@@ -470,7 +470,7 @@ namespace OFX {
     record(key, gMetadataSuite->metadataSetStringN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), raw.data()));
   }
 
-  void MetadataSetBuilder::setDoubleN(const std::string &key, const std::vector<double> &values)
+  void MetadataSetter::setDoubleN(const std::string &key, const std::vector<double> &values)
   {
     if(!_metadataHandle || !gMetadataSuite)
       return;
@@ -478,7 +478,7 @@ namespace OFX {
     record(key, gMetadataSuite->metadataSetDoubleN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), values.data()));
   }
 
-  void MetadataSetBuilder::setIntN(const std::string &key, const std::vector<int> &values)
+  void MetadataSetter::setIntN(const std::string &key, const std::vector<int> &values)
   {
     if(!_metadataHandle || !gMetadataSuite)
       return;
@@ -486,7 +486,7 @@ namespace OFX {
     record(key, gMetadataSuite->metadataSetIntN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), values.data()));
   }
 
-  void MetadataSetBuilder::copyFrom(const MetadataSet &source)
+  void MetadataSetter::copyFrom(const MetadataSet &source)
   {
     const std::vector<MetadataEntry> allEntries = source.entries();
 

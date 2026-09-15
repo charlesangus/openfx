@@ -2748,7 +2748,7 @@ namespace {
 
   /// how many lines of captured log text read exactly "contributed keys=<expected>", the
   /// shape MetadataContribute logs after reading its own writes back through
-  /// MetadataSetBuilder::contents(), so that a wrong count or a stray extra digit misses
+  /// MetadataSetter::contents(), so that a wrong count or a stray extra digit misses
   int countContributedKeyLogs(const std::string &text, int expected)
   {
     const std::string marker = "contributed keys=";

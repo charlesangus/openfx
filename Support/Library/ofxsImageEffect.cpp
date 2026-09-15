@@ -1531,7 +1531,7 @@ namespace OFX {
   }
 
   /** @brief get the metadata this effect contributes to its output, and the metadata it inherits from its inputs */
-  void ImageEffect::getMetadata(const MetadataArguments &/*args*/, MetadataSetBuilder &/*metadata*/, MetadataInheritanceSetter &/*inheritance*/)
+  void ImageEffect::getMetadata(const MetadataArguments &/*args*/, MetadataSetter &/*metadata*/, MetadataInheritanceSetter &/*inheritance*/)
   {
     // fa niente
   }
@@ -1808,7 +1808,7 @@ namespace OFX {
   /** @brief, force the host to treat \em clips as the ordered list of input clips whose metadata the effect inherits */
   void MetadataInheritanceSetter::setSourceClips(const std::vector<std::string> &clips)
   {
-    didSomething_ = true;
+    doneSomething_ = true;
 
     // a variable-dimension property only ever grows when written index by index, so writing
     // fewer entries than the host pre-populated it with leaves the surplus ones behind unless
@@ -1836,7 +1836,7 @@ namespace OFX {
   /** @brief, force the host to retain only \em keys of \em clip's metadata when composing the metadata the effect inherits from that clip */
   void MetadataInheritanceSetter::setRetainedKeys(const Clip &clip, const std::vector<std::string> &keys)
   {
-    didSomething_ = true;
+    doneSomething_ = true;
     const std::string& propName = extractValueForName(clipMetadataRetainedKeysPropNames_, clip.name());
 
     // see the comment in setSourceClips: the reset is what makes a shrinking write actually shrink
@@ -2590,7 +2590,7 @@ namespace OFX {
       OfxPropertySetHandle metadataSetHandle = (OfxPropertySetHandle) inArgs.propGetPointer(kOfxImageEffectPropMetadataSet);
 
       // set up our metadata and inheritance setters
-      MetadataSetBuilder metadata(metadataSetHandle);
+      MetadataSetter metadata(metadataSetHandle);
       ImageEffectDescriptor* desc = gEffectDescriptors[plugname][effectInstance->getContext()];
       MetadataInheritanceSetter inheritance(outArgs, desc->getClipMetadataRetainedKeysPropNames());
 

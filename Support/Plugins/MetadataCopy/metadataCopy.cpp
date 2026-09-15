@@ -195,7 +195,7 @@ public :
   virtual void render(const OFX::RenderArguments &args);
 
   /* Override getMetadata */
-  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &metadata, OFX::MetadataInheritanceSetter &inheritance);
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
 
 protected :
   /* narrow what is inherited from one clip to the keys its own filter matches */
@@ -237,7 +237,7 @@ MetadataCopyPlugin::retainMatchingKeys(double time,
 }
 
 void
-MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetBuilder &/*metadata*/, OFX::MetadataInheritanceSetter &inheritance)
+MetadataCopyPlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &/*metadata*/, OFX::MetadataInheritanceSetter &inheritance)
 {
   if(!OFX::getImageEffectHostDescription()->supportsMetadata)
     return;

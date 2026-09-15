@@ -3,6 +3,8 @@
 
 #include <iostream>
 #include <fstream>
+#include <cstdarg>
+#include <vector>
 
 // ofx
 #include "ofxCore.h"
@@ -32,8 +34,9 @@ namespace MyHost {
 
   MyEffectInstance::MyEffectInstance(OFX::Host::ImageEffect::ImageEffectPlugin* plugin,
                                      OFX::Host::ImageEffect::Descriptor& desc,
-                                     const std::string& context) 
+                                     const std::string& context)
                                      : OFX::Host::ImageEffect::Instance(plugin,desc,context,false)
+                                     , _messageCapture(NULL)
   {
   }
 
@@ -63,8 +66,27 @@ namespace MyHost {
                                        const char* format,
                                        va_list args)
   {
+    if(_messageCapture) {
+      va_list measuring;
+      va_copy(measuring, args);
+      const int needed = vsnprintf(NULL, 0, format, measuring);
+      va_end(measuring);
+
+      std::vector<char> buf(needed > 0 ? size_t(needed) + 1 : 1, '\0');
+      vsnprintf(buf.data(), buf.size(), format, args);
+
+      *_messageCapture += type;
+      *_messageCapture += " ";
+      *_messageCapture += id;
+      *_messageCapture += " ";
+      *_messageCapture += buf.data();
+      *_messageCapture += '\n';
+      return kOfxStatOK;
+    }
+
     printf("%s %s ",type,id);
     vprintf(format,args);
+    printf("\n");
     return kOfxStatOK;
   }
 
@@ -146,6 +168,8 @@ namespace MyHost {
       return new MyBooleanInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeChoice)
       return new MyChoiceInstance(this,name,descriptor);
+    else if(descriptor.getType()==kOfxParamTypeString)
+      return new MyStringInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeRGBA)
       return new MyRGBAInstance(this,name,descriptor);
     else if(descriptor.getType()==kOfxParamTypeRGB)

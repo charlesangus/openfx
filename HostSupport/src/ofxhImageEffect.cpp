@@ -25,6 +25,7 @@
 #ifdef OFX_SUPPORTS_OPENGLRENDER
 #include "ofxGPURender.h"
 #endif
+#include "ofxMetadata.h"
 #include "ofxOld.h" // old plugins may rely on deprecated properties being present
 
 #include <string.h>
@@ -759,6 +760,9 @@ namespace OFX {
                                                     OfxPointD   renderScale)
       {
         _clipPrefsDirty = true;
+
+        invalidateMetadata();
+
         std::map<std::string,ClipInstance*>::iterator it=_clips.find(clipName);
         if(it!=_clips.end())
           return (it->second)->instanceChangedAction(why,time,renderScale);
@@ -1745,6 +1749,14 @@ namespace OFX {
         return true;
       }
 
+      void Instance::invalidateMetadata()
+      {
+        for(std::map<std::string, ClipInstance*>::iterator it = _clips.begin();
+            it != _clips.end();
+            ++it)
+          it->second->invalidateMetadata();
+      }
+
       /// find the most chromatic components out of the two. Override this if you define
       /// more chromatic components
       const std::string &Instance::findMostChromaticComponents(const std::string &a, const std::string &b) const
@@ -2023,6 +2035,8 @@ namespace OFX {
           return kOfxStatFailed;
         }
 
+        image->setFetchedFor(*clipInstance, time);
+
         *h3 = image->getPropHandle();
 
         return kOfxStatOK;
@@ -2258,6 +2272,205 @@ namespace OFX {
         imageMemoryUnlock
       };
 
+      ////////////////////////////////////////////////////////////////////////////////
+      ////////////////////////////////////////////////////////////////////////////////
+      ////////////////////////////////////////////////////////////////////////////////
+      /// The metadata suite functions
+
+      /// maps a Property::Exception's status to what clipGetMetadata and imageGetMetadata
+      /// document: their own status if it is one of those, else kOfxStatFailed
+      static OfxStatus metadataFetchExceptionStatus(OfxStatus status)
+      {
+        switch (status) {
+        case kOfxStatErrBadHandle:
+        case kOfxStatErrMemory:
+        case kOfxStatFailed:
+          return status;
+        default:
+          return kOfxStatFailed;
+        }
+      }
+
+      static OfxStatus clipGetMetadata(OfxImageClipHandle clip,
+                                       OfxTime time,
+                                       OfxPropertySetHandle *metadata)
+      {
+        try {
+        if (!metadata) {
+          return kOfxStatErrBadHandle;
+        }
+
+        ClipInstance *clipInstance = reinterpret_cast<ClipInstance*>(clip);
+
+        if (!clipInstance || !clipInstance->verifyMagic()) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+
+        MetadataSet *set = clipInstance->getMetadata(time);
+
+        if (!set) {
+          *metadata = NULL;
+
+          return kOfxStatFailed;
+        }
+
+        *metadata = set->getPropHandle();
+
+        return kOfxStatOK;
+        } catch (const Property::Exception& e) {
+          *metadata = NULL;
+
+          return metadataFetchExceptionStatus(e.getStatus());
+        } catch (std::bad_alloc&) {
+          *metadata = NULL;
+
+          return kOfxStatErrMemory;
+        } catch (...) {
+          *metadata = NULL;
+
+          return kOfxStatFailed;
+        }
+      }
+
+      static OfxStatus imageGetMetadata(OfxPropertySetHandle image,
+                                        OfxPropertySetHandle *metadata)
+      {
+        try {
+        if (!metadata) {
+          return kOfxStatErrBadHandle;
+        }
+
+        Property::Set *pset = reinterpret_cast<Property::Set*>(image);
+
+        if (!pset || !pset->verifyMagic()) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+
+        ImageBase *imageBase = dynamic_cast<ImageBase*>(pset);
+
+        if (!imageBase) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+
+        ClipInstance *clipInstance = imageBase->getFetchedClip();
+
+        if (!clipInstance) {
+          *metadata = NULL;
+
+          return kOfxStatErrBadHandle;
+        }
+
+        return clipGetMetadata(clipInstance->getHandle(), imageBase->getFetchedTime(), metadata);
+        } catch (std::bad_alloc&) {
+          *metadata = NULL;
+
+          return kOfxStatErrMemory;
+        } catch (...) {
+          *metadata = NULL;
+
+          return kOfxStatFailed;
+        }
+      }
+
+      static OfxStatus metadataRelease(OfxPropertySetHandle metadata)
+      {
+        try {
+        Property::Set *pset = reinterpret_cast<Property::Set*>(metadata);
+
+        if (!pset || !pset->verifyMagic()) {
+          return kOfxStatErrBadHandle;
+        }
+
+        MetadataSet *set = dynamic_cast<MetadataSet*>(pset);
+
+        if(!set) {
+          return kOfxStatErrBadHandle;
+        }
+
+        set->releaseReference();
+
+        return kOfxStatOK;
+        } catch (...) {
+          return kOfxStatErrBadHandle;
+        }
+      }
+
+      static OfxStatus metadataEnumerate(OfxPropertySetHandle metadata,
+                                         OfxMetadataEnumerateFuncV1 callback,
+                                         void *userData)
+      {
+        try {
+        if (!callback) {
+          return kOfxStatErrValue;
+        }
+
+        Property::Set *pset = reinterpret_cast<Property::Set*>(metadata);
+
+        if (!pset || !pset->verifyMagic()) {
+          return kOfxStatErrBadHandle;
+        }
+
+        MetadataSet *set = dynamic_cast<MetadataSet*>(pset);
+
+        if (!set) {
+          return kOfxStatErrBadHandle;
+        }
+
+        // the callback may call back into the suite, and may release this very handle,
+        // so walk a copy of the key list rather than the map itself
+        struct KeyInfo {
+          std::string key;
+          OfxMetadataValueType type;
+          int dimension;
+        };
+        std::vector<KeyInfo> keys;
+        const Property::PropertyMap &map = set->getProperties();
+        Property::PropertyMap::const_iterator i;
+        for(i = map.begin(); i != map.end(); ++i) {
+          OfxMetadataValueType type;
+          switch((*i).second->getType()) {
+          case Property::eInt:
+            type = kOfxMetadataValueTypeInteger;
+            break;
+          case Property::eDouble:
+            type = kOfxMetadataValueTypeDouble;
+            break;
+          case Property::eString:
+            type = kOfxMetadataValueTypeString;
+            break;
+          default:
+            continue;
+          }
+          KeyInfo info = { (*i).first, type, (*i).second->getDimension() };
+          keys.push_back(info);
+        }
+
+        std::vector<KeyInfo>::const_iterator k;
+        for(k = keys.begin(); k != keys.end(); ++k) {
+          OfxStatus st = callback(k->key.c_str(), k->type, k->dimension, userData);
+          if(st != kOfxStatOK)
+            return st;
+        }
+
+        return kOfxStatOK;
+        } catch (...) {
+          return kOfxStatFailed;
+        }
+      }
+
+      static const struct OfxMetadataSuiteV1 gMetadataSuite = {
+        clipGetMetadata,
+        imageGetMetadata,
+        metadataRelease,
+        metadataEnumerate
+      };
+
 #   ifdef OFX_SUPPORTS_OPENGLRENDER
       ////////////////////////////////////////////////////////////////////////////////
       ////////////////////////////////////////////////////////////////////////////////
@@ -2288,6 +2501,8 @@ namespace OFX {
 
             return kOfxStatFailed;
           }
+
+          texture->setFetchedFor(*clipInstance, time);
 
           *h3 = texture->getPropHandle();
 
@@ -2798,6 +3013,12 @@ namespace OFX {
           return ParametricParam::GetSuite(suiteVersion);
         }
 #     endif
+        else if (strcmp(suiteName, kOfxMetadataSuite)==0) {
+          if(suiteVersion == 1)
+            return (void*)&gMetadataSuite;
+          else
+            return NULL;
+        }
         else  /// otherwise just grab the base class one, which is props and memory
           return OFX::Host::Host::fetchSuite(suiteName, suiteVersion);
       }

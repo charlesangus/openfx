@@ -27,6 +27,7 @@ option(OFX_SUPPORTS_CUDARENDER
        "Build examples with support for CUDA GPU rendering" OFF)
 option(PLUGIN_INSTALLDIR "Location to install plugins (default depends on OS)"
        "")
+include(CTest)
 
 if(APPLE)
   set(OFX_SUPPORTS_CUDARENDER OFF)

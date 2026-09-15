@@ -25,3 +25,6 @@ target_include_directories(OfxHost PUBLIC
 if(BUILD_EXAMPLE_PLUGINS)
 	add_subdirectory(examples)
 endif()
+if(BUILD_TESTING)
+	add_subdirectory(tests)
+endif()

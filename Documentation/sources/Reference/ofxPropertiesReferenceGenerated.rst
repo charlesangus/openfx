@@ -1054,6 +1054,19 @@ Enumeration Properties
   - ``OfxImageEffectRenderFullySafe``
 - **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPluginRenderThreadSafety`.
 
+.. _prop_OfxImageEffectPropBehaviourWhenUnlicensed:
+
+**OfxImageEffectPropBehaviourWhenUnlicensed**
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **C #define**: :c:macro:`kOfxImageEffectPropBehaviourWhenUnlicensed`
+- **Type**: enum
+- **Dimension**: 1
+- **Valid Values**:
+  - ``OfxUnlicensedContinue``
+  - ``OfxUnlicensedFail``
+- **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPropBehaviourWhenUnlicensed`.
+
 .. _prop_OfxImageEffectPropCPURenderSupported:
 
 **OfxImageEffectPropCPURenderSupported**

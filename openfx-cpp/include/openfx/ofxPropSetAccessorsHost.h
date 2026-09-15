@@ -865,6 +865,11 @@ public:
         return *this;
     }
 
+    ImageEffectActionBeginSequenceRender_InArgs& setBehaviourWhenUnlicensed(const char* value, bool error_if_missing = true) {
+        props_.set<PropId::OfxImageEffectPropBehaviourWhenUnlicensed>(value, 0, error_if_missing);
+        return *this;
+    }
+
 };
 
 // Property set accessor for: ImageEffectActionDescribeInContext_InArgs
@@ -1336,6 +1341,11 @@ public:
 
     ImageEffectActionRender_InArgs& setThumbnailRender(const char* value, bool error_if_missing = true) {
         props_.set<PropId::OfxImageEffectPropThumbnailRender>(value, 0, error_if_missing);
+        return *this;
+    }
+
+    ImageEffectActionRender_InArgs& setBehaviourWhenUnlicensed(const char* value, bool error_if_missing = true) {
+        props_.set<PropId::OfxImageEffectPropBehaviourWhenUnlicensed>(value, 0, error_if_missing);
         return *this;
     }
 

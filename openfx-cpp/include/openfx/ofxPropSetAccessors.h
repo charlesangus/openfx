@@ -822,6 +822,10 @@ public:
         return props_.get<PropId::OfxImageEffectPropThumbnailRender>(0, error_if_missing);
     }
 
+    const char* behaviourWhenUnlicensed(bool error_if_missing = true) const {
+        return props_.get<PropId::OfxImageEffectPropBehaviourWhenUnlicensed>(0, error_if_missing);
+    }
+
 };
 
 // Property set accessor for: ImageEffectActionDescribeInContext_InArgs
@@ -1206,6 +1210,10 @@ public:
 
     const char* thumbnailRender(bool error_if_missing = true) const {
         return props_.get<PropId::OfxImageEffectPropThumbnailRender>(0, error_if_missing);
+    }
+
+    const char* behaviourWhenUnlicensed(bool error_if_missing = true) const {
+        return props_.get<PropId::OfxImageEffectPropBehaviourWhenUnlicensed>(0, error_if_missing);
     }
 
 };

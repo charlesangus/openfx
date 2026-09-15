@@ -664,7 +664,8 @@ static inline const std::map<std::array<std::string_view, 2>, std::vector<const 
     "OfxPropType" } },
 // OfxImageEffectActionBeginSequenceRender.inArgs
 { { "OfxImageEffectActionBeginSequenceRender", "inArgs" },
-  { "OfxImageEffectPropCudaEnabled",
+  { "OfxImageEffectPropBehaviourWhenUnlicensed",
+    "OfxImageEffectPropCudaEnabled",
     "OfxImageEffectPropCudaRenderSupported",
     "OfxImageEffectPropCudaStream",
     "OfxImageEffectPropCudaStreamSupported",
@@ -761,7 +762,8 @@ static inline const std::map<std::array<std::string_view, 2>, std::vector<const 
     "OfxPropTime" } },
 // OfxImageEffectActionRender.inArgs
 { { "OfxImageEffectActionRender", "inArgs" },
-  { "OfxImageEffectPropCudaEnabled",
+  { "OfxImageEffectPropBehaviourWhenUnlicensed",
+    "OfxImageEffectPropCudaEnabled",
     "OfxImageEffectPropCudaRenderSupported",
     "OfxImageEffectPropCudaStream",
     "OfxImageEffectPropCudaStreamSupported",

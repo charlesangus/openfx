@@ -510,6 +510,7 @@ These are the list of actions passed to an image effect plugin's main function. 
       - OfxImageEffectPropOpenGLTextureTarget
       - OfxImageEffectPropNoSpatialAwareness
       - OfxImageEffectPropThumbnailRender
+      - OfxImageEffectPropBehaviourWhenUnlicensed
     outArgs:
 */
 #define kOfxImageEffectActionRender                "OfxImageEffectActionRender"
@@ -579,6 +580,7 @@ These are the list of actions passed to an image effect plugin's main function. 
       - OfxImageEffectPropInteractiveRenderStatus
       - OfxImageEffectPropNoSpatialAwareness
       - OfxImageEffectPropThumbnailRender
+      - OfxImageEffectPropBehaviourWhenUnlicensed
     outArgs:
 */
 #define kOfxImageEffectActionBeginSequenceRender   "OfxImageEffectActionBeginSequenceRender"
@@ -1730,6 +1732,13 @@ If \ref kOfxImageEffectPropBehaviourWhenUnlicensed is set to
 - plug-in should return \ref kOfxStatUnlicensed and may do this
   without any rendering, because it knows the host will fail the
   render.
+
+    @propdef
+    type: enum
+    dimension: 1
+    values:
+      - OfxUnlicensedContinue
+      - OfxUnlicensedFail
 */
 #define kOfxImageEffectPropBehaviourWhenUnlicensed "OfxImageEffectPropBehaviourWhenUnlicensed"
 

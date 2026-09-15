@@ -23,14 +23,14 @@ binary blob type.
 
 The key space is divided into namespaces by a prefix ending in a forward slash:
 
-- ``ofx/`` is reserved for the standard, host-independent keys defined in this
+- "ofx/" is reserved for the standard, host-independent keys defined in this
   file. Neither a host nor a plugin may invent new keys in this namespace.
-- ``exr/``, ``exif/``, ``dpx/``, ``cin/``, ``tiff/`` and ``quicktime/`` are
+- "exr/", "exif/", "dpx/", "cin/", "tiff/" and "quicktime/" are
   reserved for keys carried verbatim from the file format an image was read
   from. A host that cannot produce format-prefixed keys may omit them entirely;
   these prefixes are reserved, not mandatory.
 - any other key must be named in reverse DNS form, using a domain the definer
-  controls, for example ``com.example.mytool.regionOfInterest``. This applies
+  controls, for example "com.example.mytool.regionOfInterest". This applies
   equally to host- and plugin-defined keys.
 
 A host publishes a standard key only when it knows the value; a value that is
@@ -60,8 +60,8 @@ see what its inputs carry reads it with OfxMetadataSuiteV1::clipGetMetadata.
 
 An effect that does not trap the action returns \ref kOfxStatReplyDefault, and the host then
 ignores everything it wrote: it reads back neither the contributed set nor either inheritance
-control in ``outArgs``, and composes the output's metadata from the defaults it initialised
-``outArgs`` with. An effect that means anything it wrote to be honoured must return ::kOfxStatOK.
+control in outArgs, and composes the output's metadata from the defaults it initialised
+outArgs with. An effect that means anything it wrote to be honoured must return ::kOfxStatOK.
 
  @param handle handle to the instance, cast to an \ref OfxImageEffectHandle
 
@@ -75,8 +75,8 @@ control in ``outArgs``, and composes the output's metadata from the defaults it 
      - \ref kOfxImageEffectPropMetadataSourceClip the ordered list of input clip names whose
        metadata the output composes
      - a set of char * X N properties, one for each input clip the effect describes, connected
-       or not, labelled with ``OfxImageClipPropMetadataRetainedKeys_`` post pended with the
-       clip's name, for example ``OfxImageClipPropMetadataRetainedKeys_Source``. Each such
+       or not, labelled with \c OfxImageClipPropMetadataRetainedKeys_ post pended with the
+       clip's name, for example \c OfxImageClipPropMetadataRetainedKeys_Source. Each such
        property lists the metadata keys retained from that input clip; a key absent from the
        list is not carried through from that clip. Before the action is called the host
        initialises the list for the clip named by the default value of
@@ -89,8 +89,10 @@ control in ``outArgs``, and composes the output's metadata from the defaults it 
        outArgs the effect wrote,
      - \ref kOfxStatReplyDefault the action was not trapped, so the host uses its default metadata
        and discards everything the effect wrote,
-     - \ref kOfxStatErrMemory the host ran out of memory, in which case the action may be called again after a memory purge,
-     - \ref kOfxStatFailed something went wrong but no error code is appropriate, the plugin should post a message,
+     - \ref kOfxStatErrMemory the host ran out of memory, in which case the action may be
+       called again after a memory purge,
+     - \ref kOfxStatFailed something went wrong but no error code is appropriate, the
+       plugin should post a message,
      - \ref kOfxStatErrFatal
 
  @version Added in OpenFX NEXT
@@ -108,11 +110,11 @@ control in ``outArgs``, and composes the output's metadata from the defaults it 
 
 /** @brief The metadata property set an effect writes its metadata contribution into
 
-The host passes this in the ``inArgs`` of \ref kOfxImageEffectActionGetMetadata. The value is a
+The host passes this in the inArgs of \ref kOfxImageEffectActionGetMetadata. The value is a
 pointer holding an \ref OfxPropertySetHandle, which the effect casts to before use.
 
 The set arrives empty and is the only metadata property set an effect may write to. Keys are
-added with the ``metadataSet`` entry points of \ref OfxMetadataSuiteV1, which create a key that
+added with the \c metadataSet entry points of \ref OfxMetadataSuiteV1, which create a key that
 is not already present; the generic Property Suite cannot create a key, but once a key has been
 written its value can be read back through it, using the type and dimension that
 OfxMetadataSuiteV1::metadataEnumerate reports. Enumeration is permitted on this set.
@@ -134,9 +136,9 @@ released with OfxMetadataSuiteV1::metadataRelease.
 
 /** @brief The ordered list of input clip names whose metadata the output clip inherits
 
-An effect sets this in the ``outArgs`` of \ref kOfxImageEffectActionGetMetadata to nominate the
+An effect sets this in the outArgs of \ref kOfxImageEffectActionGetMetadata to nominate the
 input clips the output clip's metadata is composed from. Each named clip contributes the keys
-selected by its ``OfxImageClipPropMetadataRetainedKeys_`` property, described under that action.
+selected by its \c OfxImageClipPropMetadataRetainedKeys_ property, described under that action.
 
 The list is read in increasing precedence: where two named clips carry the same key, the value
 from the later entry wins. An empty list means the output inherits no metadata from any clip. A
@@ -170,7 +172,7 @@ host nor a plugin may define further keys beginning with it.
 
 Keys under this prefix hold the attributes of the OpenEXR file an image was read
 from, named after the EXR attribute they came from, for example
-``exr/chromaticities``. A host that cannot produce such keys may omit them.
+"exr/chromaticities". A host that cannot produce such keys may omit them.
 
  @version Added in OpenFX NEXT
 */
@@ -179,7 +181,7 @@ from, named after the EXR attribute they came from, for example
 /** @brief The namespace prefix for keys carried verbatim from EXIF data
 
 Keys under this prefix hold the EXIF tags found in the file an image was read
-from, named after the EXIF tag they came from, for example ``exif/Make``. A host
+from, named after the EXIF tag they came from, for example "exif/Make". A host
 that cannot produce such keys may omit them.
 
  @version Added in OpenFX NEXT
@@ -257,8 +259,8 @@ omitted for a single-image file that is not part of a sequence.
 
    - Type - string X 1
 
-The value is ``HH:MM:SS:FF`` for non drop frame and ``HH:MM:SS;FF`` for drop
-frame timecode, each field two zero padded digits with ``HH`` from 00 to 23 and
+The value is "HH:MM:SS:FF" for non drop frame and "HH:MM:SS;FF" for drop
+frame timecode, each field two zero padded digits with "HH" from 00 to 23 and
 the frames field counting at the rate given by \ref kOfxMetadataKeyFrameRate. It is
 the timecode the source records, not the image's position on the host's timeline.
 
@@ -381,8 +383,8 @@ is read with \ref kOfxMetadataKeySampleType, which gives the numeric format.
 
    - Type - string X 1
 
-The value is one of exactly three lowercase strings: ``"uint"`` for unsigned
-integer, ``"int"`` for signed integer and ``"float"`` for IEEE floating-point
+The value is one of exactly three lowercase strings: "uint" for unsigned
+integer, "int" for signed integer and "float" for IEEE floating-point
 samples. It is read together with \ref kOfxMetadataKeyBitDepth.
 
  @version Added in OpenFX NEXT
@@ -482,7 +484,7 @@ unchanged and unparsed.
 
    - Type - string X N
 
-Each element is the name of one view, for example ``left`` and ``right``, in the
+Each element is the name of one view, for example "left" and "right", in the
 order the source stores them. A host need not populate this key, and a plugin
 must not treat its absence as meaning the source is monoscopic; a plugin that
 needs to know about views must use the multi-view mechanisms of the API.
@@ -521,7 +523,8 @@ typedef enum OfxMetadataValueType
  the next key; any other return value stops enumeration immediately, and that same status
  is returned to the caller of metadataEnumerate.
  */
-typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, OfxMetadataValueType type, int dimension, void *userData);
+typedef OfxStatus (OfxMetadataEnumerateFuncV1)(const char *key, OfxMetadataValueType type,
+                                                int dimension, void *userData);
 
 /** @brief OFX suite that lets an effect read the metadata of a clip's images and write the
     metadata it contributes.
@@ -569,8 +572,10 @@ typedef struct OfxMetadataSuiteV1 {
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle, which is
 	   empty if the clip has no metadata associated with it at the given time,
 	 - ::kOfxStatErrBadHandle - the clip handle was invalid,
-	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
-	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
+	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin
+	   should abort whatever it was doing.,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin
+	   should post a message.
 	 */
 	OfxStatus (*clipGetMetadata)(OfxImageClipHandle clip, OfxTime time, OfxPropertySetHandle *metadata);
 
@@ -591,8 +596,10 @@ typedef struct OfxMetadataSuiteV1 {
 	 - ::kOfxStatOK - the metadata was successfully fetched and returned in the handle, which is
 	   empty if the image has no metadata associated with it,
 	 - ::kOfxStatErrBadHandle - the image handle was invalid,
-	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin should abort whatever it was doing.,
-	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message.
+	 - ::kOfxStatErrMemory - the host had not enough memory to complete the operation, plugin
+	   should abort whatever it was doing.,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin
+	   should post a message.
 	 */
 	OfxStatus (*imageGetMetadata)(OfxPropertySetHandle image, OfxPropertySetHandle *metadata);
 
@@ -609,7 +616,8 @@ typedef struct OfxMetadataSuiteV1 {
 	 @returns
 	 - ::kOfxStatOK - the metadata handle was successfully released,
 	 - ::kOfxStatErrBadHandle - the metadata handle was invalid,
-	 - ::kOfxStatErrValue - the metadata handle is not the plugin's to release, being one the host passed to an action.
+	 - ::kOfxStatErrValue - the metadata handle is not the plugin's to release, being one the
+	   host passed to an action.
 	 */
 	OfxStatus (*metadataRelease)(OfxPropertySetHandle metadata);
 
@@ -636,10 +644,12 @@ typedef struct OfxMetadataSuiteV1 {
 	 - ::kOfxStatOK - enumeration completed, having visited every key,
 	 - ::kOfxStatErrBadHandle - the metadata handle was invalid,
 	 - ::kOfxStatErrValue - callback is NULL,
-	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin should post a message,
+	 - ::kOfxStatFailed - something went wrong but no error code is appropriate, the plugin
+	   should post a message,
 	 - any other status returned by callback to stop enumeration early.
 	 */
-	OfxStatus (*metadataEnumerate)(OfxPropertySetHandle metadata, OfxMetadataEnumerateFuncV1 callback, void *userData);
+	OfxStatus (*metadataEnumerate)(OfxPropertySetHandle metadata,
+	                                OfxMetadataEnumerateFuncV1 callback, void *userData);
 
 	/** @brief Writes a single string value to a metadata key, creating the key if needed
 
@@ -690,7 +700,8 @@ typedef struct OfxMetadataSuiteV1 {
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
 	 */
-	OfxStatus (*metadataSetStringN)(OfxPropertySetHandle metadata, const char *key, int count, const char *const*values);
+	OfxStatus (*metadataSetStringN)(OfxPropertySetHandle metadata, const char *key,
+	                                 int count, const char *const*values);
 
 	/** @brief Writes an array of double values to a metadata key, creating the key if needed
 
@@ -702,7 +713,8 @@ typedef struct OfxMetadataSuiteV1 {
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
 	 */
-	OfxStatus (*metadataSetDoubleN)(OfxPropertySetHandle metadata, const char *key, int count, const double *values);
+	OfxStatus (*metadataSetDoubleN)(OfxPropertySetHandle metadata, const char *key,
+	                                 int count, const double *values);
 
 	/** @brief Writes an array of int values to a metadata key, creating the key if needed
 
@@ -714,7 +726,8 @@ typedef struct OfxMetadataSuiteV1 {
 	 @returns the status codes shared by the metadataSet entry points, described in this
 	 suite's documentation above.
 	 */
-	OfxStatus (*metadataSetIntN)   (OfxPropertySetHandle metadata, const char *key, int count, const int *values);
+	OfxStatus (*metadataSetIntN)   (OfxPropertySetHandle metadata, const char *key,
+	                                 int count, const int *values);
 
 } OfxMetadataSuiteV1;
 

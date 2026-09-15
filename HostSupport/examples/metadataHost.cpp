@@ -1995,6 +1995,25 @@ namespace {
 
 #endif // OFX_SUPPORTS_METADATA
 
+  /// the first clip 'instance' described that is not the output clip, in the order the
+  /// effect described them. Every context guarantees at least one such clip, whereas
+  /// only the fixture's own plugins are guaranteed to have named it
+  /// kOfxImageEffectSimpleSourceClipName, so this is what a check driving an arbitrary
+  /// plugin has to ask for instead. NULL only for a plugin that described none, which
+  /// no context allows
+  OFX::Host::ImageEffect::ClipInstance *firstInputClip(OFX::Host::ImageEffect::Instance &instance)
+  {
+    const std::vector<OFX::Host::ImageEffect::ClipDescriptor *> &clips =
+      instance.getDescriptor().getClipsByOrder();
+
+    for(size_t i = 0; i < clips.size(); ++i) {
+      if(!clips[i]->isOutput())
+        return instance.getClip(clips[i]->getName());
+    }
+
+    return NULL;
+  }
+
   /// what a render pass produced, for a caller with more to say about it than checkRender
   /// says on its own
   struct RenderPass {
@@ -2031,8 +2050,7 @@ namespace {
     roi.x1 = roi.y1 = 0;
     roi.x2 = roi.y2 = 4;
 
-    MyHost::MyClipInstance *source =
-      dynamic_cast<MyHost::MyClipInstance *>(instance.getClip(kOfxImageEffectSimpleSourceClipName));
+    OFX::Host::ImageEffect::ClipInstance *source = firstInputClip(instance);
     MyHost::MyClipInstance *output =
       dynamic_cast<MyHost::MyClipInstance *>(instance.getClip(kOfxImageEffectOutputClipName));
 
@@ -2058,30 +2076,40 @@ namespace {
         report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
                      "render frame=" + formatTime(time) + " roi");
 
-        // a plugin which has yet to fetch its output image has left nothing to compare,
-        // and comparing what it renders against what it started from says nothing unless
-        // the two differed to begin with
-        MyHost::MyImage *held = output ? output->getOutputImage() : NULL;
+        // whatever the output clip is holding before this frame renders is leftover
+        // from a previous render, so comparing it against this frame's source says
+        // nothing about this frame unless the two already differ; a plugin that has
+        // never fetched its output image has left nothing to establish that with,
+        // which is expected on the first frame and not itself a fault
+        MyHost::MyImage *before = output ? output->getOutputImage() : NULL;
         MyHost::MyImage *wanted =
-          held && source ? dynamic_cast<MyHost::MyImage *>(source->getImage(time, NULL)) : NULL;
+          source ? dynamic_cast<MyHost::MyImage *>(source->getImage(time, NULL)) : NULL;
 
-        const bool comparable = wanted && !imagesEqual(*held, *wanted, renderWindow);
-
-        if(wanted)
-          report.check(comparable, "render frame=" + formatTime(time) + " pixels differ");
+        if(before && wanted)
+          report.check(!imagesEqual(*before, *wanted, renderWindow),
+                       "render frame=" + formatTime(time) + " pixels differ");
 
         stat = instance.renderAction(time, kOfxImageFieldBoth, renderWindow, renderScale,
                                      /*sequential=*/true, /*interactive=*/false, /*draft=*/false);
         report.check(stat == kOfxStatOK || stat == kOfxStatReplyDefault,
                      "render frame=" + formatTime(time));
 
-        if(comparable) {
+        // fetch again now that render has had its chance to produce one, rather than
+        // trust the pre-render snapshot above: that makes this comparison
+        // self-sufficient on every frame, including the first, instead of silently
+        // skipped whenever there was nothing to compare beforehand
+        MyHost::MyImage *held = output ? output->getOutputImage() : NULL;
+
+        if(held && wanted) {
           const bool identical = imagesEqual(*held, *wanted, renderWindow);
 
           if(identical)
             passedThrough += 1;
 
           report.check(identical, "render frame=" + formatTime(time) + " pixels rendered");
+        }
+        else {
+          report.check(true, "render frame=" + formatTime(time) + " pixels not comparable");
         }
 
         if(wanted)
@@ -4773,28 +4801,33 @@ namespace {
     std::vector<std::unique_ptr<OFX::Host::ImageEffect::Instance> > _nodes;
   };
 
-  /// make the source clip of 'instance' carry what 'upstream' emits, reporting the one
-  /// precondition an effect downstream of another has to meet
+  /// make the first input clip of 'instance' carry what 'upstream' emits, reporting the
+  /// one precondition an effect downstream of another has to meet: every context
+  /// guarantees such a clip exists, though only the fixture's own plugins are
+  /// guaranteed to have named it kOfxImageEffectSimpleSourceClipName
   bool connectUpstream(Report &report,
                        OFX::Host::ImageEffect::Instance &instance,
                        OFX::Host::ImageEffect::Instance *upstream,
                        const std::string &pluginId)
   {
     MyHost::MetadataEffectInstance *effect = dynamic_cast<MyHost::MetadataEffectInstance *>(&instance);
+    OFX::Host::ImageEffect::ClipInstance *input = firstInputClip(instance);
+    const std::string named = input ? input->getName() : std::string("(none)");
 
     if(!report.check(effect != NULL
-                     && instance.getClip(kOfxImageEffectSimpleSourceClipName) != NULL
+                     && input != NULL
                      && upstream->getClip(kOfxImageEffectOutputClipName) != NULL,
-                     "chain id=" + pluginId + " clip=" kOfxImageEffectSimpleSourceClipName))
+                     "chain id=" + pluginId + " inputclip=" + named))
       return false;
 
-    effect->connect(kOfxImageEffectSimpleSourceClipName, upstream);
+    effect->connect(named, upstream);
 
     return true;
   }
 
-  /// build the effects --upstream names, head first, each one's source clip carrying
-  /// what the one before it emits, and report the preconditions each has to meet
+  /// build the effects --upstream names, head first, each one's first input clip
+  /// carrying what the one before it emits, and report the preconditions each has to
+  /// meet
   bool buildChain(Report &report,
                   OFX::Host::ImageEffect::PluginCache &effectCache,
                   const std::string &pluginDir,
@@ -4833,9 +4866,9 @@ namespace {
   /// instance exposing the clips its context guarantees, and completes a render pass.
   /// It asserts nothing about composition order or retained keys, which a read-only
   /// plugin implements neither of. The effects --upstream names are built ahead of it,
-  /// so that its source clip carries what the last of them emits. Returns the number of
-  /// checks the contract made, zero if none was asked for or it never got as far as
-  /// running
+  /// so that its first input clip carries what the last of them emits. Returns the
+  /// number of checks the contract made, zero if none was asked for or it never got as
+  /// far as running
   int checkGenericPlugin(Report &report,
                          MyHost::MetadataHost &host,
                          const std::string &pluginDir,
@@ -4873,8 +4906,7 @@ namespace {
     if(!instance.get())
       return 0;
 
-    report.check(instance->getClip(kOfxImageEffectSimpleSourceClipName) != NULL,
-                 "plugin clip=" kOfxImageEffectSimpleSourceClipName);
+    report.check(firstInputClip(*instance) != NULL, "plugin clip=inputclip");
     report.check(instance->getClip(kOfxImageEffectOutputClipName) != NULL,
                  "plugin clip=" kOfxImageEffectOutputClipName);
 
@@ -5044,6 +5076,30 @@ namespace {
     effect->setOfferCapture(NULL);
   }
 
+  /// vmessage has to capture a message of any length whole rather than truncate it
+  /// silently, so drive one well past a kilobyte and check every byte of it arrives
+  void checkLongMessage(Report &report, OFX::Host::ImageEffect::Instance &instance)
+  {
+    MyHost::MyEffectInstance *effect = dynamic_cast<MyHost::MyEffectInstance *>(&instance);
+
+    if(!report.check(effect != NULL, "message effect instance"))
+      return;
+
+    const std::string body(1200, 'x');
+
+    std::string captured;
+    effect->setMessageCapture(&captured);
+
+    if(gMessageSuite)
+      gMessageSuite->message(instance.getHandle(), kOfxMessageLog, "metadataHost",
+                             "metadataHost longmessage %s", body.c_str());
+
+    effect->setMessageCapture(NULL);
+
+    report.check(captured.find(body) != std::string::npos,
+                 "message longmessage length=" + formatInt(int(body.size())));
+  }
+
   /// load the plugin, attach the fixture's clips to it and read its output clip in both
   /// composition orders
   void checkPlugin(Report &report, MyHost::MetadataHost &host, const std::string &pluginDir)
@@ -5065,6 +5121,8 @@ namespace {
 
     if(!instance.get())
       return;
+
+    checkLongMessage(report, *instance);
 
     OFX::Host::ImageEffect::ClipInstance *output = instance->getClip(kOfxImageEffectOutputClipName);
     std::string orderValue = "none";

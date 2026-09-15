@@ -49,8 +49,10 @@ than under a vendor-specific name.
 /** @brief Action called to retrieve the metadata an effect contributes for a clip at a given time.
 
 Metadata is a property of an image — a clip at a specific time — and this action is always time-parameterised.
-The host calls this action whenever the effect's parameter or input state changes, using the same hash it
-already uses for the render cache, so no separate invalidation property is required or defined.
+This action's result for a given time is valid only while the input metadata it was
+composed from, the effect's parameter values and the effect's clip connections remain
+unchanged; the host must re-issue the action after any of those change, so no separate
+invalidation property is required or defined.
 
 An effect writes the metadata it contributes into the metadata property set passed in
 \ref kOfxImageEffectPropMetadataSet, or it may choose not to contribute any metadata at all.

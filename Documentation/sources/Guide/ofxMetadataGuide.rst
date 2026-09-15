@@ -344,11 +344,11 @@ forgets to return true loses all of it silently, with no error to
 signal that anything was ignored.
 
 There is no property to say when a previous answer from this action has
-gone stale. The host does not need one: it re-calls
-:c:macro:`kOfxImageEffectActionGetMetadata` whenever the effect's
-parameter or input state changes, using the same hash it already
-maintains for its render cache, so there is nothing for a plugin to
-invalidate by hand.
+gone stale. Instead, an answer stays valid only as long as the input
+metadata it was composed from, the effect's parameter values and the
+effect's clip connections are unchanged, and the host must re-call
+:c:macro:`kOfxImageEffectActionGetMetadata` after any of those change,
+so there is nothing for a plugin to invalidate by hand.
 
 Finally, the handle backing both ``metadata`` and ``inheritance`` is
 owned by the host for the duration of the action only. As with a

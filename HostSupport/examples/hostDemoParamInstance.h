@@ -17,6 +17,7 @@ namespace MyHost {
   protected:
     MyEffectInstance*   _effect;
     OFX::Host::Param::Descriptor& _descriptor;
+    int _value;
   public:
     MyIntegerInstance(MyEffectInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor);
     OfxStatus get(int&);
@@ -29,6 +30,7 @@ namespace MyHost {
   protected:
     MyEffectInstance*   _effect;
     OFX::Host::Param::Descriptor& _descriptor;
+    double _value;
   public:
     MyDoubleInstance(MyEffectInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor);
     OfxStatus get(double&);
@@ -43,6 +45,7 @@ namespace MyHost {
   protected:
     MyEffectInstance*   _effect;
     OFX::Host::Param::Descriptor& _descriptor;
+    bool _value;
   public:
     MyBooleanInstance(MyEffectInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor);
     OfxStatus get(bool&);
@@ -55,12 +58,26 @@ namespace MyHost {
   protected:
     MyEffectInstance*   _effect;
     OFX::Host::Param::Descriptor& _descriptor;
+    int _value;
   public:
     MyChoiceInstance(MyEffectInstance* effect,  const std::string& name, OFX::Host::Param::Descriptor& descriptor);
     OfxStatus get(int&);
     OfxStatus get(OfxTime time, int&);
     OfxStatus set(int);
     OfxStatus set(OfxTime time, int);
+  };
+
+  class MyStringInstance : public OFX::Host::Param::StringInstance {
+  protected:
+    MyEffectInstance*   _effect;
+    OFX::Host::Param::Descriptor& _descriptor;
+    std::string _value;
+  public:
+    MyStringInstance(MyEffectInstance* effect, const std::string& name, OFX::Host::Param::Descriptor& descriptor);
+    OfxStatus get(std::string&);
+    OfxStatus get(OfxTime time, std::string&);
+    OfxStatus set(const char*);
+    OfxStatus set(OfxTime time, const char*);
   };
 
   class MyRGBAInstance : public OFX::Host::Param::RGBAInstance {

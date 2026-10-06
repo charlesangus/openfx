@@ -22,3 +22,4 @@ This table list all suites available in the OpenFX standard
     ofxMessageSuiteV2Reference
     ofxOpenGLRenderSuiteReference
     ofxDrawSuiteReference
+    ofxMetadataSuiteReference

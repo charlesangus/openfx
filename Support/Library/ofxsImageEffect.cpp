@@ -111,6 +111,7 @@ namespace OFX {
     OfxHost               *gHost = 0;
     OfxImageEffectSuiteV1 *gEffectSuite = 0;
     OfxPropertySuiteV1    *gPropSuite = 0;
+    OfxMetadataSuiteV1    *gMetadataSuite = 0;
     OfxInteractSuiteV1    *gInteractSuite = 0;
     OfxParameterSuiteV1   *gParamSuite = 0;
     OfxMemorySuiteV1      *gMemorySuite = 0;
@@ -883,6 +884,11 @@ namespace OFX {
     OFX::Private::gEffectSuite->clipReleaseImage(_imageProps.propSetHandle());
   }
 
+  MetadataSet Image::getMetadata(void) const
+  {
+    return MetadataSet::fetchFromImage(_imageProps.propSetHandle());
+  }
+
 #ifdef OFX_SUPPORTS_OPENGLRENDER
   ////////////////////////////////////////////////////////////////////////////////
   // wraps up an OpenGL texture
@@ -1164,6 +1170,11 @@ namespace OFX {
     return bounds;
   }
 
+  MetadataSet Clip::getMetadata(double time)
+  {
+    return MetadataSet::fetchFromClip(getHandle(), time);
+  }
+
   /** @brief fetch an image */
   Image *Clip::fetchImage(double t)
   {
@@ -1361,7 +1372,7 @@ namespace OFX {
   {   
     if(!OFX::Private::gMessageSuite){ throwHostMissingSuiteException("message"); }
     if(!OFX::Private::gMessageSuite->message){ throwHostMissingSuiteException("message"); }
-    OfxStatus stat = OFX::Private::gMessageSuite->message(_effectHandle, mapMessageTypeEnumToStr(type), id.c_str(), msg.c_str());
+    OfxStatus stat = OFX::Private::gMessageSuite->message(_effectHandle, mapMessageTypeEnumToStr(type), id.c_str(), "%s", msg.c_str());
     return mapToMessageReplyEnum(stat);
   }
 
@@ -1369,7 +1380,7 @@ namespace OFX {
   {   
     if(!OFX::Private::gMessageSuiteV2){ throwHostMissingSuiteException("setPersistentMessage"); }
     if(!OFX::Private::gMessageSuiteV2->setPersistentMessage){ throwHostMissingSuiteException("setPersistentMessage"); }
-    OfxStatus stat = OFX::Private::gMessageSuiteV2->setPersistentMessage(_effectHandle, mapMessageTypeEnumToStr(type), id.c_str(), msg.c_str());
+    OfxStatus stat = OFX::Private::gMessageSuiteV2->setPersistentMessage(_effectHandle, mapMessageTypeEnumToStr(type), id.c_str(), "%s", msg.c_str());
     return mapToMessageReplyEnum(stat);
   }
 
@@ -1962,6 +1973,7 @@ namespace OFX {
         gProgressSuiteV2 = (OfxProgressSuiteV2 *)     fetchSuite(kOfxProgressSuite, 2, true);
         gTimeLineSuite   = (OfxTimeLineSuiteV1 *)     fetchSuite(kOfxTimeLineSuite, 1, true);
         gParametricParameterSuite = (OfxParametricParameterSuiteV1*) fetchSuite(kOfxParametricParameterSuite, 1, true);
+        gMetadataSuite  = (OfxMetadataSuiteV1 *)    fetchSuite(kOfxMetadataSuite, 1, true);
 #ifdef OFX_SUPPORTS_OPENGLRENDER
         gOpenGLRenderSuite = (OfxImageEffectOpenGLRenderSuiteV1*) fetchSuite(kOfxOpenGLRenderSuite, 1, true);
 #endif
@@ -1973,6 +1985,7 @@ namespace OFX {
         OFX::gHostDescription.supportsMessageSuiteV2 = gMessageSuiteV2 != NULL;
         OFX::gHostDescription.supportsProgressSuite = (gProgressSuiteV1 != NULL || gProgressSuiteV2 != NULL);
         OFX::gHostDescription.supportsTimeLineSuite = gTimeLineSuite != NULL;
+        OFX::gHostDescription.supportsMetadata = gMetadataSuite != NULL;
 
         // fetch the interact suite if the host supports interaction
         if(OFX::gHostDescription.supportsOverlays || OFX::gHostDescription.supportsCustomInteract)
@@ -2002,6 +2015,7 @@ namespace OFX {
         // force these to null
         gEffectSuite = 0;
         gPropSuite = 0;
+        gMetadataSuite = 0;
         gParamSuite = 0;
         gMemorySuite = 0;
         gThreadSuite = 0;

@@ -648,6 +648,12 @@ namespace OFX {
           return false;
         }
         
+        /// Drop the metadata cached by every clip of this effect, so that the next
+        /// ClipInstance::getMetadata() re-derives it. A host calls this when the state its
+        /// metadata comes from has changed, and on the effects downstream of this one, whose
+        /// input clips have cached what this one carried.
+        void invalidateMetadata();
+
         /// find the best supported bit depth for the given one. Override this if you define
         /// more depths
         virtual const std::string &bestSupportedDepth(const std::string &depth) const;

@@ -656,8 +656,7 @@ jobs:
           MISSING=0
           for SYMBOL in OfxMetadataSuiteV1 OfxMetadataEnumerateFuncV1 OfxMetadataValueType \
               kOfxImageEffectActionGetMetadata kOfxImageEffectPropMetadataSet \
-              kOfxImageEffectPropMetadataSourceClip kOfxMetadataKeyFilePath \
-              kOfxMetadataKeyTimecode kOfxMetadataKeyViewNames metadataEnumerate \
+              kOfxImageEffectPropMetadataSourceClip metadataEnumerate \
               metadataSetStringN; do
             if grep -rlq --include='*.html' --exclude-dir=_sources "$SYMBOL" Documentation/build/; then
               echo "$SYMBOL: present"

@@ -9,8 +9,8 @@ effect's output. It uses the ``C++`` support wrappers around
 and ``OFX::MetadataInheritanceSetter``, declared in
 `ofxsMetadata.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsMetadata.h>`_ and
 `ofxsImageEffect.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsImageEffect.h>`_.
-The model behind the API, the standard key vocabulary and the namespacing
-rules for every other key are described in :ref:`imageMetadata`.
+The model behind the API is described in :ref:`imageMetadata`. What a set
+contains is up to the host: the suite defines no keys.
 
 Metadata belongs to an image, not to a clip: the frame at time 5 of an
 image sequence and the frame at time 6 can come from different files with
@@ -67,12 +67,12 @@ convert, comes back as the default you passed rather than as an error:
 
 .. code:: c++
 
-    std::string path = metadata.getString(kOfxMetadataKeyFilePath);
-    int frame         = metadata.getInt(kOfxMetadataKeySourceFrame, 0, -1);
-    double frameRate  = metadata.getDouble(kOfxMetadataKeyFrameRate, 0, 24.0);
+    std::string path = metadata.getString("file_path");
+    int frame         = metadata.getInt("source_frame", 0, -1);
+    double frameRate  = metadata.getDouble("frame_rate", 0, 24.0);
 
 The second argument is an index, since a key can carry more than one value,
-for example :c:macro:`kOfxMetadataKeyViewNames`; ``getDimension`` reports
+for example a list of view names; ``getDimension`` reports
 how many, and ``getStringN``, ``getDoubleN`` and ``getIntN`` read all of
 them into a ``std::vector`` in one call. ``has`` reports whether a key is
 present, and ``getType`` its type, ``eMetadataTypeNone`` if it is absent.
@@ -99,6 +99,29 @@ entries against a string parameter and writes the matching ones into a
 disabled display parameter, so a host's UI can show them. Because a render
 must not write a parameter, it composes the display from ``changedParam``
 and ``changedClip`` instead.
+
+Choosing which key to read
+==========================
+
+The names in the examples above, ``file_path``, ``frame_rate`` and the rest,
+are illustrations. Hosts differ in which keys they publish and what they call
+them, so a plugin that consumes a value should not assume one name.
+
+The simplest approach is a string parameter holding the key to read, with a
+plausible default, as ``MetadataTimeCode`` does for its frame rate:
+
+.. code:: c++
+
+    std::string rateKey;
+    rateKey_->getValue(rateKey);
+    double rate = source.getDouble(rateKey, 0, 24.0);
+
+The user sets it to whatever name their host uses. Alternatively, a plugin can
+document the key it expects and leave it to the user to put the value there:
+a ``MetadataModify`` upstream can ``set`` the key the plugin expects to
+the value the user wants it to see, so one effect bridges a host's naming and
+the plugin's. Either way, a missing key reads back as the default, so a plugin
+should treat that as the normal case on a host that does not publish it.
 
 Contributing metadata
 =====================
@@ -140,8 +163,9 @@ Pass-through of an input's metadata is not done by copying keys into
 described below. ``metadata`` is for a value the effect computes.
 ``MetadataTimeCode`` counts a timecode on from a start code, reading the
 frame rate off its source's metadata when asked to, and writes a different
-:c:macro:`kOfxMetadataKeyTimecode` at every frame alongside the
-:c:macro:`kOfxMetadataKeyFrameRate` it counted at:
+timecode at every frame alongside the frame rate it counted at. It writes
+them under the names in its ``timecodeKey`` and ``rateKey`` parameters,
+which default to ``timecode`` and ``frame_rate``:
 
 .. literalinclude:: ../../../Support/Plugins/MetadataTimeCode/metadataTimeCode.cpp
    :language: c++

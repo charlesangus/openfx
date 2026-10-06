@@ -63,6 +63,7 @@ class openfx(ConanFile):
 
 		tc = CMakeToolchain(self)
 		tc.cache_variables["BUILD_EXAMPLE_PLUGINS"] = bool(self.options.build_examples)
+		tc.cache_variables["BUILD_TESTING"] = bool(self.options.build_examples)
 		tc.generate()
 
 	def build(self):

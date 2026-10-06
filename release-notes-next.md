@@ -15,7 +15,7 @@ This is version NEXT of the OpenFX API.
 - **Obsolete plugins**: Added `kOfxImageEffectPluginPropObsolete` so a plugin bundle can mark a plugin as obsolete: available for use in old projects but not offered to users for new use (issue #221).
 - **Windows ARM64 packaging**: Defined plugin install locations for Windows on ARM, including the new normative `Win-arm64ec` folder for Arm64EC/Arm64X plug-ins, with most-specific-first DLL search order (issue #160).
 - **Project-load semantics**: Hosts are now required to send the `instanceChanged` action with `kOfxPropChangeReason` = `kOfxChangePluginEdited` when a clip or parameter was changed while loading a project (issue #184).
-- **Metadata suite**: Added `ofxMetadata.h` with `OfxMetadataSuiteV1` and `kOfxImageEffectActionGetMetadata` for effects to contribute and inherit metadata (issue #142).
+- **Metadata suite**: Added `ofxMetadata.h` with `OfxMetadataSuiteV1` and `kOfxImageEffectActionGetMetadata` for effects to contribute and inherit metadata (issue #142). Metadata content is host-defined: the suite defines no keys, namespaces or content rules, only the mechanism for reading and writing them.
 
 ## Fixes in OpenFX Version NEXT:
 

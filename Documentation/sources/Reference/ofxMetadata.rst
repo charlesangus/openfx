@@ -11,9 +11,10 @@ the :ref:`OfxMetadataSuiteV1`, fetched under the name
 :c:macro:`kOfxMetadataSuite`, and a plugin contributes metadata of its own,
 and controls what its output inherits from its inputs, in the
 :c:macro:`kOfxImageEffectActionGetMetadata` action. The suite, the action's
-two properties and the standard key vocabulary are documented from the header
-on the :ref:`suite reference page <OfxMetadataSuiteV1>`; this chapter
-describes the model they implement.
+two properties are documented from the header on the
+:ref:`suite reference page <OfxMetadataSuiteV1>`; this chapter describes the
+model they implement. What a set contains is up to the host: the suite
+defines a mechanism for reading and writing metadata, not a schema.
 
 Metadata Belongs to an Image
 ----------------------------
@@ -74,11 +75,6 @@ the host reads back neither the contributed set nor the inheritance controls
 in ``outArgs``, and composes the output's metadata from the defaults it
 initialised ``outArgs`` with.
 
-A key a plugin contributes is subject to the same namespace rules as any
-other, described under `The Key Vocabulary`_: it is a vendor key, named in
-reverse DNS form, and never a new key under
-:c:macro:`kOfxMetadataKeyPrefixStandard`.
-
 Composing Metadata Across Input Clips
 -------------------------------------
 
@@ -118,25 +114,21 @@ The keys the effect contributes in :c:macro:`kOfxImageEffectPropMetadataSet`
 are written over the inherited keys, so a key the effect writes replaces the
 inherited value of the same key.
 
-The Key Vocabulary
-------------------
+Key Names and Content
+---------------------
 
-Keys are strings, and the key space is divided into namespaces by a prefix
-ending in a forward slash. Keys under :c:macro:`kOfxMetadataKeyPrefixStandard`
-are the standard, host-independent vocabulary defined in the header, from
-:c:macro:`kOfxMetadataKeyFilePath` to :c:macro:`kOfxMetadataKeyViewNames`,
-each with its type, its units and its edge cases documented on the
-:ref:`suite reference page <OfxMetadataSuiteV1>`; neither a host nor a
-plugin may invent new keys in that namespace. Keys under one of the format
-prefixes, :c:macro:`kOfxMetadataKeyPrefixExr` through
-:c:macro:`kOfxMetadataKeyPrefixQuickTime`, are carried verbatim from the file
-an image was read from; those prefixes are reserved, not mandatory, and a
-host that cannot produce them may omit them entirely. Any other key is a
-vendor key and must be named in reverse DNS form using a domain the definer
-controls, whether the definer is a host or a plugin. A host publishes a
-standard key only when it knows the value, omitting it rather than publishing
-a placeholder, and publishes a value it does know under the standard key
-rather than a vendor name.
+Metadata content is host-defined. The suite defines no keys, no namespaces and
+no content rules: a host decides which keys it publishes, under what names,
+with what types and units, and whether it publishes a given piece of
+information at all. Two hosts reading the same file may publish different
+keys for it, and a plugin must not assume that a key it knows from one host
+exists on another. A key is any string, and a plugin may contribute keys
+under any name it chooses.
+
+A plugin that consumes a value therefore cannot hard-code where to find it.
+It either lets the user name the key to read, typically through a string
+parameter, or relies on an effect upstream to place the value under the name
+the plugin expects. A host should document the keys it publishes.
 
 When the Host Re-issues the Action
 ----------------------------------

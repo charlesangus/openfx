@@ -56,7 +56,7 @@ namespace MyHost {
 
   /// the clip and key whose published value carries gRevision below
   const char *const kRevisedClip = MetadataFixture::kInputClips[0];
-  const char kRevisedKey[] = kOfxMetadataKeyTimecode;
+  const char *const kRevisedKey = MetadataFixture::kTimecodeKey;
 
   /// bumping this changes what the clips publish for kRevisedKey, so that a clip can be
   /// made to carry something new without the fixture being edited
@@ -1084,15 +1084,15 @@ namespace {
     std::string atFirst = "none";
     std::string atLast = "none";
     const bool advances =
-      fixtureValue(MyHost::kRevisedClip, kOfxMetadataKeyTimecode, MetadataFixture::kFirstFrame, atFirst)
-      && fixtureValue(MyHost::kRevisedClip, kOfxMetadataKeyTimecode, MetadataFixture::kLastFrame, atLast)
+      fixtureValue(MyHost::kRevisedClip, MetadataFixture::kTimecodeKey, MetadataFixture::kFirstFrame, atFirst)
+      && fixtureValue(MyHost::kRevisedClip, MetadataFixture::kTimecodeKey, MetadataFixture::kLastFrame, atLast)
       && atFirst != atLast;
 
     if(report.check(advances, "selfcheck fixture timecode first=" + atFirst + " last=" + atLast)) {
       std::vector<LogRecord> repeated(records);
 
       for(size_t r = 0; r < repeated.size(); ++r) {
-        if(repeated[r].key == kOfxMetadataKeyTimecode && repeated[r].time == MetadataFixture::kLastFrame)
+        if(repeated[r].key == MetadataFixture::kTimecodeKey && repeated[r].time == MetadataFixture::kLastFrame)
           repeated[r].value = atFirst;
       }
 
@@ -1325,8 +1325,8 @@ namespace {
   ////////////////////////////////////////////////////////////////////////////////
   // the write path
 
-  /// the keys this writes, in a namespace of the harness's own since the standard
-  /// prefix is reserved for the standard vocabulary
+  /// the keys this writes, in a namespace of the harness's own so that none of them
+  /// collides with a key the fixture publishes
   const char kWrittenString[]  = "org.openfx.metadataHost/string";
   const char kWrittenDouble[]  = "org.openfx.metadataHost/double";
   const char kWrittenInt[]     = "org.openfx.metadataHost/int";
@@ -1573,15 +1573,20 @@ namespace {
     addContributed(contributed, kContributedPasses, "int", 1, formatInt(kContributedPassesValue));
     addContributed(contributed, kContributedWindow, "int", kContributedWindowCount,
                    formatInts(kContributedWindowValue, kContributedWindowCount));
-    addContributed(contributed, kOfxMetadataKeyFrameRate, "double", 1, formatDouble(kContributedFrameRate));
+    addContributed(contributed, MetadataFixture::kFrameRateKey, "double", 1, formatDouble(kContributedFrameRate));
     addContributed(contributed, kOfxImageEffectPropMetadataSourceClip, "string", 1, kContributedSourceClip);
   }
 
-  /// the plugin retains only the keys of the standard vocabulary, so this is the one
-  /// thing the harness has to know about it beyond the order it composes in
-  bool isStandardKey(const std::string &key)
+  /// the plugin retains only the keys on its own list, which the fixture mirrors, so
+  /// this is the one thing the harness has to know about it beyond the order it
+  /// composes in
+  bool isRetainedKey(const std::string &key)
   {
-    return key.compare(0, strlen(kOfxMetadataKeyPrefixStandard), kOfxMetadataKeyPrefixStandard) == 0;
+    for(int i = 0; i < MetadataFixture::kRetainedKeyCount; ++i) {
+      if(key == MetadataFixture::kRetainedKeys[i])
+        return true;
+    }
+    return false;
   }
 
   /// the input clips the plugin nominates for the given order, in increasing precedence
@@ -1591,7 +1596,7 @@ namespace {
     clips.push_back(MetadataFixture::kInputClips[order == kMaskOverSource ? 1 : 0]);
   }
 
-  /// what composing the fixture in that order, retaining only the standard keys, should
+  /// what composing the fixture in that order, retaining only the listed keys, should
   /// leave on the effect's output clip. In the order the plugin does not trap the action
   /// in, what the host offered it stands instead
   void expectedOutput(int order,
@@ -1622,7 +1627,7 @@ namespace {
         for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
           const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
 
-          if(!entryAppliesAt(entry, clips[c], time) || !isStandardKey(entry.key))
+          if(!entryAppliesAt(entry, clips[c], time) || !isRetainedKey(entry.key))
             continue;
 
           values[entry.key] = entryValue(entry);
@@ -1706,7 +1711,7 @@ namespace {
     for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
       const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
 
-      if(!isStandardKey(entry.key))
+      if(!isRetainedKey(entry.key))
         continue;
 
       if(entryAppliesAt(entry, MetadataFixture::kInputClips[0], MetadataFixture::kFirstFrame))
@@ -1758,7 +1763,7 @@ namespace {
     for(int i = 0; i < MetadataFixture::kEntryCount; ++i) {
       const MetadataFixture::Entry &entry = MetadataFixture::kEntries[i];
 
-      if(isStandardKey(entry.key))
+      if(isRetainedKey(entry.key))
         continue;
 
       if(!entryAppliesAt(entry, MetadataFixture::kInputClips[0], MetadataFixture::kFirstFrame))
@@ -2454,12 +2459,12 @@ namespace {
     std::string atLast = "none";
 
     const bool advances =
-      loggedValue(pass.records, clip, MetadataFixture::kFirstFrame, kOfxMetadataKeyTimecode, atFirst)
-      && loggedValue(pass.records, clip, MetadataFixture::kLastFrame, kOfxMetadataKeyTimecode, atLast)
+      loggedValue(pass.records, clip, MetadataFixture::kFirstFrame, MetadataFixture::kTimecodeKey, atFirst)
+      && loggedValue(pass.records, clip, MetadataFixture::kLastFrame, MetadataFixture::kTimecodeKey, atLast)
       && atFirst != atLast;
 
-    report.check(advances, where + " clip=" + clip + " " kOfxMetadataKeyTimecode
-                 " first=" + atFirst + " last=" + atLast);
+    report.check(advances, where + " clip=" + clip + " " + MetadataFixture::kTimecodeKey
+                 + " first=" + atFirst + " last=" + atLast);
 
     return report.completed(where);
   }
@@ -2487,12 +2492,13 @@ namespace {
     eFilterModeCount
   };
 
-  /// the filters swept over: everything, one key of the fixture, the whole standard
-  /// namespace, the same one key in a case the fixture does not hold it in, and nothing
+  /// the filters swept over: everything, one key of the fixture, a substring two of
+  /// its keys share, the same one key in a case the fixture does not hold it in, and
+  /// nothing
   const char *const kDisplayFilters[] = {
     "",
     "timecode",
-    kOfxMetadataKeyPrefixStandard,
+    "frame",
     "TimeCode",
     "nosuchkey"
   };
@@ -2504,7 +2510,7 @@ namespace {
   /// agreement between them
   const char kPinnedFilter[]  = "timecode";
   const int  kPinnedMode      = eFilterModeKeysOnly;
-  const char kPinnedDisplay[] = kOfxMetadataKeyTimecode;
+  const char kPinnedDisplay[] = "timecode";
 
   /// a display written as one line, so that a check stays on the line it is printed on
   /// and a stray newline is visible in it rather than laid out as one
@@ -2705,7 +2711,7 @@ namespace {
   const int kContributeWeightsCount =
     int(sizeof(kContributeWeights) / sizeof(kContributeWeights[0]));
 
-  /// the value it writes into the one standard key it contributes, which the fixture
+  /// the value it writes into the one fixture key it contributes, which the fixture
   /// also gives Source, so that the two are told apart on the output clip
   const double kContributeFrameRate = 30.0;
 
@@ -2724,7 +2730,7 @@ namespace {
                    formatInts(kContributeRenderRegion, kContributeRenderRegionCount));
     addContributed(contributed, std::string(kContributePrefix) + "weights", "double", kContributeWeightsCount,
                    formatDoubles(kContributeWeights, kContributeWeightsCount));
-    addContributed(contributed, kOfxMetadataKeyFrameRate, "double", 1, formatDouble(kContributeFrameRate));
+    addContributed(contributed, MetadataFixture::kFrameRateKey, "double", 1, formatDouble(kContributeFrameRate));
   }
 
   /// how many keys that is, which the contract holds the table above to and which the
@@ -2742,7 +2748,7 @@ namespace {
   std::string sourceDropKey(bool exceptFrameRate)
   {
     return lastKeyAtEveryFrame(MetadataFixture::kInputClips[0],
-                               exceptFrameRate ? kOfxMetadataKeyFrameRate : "");
+                               exceptFrameRate ? MetadataFixture::kFrameRateKey : "");
   }
 
   /// read the effect's output clip at one frame and check it carries what the plugin
@@ -2785,13 +2791,13 @@ namespace {
     std::string value = "none";
 
     const bool distinguishes =
-      fixtureValue(clip, kOfxMetadataKeyFrameRate, time, inherited)
+      fixtureValue(clip, MetadataFixture::kFrameRateKey, time, inherited)
       && inherited != formatDouble(kContributeFrameRate)
-      && readValue(metadata, kOfxMetadataKeyFrameRate, type, value)
+      && readValue(metadata, MetadataFixture::kFrameRateKey, type, value)
       && type == "double"
       && value == formatDouble(kContributeFrameRate);
 
-    report.check(distinguishes, where + " " kOfxMetadataKeyFrameRate " value=" + value
+    report.check(distinguishes, where + " " + MetadataFixture::kFrameRateKey + " value=" + value
                  + " contributed=" + formatDouble(kContributeFrameRate) + " inherited=" + inherited);
 
     releaseMetadata(report, metadata, where);
@@ -2962,11 +2968,11 @@ namespace {
       std::string value = "none";
 
       const bool crossed = fetched
-                           && readValue(metadata, kOfxMetadataKeyFrameRate, type, value)
+                           && readValue(metadata, MetadataFixture::kFrameRateKey, type, value)
                            && type == "double"
                            && value == formatDouble(kContributeFrameRate);
 
-      report.check(crossed, where + " " kOfxMetadataKeyFrameRate " value=" + value
+      report.check(crossed, where + " " + MetadataFixture::kFrameRateKey + " value=" + value
                    + " expected=" + formatDouble(kContributeFrameRate));
 
       if(fetched)
@@ -3078,8 +3084,8 @@ namespace {
 
     case eModifyCaseSetInherited :
       one.name       = "set-inherited";
-      one.operations = std::string("set ") + kOfxMetadataKeyFrameRate + " " + kModifyFrameRateValue;
-      one.key        = kOfxMetadataKeyFrameRate;
+      one.operations = std::string("set ") + MetadataFixture::kFrameRateKey + " " + kModifyFrameRateValue;
+      one.key        = MetadataFixture::kFrameRateKey;
       one.keyIsNew   = false;
       one.keyRemoved = false;
       one.value      = kModifyFrameRateValue;
@@ -3200,6 +3206,16 @@ namespace {
   const char kTimecodeRateFromMetadataParam[] = "rateFromMetadata";
   const char kTimecodeStartFrameParam[]       = "startFrame";
   const char kTimecodeUseStartFrameParam[]    = "useStartFrame";
+  const char kTimecodeKeyParam[]              = "timecodeKey";
+
+  /// the key the custom key case writes the timecode under, one the fixture never
+  /// publishes so that the plugin's write is the only way it can appear
+  const char kTimecodeCustomKey[] = "shot_timecode";
+
+  /// the times the custom key case reads at: one where the fixture gives Source a
+  /// timecode of its own under the default key, which has to come through inherited and
+  /// untouched, and one where it gives none, so the default key has to be absent
+  const OfxTime kTimecodeCustomTimes[] = {MetadataFixture::kFirstFrame, 25};
 
   /// driven in place of the plugin's own default: at 24fps from frame 1 the default
   /// start code reproduces the fixture's own 01:00:00:00 / 01:00:00:01 / 01:00:00:02
@@ -3422,16 +3438,64 @@ namespace {
 
     std::set<std::string> expected;
     fixtureKeySet(kOfxImageEffectSimpleSourceClipName, one.time, expected);
-    expected.insert(kOfxMetadataKeyTimecode);
+    expected.insert(MetadataFixture::kTimecodeKey);
 
     checkKeys(report, metadata, expected, where);
 
     const int rate = int(cell.expectedRate + 0.5);
 
-    checkValue(report, metadata, kOfxMetadataKeyTimecode, "string",
+    checkValue(report, metadata, MetadataFixture::kTimecodeKey, "string",
                timecodeExpected(one.startTimecode, rate, cell.origin, one.time), where);
-    checkValue(report, metadata, kOfxMetadataKeyFrameRate, "double", formatDouble(cell.expectedRate), where);
+    checkValue(report, metadata, MetadataFixture::kFrameRateKey, "double", formatDouble(cell.expectedRate), where);
     releaseMetadata(report, metadata, where);
+
+    return true;
+  }
+
+  /// with the timecode key parameter pointed elsewhere, the plugin has to write its count
+  /// under that key and leave the default one to whatever Source gives it
+  bool checkTimecodeCustomKey(Report &report,
+                              OFX::Host::ImageEffect::Instance &instance,
+                              OFX::Host::ImageEffect::ClipInstance &output,
+                              const std::string &where)
+  {
+    const TimecodeCell cell = timecodeCell(eTimecodeCellFromParam);
+
+    if(!driveParams(report, instance,
+                    {{kTimecodeRateFromMetadataParam, "0"},
+                     {kTimecodeRateParam, formatDouble(kTimecodeParamRate)},
+                     {kTimecodeUseStartFrameParam, "0"},
+                     {kTimecodeStartParam, kTimecodeStart},
+                     {kTimecodeKeyParam, kTimecodeCustomKey}},
+                    where + " parameters set"))
+      return true;
+
+    const int rate = int(cell.expectedRate + 0.5);
+
+    for(const OfxTime time : kTimecodeCustomTimes) {
+      const std::string timeWhere = where + " time=" + formatTime(time);
+
+      OfxPropertySetHandle metadata = fetchMetadata(report, output, time, timeWhere);
+
+      if(!metadata)
+        return false;
+
+      std::set<std::string> expected;
+      fixtureKeySet(kOfxImageEffectSimpleSourceClipName, time, expected);
+      expected.insert(kTimecodeCustomKey);
+
+      checkKeys(report, metadata, expected, timeWhere);
+      checkValue(report, metadata, kTimecodeCustomKey, "string",
+                 timecodeExpected(kTimecodeStart, rate, cell.origin, time), timeWhere);
+
+      std::string inherited;
+
+      if(fixtureValue(kOfxImageEffectSimpleSourceClipName, MetadataFixture::kTimecodeKey, time, inherited))
+        checkValue(report, metadata, MetadataFixture::kTimecodeKey, "string", inherited, timeWhere,
+                   " inherited");
+
+      releaseMetadata(report, metadata, timeWhere);
+    }
 
     return true;
   }
@@ -3441,8 +3505,9 @@ namespace {
   /// driven through the parameter in the second, and that same rate counted from a
   /// start frame of its own in the third, evaluated at every frame of the fixture
   /// range plus the second, four-second, minute and twenty-four-hour rollovers, with
-  /// the image still passed through untouched. There is no degraded twin: the negative
-  /// CI runs against this contract is a plugin which never counts a timecode
+  /// the image still passed through untouched, and then once more with the timecode key
+  /// parameter naming a key of the contract's own. There is no degraded twin: the
+  /// negative CI runs against this contract is a plugin which never counts a timecode
   bool checkMetadataTimecode(Report &report, OFX::Host::ImageEffect::Instance &instance)
   {
     const std::string contract = "metadata-timecode";
@@ -3484,6 +3549,9 @@ namespace {
       if(!checkPassThroughRender(report, instance, where))
         return false;
     }
+
+    if(!checkTimecodeCustomKey(report, instance, *output, contract + " cell=custom-key"))
+      return false;
 
     return report.completed(contract);
   }
@@ -3667,7 +3735,7 @@ namespace {
   /// the key the value check reads. The fixture gives it to both inputs with a different
   /// value on each, so which of the two comes back is what says which input the mode put
   /// on top, and every cell of the sweep leaves it on at least one side
-  const char kCopyCollidedKey[] = kOfxMetadataKeyFilePath;
+  const char *const kCopyCollidedKey = MetadataFixture::kFilePathKey;
 
   /// the pattern and the mode a cell narrows one clip with
   void copyFilterFor(const CopyFilter &filter, const std::string &clip, std::string &pattern, int &mode)
@@ -3981,12 +4049,12 @@ namespace {
 
   /// the key the head takes off Source, leaving Mask's own the only one the other input
   /// does not hold
-  const char kCompareMaskOnlyKey[] = kOfxMetadataKeySampleType;
+  const char *const kCompareMaskOnlyKey = MetadataFixture::kSampleTypeKey;
 
   /// the key the head gives Source Mask's own value at, leaving the two holding it
   /// identically. The fixture gives it a different value on each input at every frame,
   /// so the head has to be driven per frame for it to land on Mask's
-  const char kCompareSharedKey[] = kOfxMetadataKeyFilePath;
+  const char *const kCompareSharedKey = MetadataFixture::kFilePathKey;
 
   enum CompareCaseEnum {
     eCompareCaseUnedited,
@@ -4008,7 +4076,7 @@ namespace {
   /// same mistake in this file's composition and in the plugin's cannot hide in the
   /// agreement between them
   const int  kComparePinnedCase = eCompareCaseMaskOnly;
-  const char kComparePinnedLine[] = "Mask only: ofx/sampletype=uint";
+  const char kComparePinnedLine[] = "Mask only: sample_type=uint";
 
   /// what a case drives the head's operations parameter with at a frame; the empty list
   /// leaves the head passing Source through unedited
@@ -4370,7 +4438,7 @@ namespace {
   /// the key the head drops. The fixture gives it to both of its clips, and the head
   /// only ever sees Source, so with the third node combining source over its mask the
   /// head's drop is what leaves Mask's own value as the one the tail sees
-  const char kGraphDroppedKey[] = kOfxMetadataKeySourceFrame;
+  const char *const kGraphDroppedKey = MetadataFixture::kSourceFrameKey;
 
   /// what the head is driven with: one key contributed and one inherited key dropped
   std::string graphOperations()
@@ -4392,7 +4460,7 @@ namespace {
     std::string rate;
     double value = 0;
 
-    if(!fixtureValue(kOfxImageEffectSimpleSourceClipName, kOfxMetadataKeyFrameRate,
+    if(!fixtureValue(kOfxImageEffectSimpleSourceClipName, MetadataFixture::kFrameRateKey,
                      MetadataFixture::kFirstFrame, rate)
        || !parseDouble(rate, value)
        || value < 1)
@@ -4438,9 +4506,9 @@ namespace {
     checkKeys(report, metadata, expected, where);
 
     checkValue(report, metadata, kModifyNewKey, "string", kGraphModifyValue, where);
-    checkValue(report, metadata, kOfxMetadataKeyTimecode, "string",
+    checkValue(report, metadata, MetadataFixture::kTimecodeKey, "string",
                timecodeExpected(kTimecodeStart, rate, kTimecodeOrigin, time), where);
-    checkValue(report, metadata, kOfxMetadataKeyFrameRate, "double", formatDouble(rate), where);
+    checkValue(report, metadata, MetadataFixture::kFrameRateKey, "double", formatDouble(rate), where);
 
     // the fixture value stays "none" if Mask lacks the key, which no int reads back as
     std::string wantedDropped = "none";
@@ -4532,7 +4600,7 @@ namespace {
     // reads from, so that node has to fall back to its own rate parameter, driven off the
     // fixture's rate so the fallback cannot be mistaken for the inherited value
     const std::vector<ParamValue> unreadableParams =
-      {{kModifyOperationsParam, graphOperations() + "\nset " kOfxMetadataKeyFrameRate " " + kGraphUnreadableRate}};
+      {{kModifyOperationsParam, graphOperations() + "\nset " + MetadataFixture::kFrameRateKey + " " + kGraphUnreadableRate}};
     const std::vector<ParamValue> rateParams = {{kTimecodeRateParam, formatDouble(kTimecodeParamRate)}};
 
     const bool redriven = setParams(*gChain[0], unreadableParams) && setParams(*gChain[1], rateParams);
@@ -4850,7 +4918,7 @@ namespace {
       fixtureKeySet(connected, time, named);
 
       for(std::set<std::string>::const_iterator it = named.begin(); it != named.end(); ++it) {
-        if(isStandardKey(*it))
+        if(isRetainedKey(*it))
           expected.insert(*it);
       }
 

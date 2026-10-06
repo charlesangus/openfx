@@ -25,6 +25,12 @@ namespace {
   // the reverse DNS prefix every key this plugin contributes is namespaced under
   const char kKeyPrefix[] = "net.sf.openfx.metadataContribute.";
 
+  // the key the harness's fixture publishes Source's rate under, so that what this
+  // plugin contributes there can be told apart from what it inherits
+  const char kFrameRateKey[] = "frame_rate";
+
+  const char kDropKeyDefault[] = "sample_type";
+
   enum ModeEnum {
     eModeInheritAll,
     eModeDropOneKey,
@@ -90,7 +96,7 @@ MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OF
   metadata.setStringN(std::string(kKeyPrefix) + "tags", std::vector<std::string>({"reviewed", "approved"}));
   metadata.setIntN(std::string(kKeyPrefix) + "renderRegion", std::vector<int>({0, 0, 1280, 720}));
   metadata.setDoubleN(std::string(kKeyPrefix) + "weights", std::vector<double>({1.0, 0.5, 0.25}));
-  metadata.setDouble(kOfxMetadataKeyFrameRate, 30.0);
+  metadata.setDouble(kFrameRateKey, 30.0);
 
   // the host rejects metadataRelease on this action's writable set but still permits
   // metadataEnumerate on it, so contents() can read back what was just written above
@@ -211,7 +217,7 @@ void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectD
   dropKey->setLabels("drop key", "drop key", "drop key");
   dropKey->setHint("which key to drop");
   dropKey->setStringType(eStringTypeSingleLine);
-  dropKey->setDefault(kOfxMetadataKeySampleType);
+  dropKey->setDefault(kDropKeyDefault);
   dropKey->setAnimates(false);
   page->addChild(*dropKey);
 }

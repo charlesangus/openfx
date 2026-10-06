@@ -26,8 +26,7 @@
 // A plugin that does nothing to pixels and exists only to exercise the metadata
 // action from the plugin side of the API. It composes the metadata of its two
 // input clips, in an order its 'compositionOrder' parameter selects, and retains
-// from each clip only the keys in the standard 'ofx/' namespace, dropping
-// everything else.
+// from each clip only the keys on a fixed list of its own, dropping everything else.
 //
 // It is deliberately written against the plugin facing C api alone, with no
 // knowledge of which keys its inputs carry: it enumerates them and reads each one
@@ -55,8 +54,16 @@ static const int kOrderUntrapped = 2;
 // the value which selects the path nominating no source clip at all
 static const int kOrderNoSource = 3;
 
+// the keys a clip's metadata is filtered down to; the suite defines no keys, so the list
+// is this plugin's own choice, and the harness's fixture publishes under the same names
+static const char kFrameRateKey[] = "frame_rate";
+static const char *const kRetainedKeys[] = {
+  "file_path", kFrameRateKey, "sample_type", "bit_depth", "timecode", "source_frame"
+};
+static const size_t kRetainedKeyCount = sizeof(kRetainedKeys) / sizeof(kRetainedKeys[0]);
+
 // the keys the plugin writes into the set it is handed, under its own reverse DNS prefix
-// as the standard requires of a key it does not define itself. The frame rate is one the
+// so they cannot collide with a key an input carries. The frame rate is one the
 // plugin also retains from Source, so that the host putting one over the other is
 // observable, and the last is named after the property the host reads the composition
 // order out of, which lives in the action's out args and so cannot be confused with a key
@@ -140,8 +147,17 @@ static bool readValue(OfxPropertySetHandle metadata, const char *key, OfxMetadat
   }
 }
 
-/// list in outArgs the keys retained from the named clip, which are the ones in the
-/// standard namespace, having read every key the clip carries to check it can be
+static bool isRetainedKey(const std::string &key)
+{
+  for(size_t i = 0; i < kRetainedKeyCount; ++i) {
+    if(key == kRetainedKeys[i])
+      return true;
+  }
+  return false;
+}
+
+/// list in outArgs the keys retained from the named clip, which are the ones on the
+/// retained list, having read every key the clip carries to check it can be
 static OfxStatus setRetainedKeys(OfxImageEffectHandle effect,
                                  OfxPropertySetHandle outArgs,
                                  const char *clipName,
@@ -162,7 +178,6 @@ static OfxStatus setRetainedKeys(OfxImageEffectHandle effect,
   OfxStatus status = gMetadataSuite->metadataEnumerate(metadata, collectKey, &keys);
 
   std::vector<const char *> retained;
-  const size_t standardLen = strlen(kOfxMetadataKeyPrefixStandard);
 
   for(size_t i = 0; status == kOfxStatOK && i < keys.size(); ++i) {
     if(!readValue(metadata, keys[i].key.c_str(), keys[i].type, keys[i].dimension)) {
@@ -170,7 +185,7 @@ static OfxStatus setRetainedKeys(OfxImageEffectHandle effect,
       break;
     }
 
-    if(keys[i].key.compare(0, standardLen, kOfxMetadataKeyPrefixStandard) == 0)
+    if(isRetainedKey(keys[i].key))
       retained.push_back(keys[i].key.c_str());
   }
 
@@ -240,7 +255,7 @@ static OfxStatus getMetadata(OfxImageEffectHandle effect,
     return kOfxStatFailed;
   if(gMetadataSuite->metadataSetIntN(contribution, kContributedWindowKey, window, kContributedWindow) != kOfxStatOK)
     return kOfxStatFailed;
-  if(gMetadataSuite->metadataSetDouble(contribution, kOfxMetadataKeyFrameRate, kContributedFrameRate) != kOfxStatOK)
+  if(gMetadataSuite->metadataSetDouble(contribution, kFrameRateKey, kContributedFrameRate) != kOfxStatOK)
     return kOfxStatFailed;
   if(gMetadataSuite->metadataSetString(contribution, kOfxImageEffectPropMetadataSourceClip,
                                        kContributedSourceClip) != kOfxStatOK)

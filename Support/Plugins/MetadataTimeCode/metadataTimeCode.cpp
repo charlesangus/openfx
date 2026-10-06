@@ -24,6 +24,8 @@ namespace {
   const char kRateFromMetadataParam[] = "rateFromMetadata";
   const char kStartFrameParam[]       = "startFrame";
   const char kUseStartFrameParam[]    = "useStartFrame";
+  const char kTimecodeKeyParam[]      = "timecodeKey";
+  const char kRateKeyParam[]          = "rateKey";
 
   /** @brief the frame the start timecode is read at when useStartFrame is off */
   const int kFixedOrigin = 1;
@@ -116,6 +118,8 @@ protected :
   OFX::BooleanParam *rateFromMetadata_;
   OFX::IntParam     *startFrame_;
   OFX::BooleanParam *useStartFrame_;
+  OFX::StringParam  *timecodeKey_;
+  OFX::StringParam  *rateKey_;
 
 public :
   /** @brief ctor */
@@ -128,6 +132,8 @@ public :
     , rateFromMetadata_(0)
     , startFrame_(0)
     , useStartFrame_(0)
+    , timecodeKey_(0)
+    , rateKey_(0)
   {
     dstClip_ = fetchClip(kOfxImageEffectOutputClipName);
     srcClip_ = fetchClip(kOfxImageEffectSimpleSourceClipName);
@@ -137,6 +143,8 @@ public :
     rateFromMetadata_ = fetchBooleanParam(kRateFromMetadataParam);
     startFrame_       = fetchIntParam(kStartFrameParam);
     useStartFrame_    = fetchBooleanParam(kUseStartFrameParam);
+    timecodeKey_      = fetchStringParam(kTimecodeKeyParam);
+    rateKey_          = fetchStringParam(kRateKeyParam);
   }
 
   /* Override the render */
@@ -153,13 +161,19 @@ MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Met
   double rate = 0;
   rate_->getValue(rate);
 
+  std::string timecodeKey;
+  timecodeKey_->getValue(timecodeKey);
+
+  std::string rateKey;
+  rateKey_->getValue(rateKey);
+
   bool rateFromMetadata = false;
   rateFromMetadata_->getValue(rateFromMetadata);
 
   if(rateFromMetadata) {
     const OFX::MetadataSet source = srcClip_->getMetadata(args.time);
 
-    rate = source.getDouble(kOfxMetadataKeyFrameRate, 0, rate);
+    rate = source.getDouble(rateKey, 0, rate);
   }
 
   // the start code is read at the same rate the frames field counts at, so a rate taken
@@ -181,9 +195,9 @@ MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::Met
 
   const long long offset = (long long) std::floor(args.time - origin + 0.5);
 
-  metadata.setString(kOfxMetadataKeyTimecode,
+  metadata.setString(timecodeKey,
                      framesToTimecode(timecodeToFrames(startTimecode, counted) + offset, counted));
-  metadata.setDouble(kOfxMetadataKeyFrameRate, rate);
+  metadata.setDouble(rateKey, rate);
 }
 // guide: end getMetadata
 
@@ -287,6 +301,22 @@ void MetadataTimeCodeExamplePluginFactory::describeInContext(OFX::ImageEffectDes
   useStartFrame->setDefault(false);
   useStartFrame->setAnimates(false);
   page->addChild(*useStartFrame);
+
+  StringParamDescriptor *timecodeKey = desc.defineStringParam(kTimecodeKeyParam);
+  timecodeKey->setLabels("timecode key", "timecode key", "timecode key");
+  timecodeKey->setHint("key the timecode is written under; only a default, set it to the key your host uses");
+  timecodeKey->setStringType(eStringTypeSingleLine);
+  timecodeKey->setDefault("timecode");
+  timecodeKey->setAnimates(false);
+  page->addChild(*timecodeKey);
+
+  StringParamDescriptor *rateKey = desc.defineStringParam(kRateKeyParam);
+  rateKey->setLabels("rate key", "rate key", "rate key");
+  rateKey->setHint("key the rate is read from and written under; only a default, set it to the key your host uses");
+  rateKey->setStringType(eStringTypeSingleLine);
+  rateKey->setDefault("frame_rate");
+  rateKey->setAnimates(false);
+  page->addChild(*rateKey);
 }
 
 OFX::ImageEffect* MetadataTimeCodeExamplePluginFactory::createInstance(OfxImageEffectHandle handle, OFX::ContextEnum /*context*/)

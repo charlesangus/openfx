@@ -23,6 +23,9 @@ namespace OFX {
     /** @brief Pointer to the property suite */
     extern OfxPropertySuiteV1    *gPropSuite;
 
+    /** @brief Pointer to the optional metadata suite */
+    extern OfxMetadataSuiteV1    *gMetadataSuite;
+
     /** @brief Pointer to the  interact suite */
     extern OfxInteractSuiteV1    *gInteractSuite;
 

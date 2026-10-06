@@ -102,7 +102,7 @@ namespace OFX {
       };
 
       /// a metadata property set, as vended by ClipInstance::getMetadata for a clip's image at
-      /// a given time
+      /// a given time and by Instance::getOutputMetadata for an effect to write into
       ///
       /// This is reference counted in the same way as ImageBase: it is constructed with a
       /// count of one, addReference() takes a further reference, and releaseReference()
@@ -112,15 +112,29 @@ namespace OFX {
       /// its reference count.
       class MetadataSet : public Property::Set {
       public :
+        /// may the metadata suite's set entry points write keys into this
+        enum Access { eReadOnly, eWritable };
+
+        /// is a plugin holding a reference which metadataRelease drops
+        enum Owner { ePluginOwned, eHostOwned };
+
       protected :
         int _referenceCount;  ///< reference count on this metadata set
+        bool _writable;       ///< may the metadata suite's set entry points write keys into this
+        bool _pluginOwned;    ///< is a plugin holding a reference which metadataRelease drops
 
       public :
         /// ctor, makes an empty metadata set
-        MetadataSet();
+        MetadataSet(Access access, Owner owner);
 
         /// get a handle on the metadata set for the C api
         OfxPropertySetHandle getPropHandle() const { return Property::Set::getHandle(); }
+
+        /// may a plugin write keys into this set
+        bool isWritable() const {return _writable;}
+
+        /// may a plugin release this set
+        bool isPluginOwned() const {return _pluginOwned;}
 
         /// release the reference count, which, if zero, deletes this
         void releaseReference();
@@ -315,10 +329,11 @@ namespace OFX {
         /// calls fetchMetadata() again. Call this when the state the metadata is derived
         /// from has changed.
         ///
-        /// This drops only this clip's cached sets. It does not reach the other clips of
-        /// the effect or the effects downstream of this one, so a host that derives one
-        /// clip's metadata from another's must invalidate those itself, as it is the only
-        /// thing that knows the graph.
+        /// This drops this clip's cached sets and, for an input clip, those of its effect's
+        /// output clip as well, which holds copies derived from it. It does not reach the
+        /// effects downstream of this one, whose input clips have cached what this effect
+        /// derived, so a host must call Instance::invalidateMetadata() on those itself, as
+        /// it is the only thing that knows the graph.
         void invalidateMetadata();
 
 #     ifdef OFX_SUPPORTS_OPENGLRENDER
@@ -339,9 +354,11 @@ namespace OFX {
         virtual const std::string &findSupportedComp(const std::string &s) const;
 
       protected :
-        /// Override this to populate 'metadata' with the metadata this clip carries for the
-        /// image at 'time'. The default implementation adds nothing, so a host must override
-        /// this to supply metadata, typically that of whatever the clip is connected to.
+        /// Override this to populate 'metadata' with the metadata this clip's effect
+        /// contributes for the image at 'time'. The default implementation derives the
+        /// metadata of an output clip from the effect's inputs, and adds nothing for an
+        /// input clip, so a host must override this to supply the metadata an input clip
+        /// carries, typically that of whatever it is connected to.
         virtual void fetchMetadata(OfxTime time, Property::Set &metadata);
 
       private :

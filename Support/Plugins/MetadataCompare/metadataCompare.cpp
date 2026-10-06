@@ -1,0 +1,244 @@
+// Copyright OpenFX and contributors to the OpenFX project.
+// SPDX-License-Identifier: BSD-3-Clause
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
+
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "ofxsImageEffect.h"
+#include "ofxsMetadata.h"
+
+#include "../include/ofxsPixelCopy.H"
+
+namespace {
+
+  const char kDisplayParam[] = "display";
+
+  const char kSourceClip[] = kOfxImageEffectSimpleSourceClipName;
+  const char kMaskClip[]   = "Mask";
+
+  const char kSourceOnlyPrefix[] = "Source only: ";
+  const char kMaskOnlyPrefix[]   = "Mask only: ";
+  const char kDiffersPrefix[]    = "differs: ";
+
+  void appendLine(std::string &text, const std::string &line)
+  {
+    if(!text.empty())
+      text += "\n";
+
+    text += line;
+  }
+
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/** @brief shows the differences between Source's and Mask's metadata in a read-only
+parameter, and passes Source's image through untouched */
+class MetadataComparePlugin : public OFX::ImageEffect {
+protected :
+  // do not need to delete these, the ImageEffect is managing them for us
+  OFX::Clip *dstClip_;
+  OFX::Clip *srcClip_;
+  OFX::Clip *maskClip_;
+
+  OFX::StringParam *display_;
+
+public :
+  /** @brief ctor */
+  MetadataComparePlugin(OfxImageEffectHandle handle)
+    : ImageEffect(handle)
+    , dstClip_(0)
+    , srcClip_(0)
+    , maskClip_(0)
+    , display_(0)
+  {
+    dstClip_  = fetchClip(kOfxImageEffectOutputClipName);
+    srcClip_  = fetchClip(kSourceClip);
+    maskClip_ = fetchClip(kMaskClip);
+
+    display_ = fetchStringParam(kDisplayParam);
+  }
+
+  /* Override the render */
+  virtual void render(const OFX::RenderArguments &args);
+
+  /* Override changedParam */
+  virtual void changedParam(const OFX::InstanceChangedArgs &args, const std::string &paramName);
+
+  /* Override changedClip */
+  virtual void changedClip(const OFX::InstanceChangedArgs &args, const std::string &clipName);
+
+  /* one line per key that differs between Source and Mask at the given time, in
+  ascending key order. An unconnected Mask holds nothing, so every key of Source is then
+  a Source only line */
+  std::string displayText(double time);
+};
+
+std::string
+MetadataComparePlugin::displayText(double time)
+{
+  const OFX::MetadataSet source = srcClip_->getMetadata(time);
+  const OFX::MetadataSet mask = maskClip_->isConnected() ? maskClip_->getMetadata(time)
+                                                         : OFX::MetadataSet();
+
+  const std::vector<OFX::MetadataEntry> sourceEntries = source.entries();
+  const std::vector<OFX::MetadataEntry> maskEntries = mask.entries();
+
+  std::string text;
+  size_t si = 0, mi = 0;
+
+  // both entries() lists are already in ascending key order, so this is a merge rather
+  // than a re-sort
+  while(si < sourceEntries.size() || mi < maskEntries.size()) {
+    if(mi == maskEntries.size()
+       || (si < sourceEntries.size() && sourceEntries[si].key < maskEntries[mi].key)) {
+      appendLine(text, std::string(kSourceOnlyPrefix) + sourceEntries[si].key + "="
+                        + valueText(source, sourceEntries[si]));
+      si++;
+    }
+    else if(si == sourceEntries.size() || maskEntries[mi].key < sourceEntries[si].key) {
+      appendLine(text, std::string(kMaskOnlyPrefix) + maskEntries[mi].key + "="
+                        + valueText(mask, maskEntries[mi]));
+      mi++;
+    }
+    else {
+      const std::string sourceValue = valueText(source, sourceEntries[si]);
+      const std::string maskValue = valueText(mask, maskEntries[mi]);
+
+      if(sourceValue != maskValue) {
+        appendLine(text, std::string(kDiffersPrefix) + sourceEntries[si].key
+                          + ": Source=" + sourceValue + " Mask=" + maskValue);
+      }
+
+      si++;
+      mi++;
+    }
+  }
+
+  return text;
+}
+
+// a render must not write a parameter, so the display is composed on a change instead,
+// at whatever time the host reports the change at. The host re-enters changedParam with
+// eChangePluginEdit for the plugin's own setValue, so that reason is the echo of the
+// call rather than a fresh edit and is ignored; a clip change is never such an echo
+void
+MetadataComparePlugin::changedParam(const OFX::InstanceChangedArgs &args, const std::string &/*paramName*/)
+{
+  if(args.reason == OFX::eChangePluginEdit)
+    return;
+
+  display_->setValue(displayText(args.time));
+}
+
+void
+MetadataComparePlugin::changedClip(const OFX::InstanceChangedArgs &args, const std::string &/*clipName*/)
+{
+  display_->setValue(displayText(args.time));
+}
+
+// the overridden render function
+void
+MetadataComparePlugin::render(const OFX::RenderArguments &args)
+{
+  std::unique_ptr<OFX::Image> dst(dstClip_->fetchImage(args.time));
+  std::unique_ptr<OFX::Image> src(srcClip_->fetchImage(args.time));
+
+  if(!dst.get() || !src.get())
+    return;
+
+  if(src->getPixelDepth() != dst->getPixelDepth()
+     || src->getPixelComponents() != dst->getPixelComponents())
+    OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
+
+  copyPixels(*src, *dst, args.renderWindow);
+}
+
+mDeclarePluginFactory(MetadataCompareExamplePluginFactory, {}, {});
+
+using namespace OFX;
+void MetadataCompareExamplePluginFactory::describe(OFX::ImageEffectDescriptor &desc)
+{
+  // basic labels
+  desc.setLabels("Metadata Compare", "Metadata Compare", "Metadata Compare");
+  desc.setPluginGrouping("OFX Example (Support)");
+
+  // two inputs, so general is the only context this can be described in
+  desc.addSupportedContext(eContextGeneral);
+
+  // add supported pixel depths
+  desc.addSupportedBitDepth(eBitDepthUByte);
+  desc.addSupportedBitDepth(eBitDepthUShort);
+  desc.addSupportedBitDepth(eBitDepthFloat);
+
+  // set a few flags
+  desc.setSingleInstance(false);
+  desc.setHostFrameThreading(false);
+  desc.setSupportsMultiResolution(true);
+  desc.setSupportsTiles(true);
+  desc.setTemporalClipAccess(false);
+  desc.setRenderTwiceAlways(false);
+  desc.setSupportsMultipleClipPARs(false);
+}
+
+void MetadataCompareExamplePluginFactory::describeInContext(OFX::ImageEffectDescriptor &desc, OFX::ContextEnum /*context*/)
+{
+  // the clip the image comes from
+  ClipDescriptor *srcClip = desc.defineClip(kSourceClip);
+  srcClip->addSupportedComponent(ePixelComponentRGBA);
+  srcClip->addSupportedComponent(ePixelComponentAlpha);
+  srcClip->setTemporalClipAccess(false);
+  srcClip->setSupportsTiles(true);
+  srcClip->setIsMask(false);
+
+  // the second clip is read for its metadata alone, never for its pixels
+  ClipDescriptor *maskClip = desc.defineClip(kMaskClip);
+  maskClip->addSupportedComponent(ePixelComponentRGBA);
+  maskClip->addSupportedComponent(ePixelComponentAlpha);
+  maskClip->setTemporalClipAccess(false);
+  maskClip->setSupportsTiles(true);
+  maskClip->setIsMask(false);
+  maskClip->setOptional(true);
+
+  // create the mandated output clip
+  ClipDescriptor *dstClip = desc.defineClip(kOfxImageEffectOutputClipName);
+  dstClip->addSupportedComponent(ePixelComponentRGBA);
+  dstClip->addSupportedComponent(ePixelComponentAlpha);
+  dstClip->setSupportsTiles(true);
+
+  PageParamDescriptor *page = desc.definePageParam("Controls");
+
+  StringParamDescriptor *display = desc.defineStringParam(kDisplayParam);
+  display->setLabels("differences", "differences", "differences");
+  display->setHint("differing keys between inputs");
+  display->setStringType(eStringTypeMultiLine);
+  display->setDefault("");
+  display->setAnimates(false);
+  display->setEnabled(false);
+  display->setIsPersistant(false);
+  display->setEvaluateOnChange(false);
+  page->addChild(*display);
+}
+
+OFX::ImageEffect* MetadataCompareExamplePluginFactory::createInstance(OfxImageEffectHandle handle, OFX::ContextEnum /*context*/)
+{
+  return new MetadataComparePlugin(handle);
+}
+
+namespace OFX
+{
+  namespace Plugin
+  {
+    void getPluginIDs(OFX::PluginFactoryArray &ids)
+    {
+      static MetadataCompareExamplePluginFactory p("net.sf.openfx.metadataCompare", 1, 0);
+      ids.push_back(&p);
+    }
+  }
+}

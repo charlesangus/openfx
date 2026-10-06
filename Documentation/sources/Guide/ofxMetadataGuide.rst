@@ -3,10 +3,11 @@
 
 This guide covers the OFX metadata API from a plugin's side: finding out
 whether a host can supply metadata, fetching the metadata attached to a
-clip or an image, and reading the values. It uses the ``C++`` support
-wrapper around :ref:`OfxMetadataSuiteV1`, ``OFX::MetadataSet``, declared in
-`ofxsMetadata.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsMetadata.h>`_
-and handed out by the ``OFX::Clip`` and ``OFX::Image`` wrappers in
+clip or an image, reading the values, and contributing metadata to the
+effect's output. It uses the ``C++`` support wrappers around
+:ref:`OfxMetadataSuiteV1`, ``OFX::MetadataSet``, ``OFX::MetadataSetter``
+and ``OFX::MetadataInheritanceSetter``, declared in
+`ofxsMetadata.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsMetadata.h>`_ and
 `ofxsImageEffect.h <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/include/ofxsImageEffect.h>`_.
 The model behind the API is described in :ref:`imageMetadata`. What a set
 contains is up to the host: the suite defines no keys.
@@ -15,7 +16,8 @@ Metadata belongs to an image, not to a clip: the frame at time 5 of an
 image sequence and the frame at time 6 can come from different files with
 different tags and timecodes. Every read of a clip's metadata therefore
 takes a time, an image's does not, since an image handle already denotes a
-clip at one time.
+clip at one time, and the action an effect contributes through is always
+time-parameterised.
 
 Clip and image metadata
 =======================
@@ -106,26 +108,167 @@ are illustrations. Hosts differ in which keys they publish and what they call
 them, so a plugin that consumes a value should not assume one name.
 
 The simplest approach is a string parameter holding the key to read, with a
-plausible default:
+plausible default, as ``MetadataTimeCode`` does for its frame rate:
 
 .. code:: c++
 
     std::string rateKey;
     rateKey_->getValue(rateKey);
-    double rate = metadata.getDouble(rateKey, 0, 24.0);
+    double rate = source.getDouble(rateKey, 0, 24.0);
 
-The user sets it to whatever name their host uses. Either way, a missing key
-reads back as the default, so a plugin should treat that as the normal case on
-a host that does not publish it.
+The user sets it to whatever name their host uses. Alternatively, a plugin can
+document the key it expects and leave it to the user to put the value there:
+a ``MetadataModify`` upstream can ``set`` the key the plugin expects to
+the value the user wants it to see, so one effect bridges a host's naming and
+the plugin's. Either way, a missing key reads back as the default, so a plugin
+should treat that as the normal case on a host that does not publish it.
+
+Contributing metadata
+=====================
+
+A plugin that wants to add keys to its output, or to control what its
+output inherits from its inputs, overrides ``getMetadata``:
+
+.. code:: c++
+
+    virtual void getMetadata(const OFX::MetadataArguments &args,
+                             OFX::MetadataSetter &metadata,
+                             OFX::MetadataInheritanceSetter &inheritance);
+
+``args`` carries only ``time``. The two setters wrap two different property
+sets: the keys the effect contributes go through ``metadata`` into the
+host-owned set that arrives in the action's ``inArgs`` under
+:c:macro:`kOfxImageEffectPropMetadataSet`; which input clips the output
+inherits from, and which of their keys survive, go through ``inheritance``
+into the action's ``outArgs``. The output's metadata is the inherited keys
+with the contributed keys written over them, so a key the effect writes
+replaces the inherited value of the same key.
+
+Contributing keys with ``MetadataSetter``
+-----------------------------------------
+
+``metadata`` arrives empty and is the only metadata set an effect may write
+to. It offers ``setString``, ``setDouble`` and ``setInt``, the ``N`` forms
+``setStringN``, ``setDoubleN`` and ``setIntN`` for writing every value of a
+key at once, and ``copyFrom``, which re-emits every entry of a
+``MetadataSet`` under its original key. There is no indexed setter to match
+the indexed getters: a key that does not yet exist has no dimension to
+index into, and the generic Property Suite cannot create one, so every
+setter replaces a key's value and dimension as a whole. A setter that fails,
+because the host has no metadata suite or rejects the call, does nothing
+and never throws.
+
+Pass-through of an input's metadata is not done by copying keys into
+``metadata``; it is the host's default, steered through ``inheritance`` as
+described below. ``metadata`` is for a value the effect computes.
+``MetadataTimeCode`` counts a timecode on from a start code, reading the
+frame rate off its source's metadata when asked to, and writes a different
+timecode at every frame alongside the frame rate it counted at. It writes
+them under the names in its ``timecodeKey`` and ``rateKey`` parameters,
+which default to ``timecode`` and ``frame_rate``:
+
+.. literalinclude:: ../../../Support/Plugins/MetadataTimeCode/metadataTimeCode.cpp
+   :language: c++
+   :start-after: // guide: begin getMetadata
+   :end-before: // guide: end getMetadata
+
+Choosing what the output inherits with ``MetadataInheritanceSetter``
+--------------------------------------------------------------------
+
+``setSourceClips`` nominates which input clips the output's metadata is
+composed from, and in what order: the list is read in increasing
+precedence, so the last clip named wins wherever two carry the same key,
+and an empty list inherits nothing from any clip. ``setRetainedKeys``
+selects, for one clip, which of its keys survive; a key left off the list
+is dropped exactly as if the clip never carried it, and this is the only
+way to remove an inherited key, since ``metadata`` holds only what the
+effect contributes. ``getSourceClips`` and ``getRetainedKeys`` read the
+current lists back.
+
+Before the effect touches them the lists hold the host's defaults, which
+follow the first *connected* input clip in the order the effect described
+them: the source list names that clip alone, its retained-keys list holds
+every key it carries, and every other clip's list is empty. An effect that
+calls neither setter therefore inherits all of the first connected clip's
+metadata and nothing from any other input, and an unconnected clip
+contributes nothing even when the source list names it.
+
+Dropping a key means reading the default list back and setting it again
+without that key, as ``MetadataModify`` does for every key it removes:
+
+.. literalinclude:: ../../../Support/Plugins/MetadataModify/metadataModify.cpp
+   :language: c++
+   :dedent: 2
+   :start-after: // guide: begin dropRemovedKeys
+   :end-before: // guide: end dropRemovedKeys
+
+The retained-keys property has no C identifier: its name is composed at
+describe time, one property per input clip the effect describes, by
+appending the clip's name to ``OfxImageClipPropMetadataRetainedKeys_``.
+``MetadataInheritanceSetter`` hides that composition, and ``setRetainedKeys``
+and ``getRetainedKeys`` throw ``OFX::Exception::PropertyUnknownToHost`` for
+a clip the effect never defined.
+
+A multi-input effect has to say which of its clips the output inherits from
+only when it wants a composition other than the host's default of the first
+connected clip alone. ``MetadataCopy`` has a ``Source`` and a ``Mask``, orders
+them by a mode parameter, leaves an unconnected ``Mask`` out of the list, and
+sets each named clip's retained keys from that clip's own metadata, since only
+the first connected clip's list is pre-filled by the host:
+
+.. literalinclude:: ../../../Support/Plugins/MetadataCopy/metadataCopy.cpp
+   :language: c++
+   :start-after: // guide: begin getMetadata
+   :end-before: // guide: end getMetadata
+
+What the host does with the answer
+----------------------------------
+
+The support library answers the action with :c:macro:`kOfxStatOK` when a
+setter on ``metadata`` succeeded or a setter on ``inheritance`` was called,
+and with :c:macro:`kOfxStatReplyDefault` otherwise; ``didSomething()`` on
+either reports its half. On :c:macro:`kOfxStatReplyDefault` the host reads
+back neither set and composes the output's metadata from its defaults, so
+an effect that calls neither setter, or does not override ``getMetadata``
+at all, leaves the host to its default inheritance.
+
+There is no property through which a plugin invalidates a previous answer.
+An answer for a given time is valid only while the input metadata it was
+composed from, the effect's parameter values and the effect's clip
+connections remain unchanged, and the host must re-issue
+:c:macro:`kOfxImageEffectActionGetMetadata` after any of those change.
+
+The handles behind ``metadata`` and ``inheritance`` are owned by the host
+for the duration of the action only: neither setter releases anything, and
+neither argument may be kept or referred to after ``getMetadata`` returns.
 
 Worked examples
 ===============
 
-Two plugins under ``Support/Plugins/`` exercise the read path end to end, each
+Six plugins under ``Support/Plugins/`` exercise the API end to end, each
 passing its image through untouched.
 `MetadataPrint
 <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataPrint/metadataPrint.cpp>`_
-logs every key a clip carries, and
-`MetadataView
+and `MetadataView
 <https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataView/metadataView.cpp>`_
-filters that same metadata into a display parameter.
+cover the read path: logging every key a clip carries, and filtering that
+same metadata into a display parameter.
+`MetadataTimeCode
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataTimeCode/metadataTimeCode.cpp>`_
+is the write path: a timecode and a frame rate contributed fresh on every
+call, so the value changes from one frame to the next.
+`MetadataModify
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataModify/metadataModify.cpp>`_
+applies an ordered, user-authored list of ``set`` and ``remove``
+operations to its source clip's inherited metadata, working the whole list
+out before either setter is touched.
+`MetadataCopy
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataCopy/metadataCopy.cpp>`_
+and `MetadataCompare
+<https://github.com/AcademySoftwareFoundation/openfx/blob/main/Support/Plugins/MetadataCompare/metadataCompare.cpp>`_
+have two input clips, ``Source`` and ``Mask``, and declare only
+``eContextGeneral``, since a filter context would let a host instantiate
+them with one clip. MetadataCopy composes the two inputs' metadata under
+four selectable modes, each clip's contribution filtered through its own
+pattern parameter; MetadataCompare writes nothing, reporting into a display
+parameter which keys are on one side only and which disagree.

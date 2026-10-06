@@ -28,6 +28,7 @@
 #include "ofxMetadata.h"
 #include "ofxOld.h" // old plugins may rely on deprecated properties being present
 
+#include <memory>
 #include <string.h>
 #include <stdarg.h>
 
@@ -740,6 +741,8 @@ namespace OFX {
         if(isClipPreferencesSlaveParam(paramName))
           _clipPrefsDirty = true;
 
+        invalidateMetadata();
+
         if (!param) {
           return kOfxStatFailed;
         }
@@ -776,6 +779,9 @@ namespace OFX {
                                                     OfxPointD   renderScale)
       {
         _clipPrefsDirty = true;
+
+        invalidateMetadata();
+
         std::map<std::string,ClipInstance*>::iterator it=_clips.find(clipName);
         if(it!=_clips.end())
           return (it->second)->instanceChangedAction(why,time,renderScale);
@@ -1770,6 +1776,200 @@ namespace OFX {
           it->second->invalidateMetadata();
       }
 
+      /// copy one key of a metadata set into another, if it has that key at all
+      static void copyMetadataKey(Property::Set &to, const Property::Set &from, const std::string &key)
+      {
+        Property::Property *prop = from.fetchProperty(key);
+
+        if(prop)
+          to.addProperty(prop->deepCopy());
+      }
+
+      /// the index in 'inputs' of the clip with the given name, -1 if there is no such input
+      static int findInputClip(const std::vector<ClipInstance *> &inputs, const std::string &name)
+      {
+        if(name.empty())
+          return -1;
+
+        for(size_t i = 0; i < inputs.size(); ++i) {
+          if(inputs[i]->getName() == name)
+            return int(i);
+        }
+
+        return -1;
+      }
+
+      /// the index in 'inputs' of the first connected clip, -1 if none is connected
+      static int findConnectedInputClip(const std::vector<ClipInstance *> &inputs)
+      {
+        for(size_t i = 0; i < inputs.size(); ++i) {
+          if(inputs[i]->getConnected())
+            return int(i);
+        }
+
+        return -1;
+      }
+
+      /// the inheritance the out args describe: the input clips whose metadata the output
+      /// composes, in increasing precedence, and the keys retained from each input clip
+      static void readMetadataInheritance(const Property::Set &outArgs,
+                                          const std::vector<std::string> &retainedKeysPropNames,
+                                          std::vector<std::string> &sources,
+                                          std::vector<std::vector<std::string> > &retainedKeys)
+      {
+        sources.clear();
+        retainedKeys.clear();
+        retainedKeys.resize(retainedKeysPropNames.size());
+
+        const int nSources = outArgs.getDimension(kOfxImageEffectPropMetadataSourceClip);
+
+        for(int s = 0; s < nSources; ++s)
+          sources.push_back(outArgs.getStringProperty(kOfxImageEffectPropMetadataSourceClip, s));
+
+        for(size_t i = 0; i < retainedKeysPropNames.size(); ++i) {
+          const int nKeys = outArgs.getDimension(retainedKeysPropNames[i]);
+
+          for(int k = 0; k < nKeys; ++k)
+            retainedKeys[i].push_back(outArgs.getStringProperty(retainedKeysPropNames[i], k));
+        }
+      }
+
+      /// drop the reference held on each metadata set fetched from an input clip
+      static void releaseInputMetadata(std::vector<MetadataSet *> &inputMetadata)
+      {
+        for(size_t i = 0; i < inputMetadata.size(); ++i) {
+          if(inputMetadata[i]) {
+            inputMetadata[i]->releaseReference();
+            inputMetadata[i] = NULL;
+          }
+        }
+      }
+
+      void Instance::getOutputMetadata(OfxTime time, Property::Set &metadata)
+      {
+        /// the input clips, in the order the effect described them
+        std::vector<ClipInstance *> inputs;
+        const std::vector<ClipDescriptor*> &clipsByOrder = _descriptor->getClipsByOrder();
+
+        for(size_t i = 0; i < clipsByOrder.size(); ++i) {
+          std::map<std::string, ClipInstance*>::const_iterator it = _clips.find(clipsByOrder[i]->getName());
+
+          if(it != _clips.end() && !it->second->isOutput())
+            inputs.push_back(it->second);
+        }
+
+        static const Property::PropSpec outStuff[] = {
+          { kOfxImageEffectPropMetadataSourceClip, Property::eString, 0, false, "" },
+          Property::propSpecEnd
+        };
+
+        Property::Set outArgs(outStuff);
+
+        std::vector<std::string> retainedKeysPropNames;
+
+        for(size_t i = 0; i < inputs.size(); ++i) {
+          std::string propName = "OfxImageClipPropMetadataRetainedKeys_" + inputs[i]->getName();
+          retainedKeysPropNames.push_back(propName);
+
+          Property::PropSpec keysSpec = { propName.c_str(), Property::eString, 0, false, "" };
+          outArgs.createProperty(keysSpec);
+        }
+
+        /// the metadata of each input clip, fetched at most once and only when needed
+        std::vector<MetadataSet *> inputMetadata(inputs.size(), (MetadataSet *) NULL);
+
+        /// the set the effect writes the metadata it contributes into. The host owns it, so
+        /// the effect cannot release it and it does not outlive the action
+        MetadataSet *contribution = new MetadataSet(MetadataSet::eWritable, MetadataSet::eHostOwned);
+
+        try {
+          /// the list starts as the first connected input clip in the order the effect
+          /// described them, if there is one, with the whole of that clip's key set
+          /// retained and every other clip's empty
+          const int defaultSource = findConnectedInputClip(inputs);
+
+          if(defaultSource >= 0) {
+            outArgs.setStringProperty(kOfxImageEffectPropMetadataSourceClip, inputs[defaultSource]->getName());
+
+            inputMetadata[defaultSource] = inputs[defaultSource]->getMetadata(time);
+
+            const Property::PropertyMap &props = inputMetadata[defaultSource]->getProperties();
+            int n = 0;
+
+            for(Property::PropertyMap::const_iterator k = props.begin(); k != props.end(); ++k)
+              outArgs.setStringProperty(retainedKeysPropNames[defaultSource], k->first, n++);
+          }
+
+          /// the inheritance the host offers, read before the effect can write over it
+          std::vector<std::string> sources;
+          std::vector<std::vector<std::string> > retainedKeys;
+
+          readMetadataInheritance(outArgs, retainedKeysPropNames, sources, retainedKeys);
+
+          static const Property::PropSpec inStuff[] = {
+            { kOfxPropTime, Property::eDouble, 1, true, "0" },
+            { kOfxImageEffectPropMetadataSet, Property::ePointer, 1, true, NULL },
+            Property::propSpecEnd
+          };
+
+          Property::Set inArgs(inStuff);
+          inArgs.setDoubleProperty(kOfxPropTime, time);
+          inArgs.setPointerProperty(kOfxImageEffectPropMetadataSet, contribution->getPropHandle());
+
+#         ifdef OFX_DEBUG_ACTIONS
+            std::cout << "OFX: "<<(void*)this<<"->"<<kOfxImageEffectActionGetMetadata<<"("<<time<<")"<<std::endl;
+#         endif
+          OfxStatus st = mainEntry(kOfxImageEffectActionGetMetadata,
+                                   this->getHandle(),
+                                   &inArgs,
+                                   &outArgs);
+#         ifdef OFX_DEBUG_ACTIONS
+            std::cout << "OFX: "<<(void*)this<<"->"<<kOfxImageEffectActionGetMetadata<<"("<<time<<")->"<<StatStr(st)<<std::endl;
+#         endif
+
+          if(st != kOfxStatOK && st != kOfxStatReplyDefault)
+            throw Property::Exception(st);
+
+          /// kOfxStatReplyDefault says the action was not trapped, so nothing the effect
+          /// left behind is read: neither the out args nor the set it was handed
+          if(st == kOfxStatOK)
+            readMetadataInheritance(outArgs, retainedKeysPropNames, sources, retainedKeys);
+
+          /// the list is read in increasing precedence, so a key carried by a clip later in
+          /// it replaces the same key contributed by an earlier one
+          for(size_t s = 0; s < sources.size(); ++s) {
+            const int source = findInputClip(inputs, sources[s]);
+
+            if(source < 0 || !inputs[source]->getConnected())
+              continue;
+
+            if(!inputMetadata[source])
+              inputMetadata[source] = inputs[source]->getMetadata(time);
+
+            const std::vector<std::string> &keys = retainedKeys[source];
+
+            for(size_t k = 0; k < keys.size(); ++k)
+              copyMetadataKey(metadata, *inputMetadata[source], keys[k]);
+          }
+
+          if(st == kOfxStatOK) {
+            /// what the effect wrote goes in over what was inherited
+            const Property::PropertyMap &contributed = contribution->getProperties();
+
+            for(Property::PropertyMap::const_iterator it = contributed.begin(); it != contributed.end(); ++it)
+              metadata.addProperty(it->second->deepCopy());
+          }
+        }
+        catch (...) {
+          releaseInputMetadata(inputMetadata);
+          contribution->releaseReference();
+          throw;
+        }
+
+        releaseInputMetadata(inputMetadata);
+        contribution->releaseReference();
+      }
+
       /// find the most chromatic components out of the two. Override this if you define
       /// more chromatic components
       const std::string &Instance::findMostChromaticComponents(const std::string &a, const std::string &b) const
@@ -2406,6 +2606,10 @@ namespace OFX {
           return kOfxStatErrBadHandle;
         }
 
+        if(!set->isPluginOwned()) {
+          return kOfxStatErrValue;
+        }
+
         set->releaseReference();
 
         return kOfxStatOK;
@@ -2477,11 +2681,135 @@ namespace OFX {
         }
       }
 
+      /// a NULL among the values would be a crash in the host rather than a status, so
+      /// the write path looks for one; only a string can be NULL
+      static bool metadataValuesUsable(const char *const*values, int count)
+      {
+        for (int i = 0; i < count; ++i) {
+          if (!values[i]) {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      static bool metadataValuesUsable(const double *, int)
+      {
+        return true;
+      }
+
+      static bool metadataValuesUsable(const int *, int)
+      {
+        return true;
+      }
+
+      template<class T>
+      static OfxStatus metadataSetValues(OfxPropertySetHandle metadata,
+                                         const char *key,
+                                         int count,
+                                         const typename T::APIType *values,
+                                         typename T::APIType empty)
+      {
+        try {
+        Property::Set *pset = reinterpret_cast<Property::Set*>(metadata);
+
+        if (!pset || !pset->verifyMagic()) {
+          return kOfxStatErrBadHandle;
+        }
+
+        MetadataSet *set = dynamic_cast<MetadataSet*>(pset);
+
+        if (!set || !key) {
+          return kOfxStatErrBadHandle;
+        }
+
+        if (!set->isWritable() || !key[0] || count < 1 || !values) {
+          return kOfxStatErrValue;
+        }
+
+        // the values are read through before the key is touched, so a set which is
+        // refused is a set which has not been written to
+        if (!metadataValuesUsable(values, count)) {
+          return kOfxStatErrValue;
+        }
+
+        // build and fill the replacement off the set, so a throw while copying values
+        // leaves the set exactly as it was rather than holding a half-written key;
+        // addProperty below both installs a new key and replaces an existing one,
+        // taking ownership either way
+        std::unique_ptr<Property::PropertyTemplate<T> > replacement(new Property::PropertyTemplate<T>(key, count, false, empty));
+
+        replacement->setValueN(values, count);
+
+        set->addProperty(replacement.release());
+
+        return kOfxStatOK;
+        } catch (const Property::Exception& e) {
+          return e.getStatus();
+        } catch (std::bad_alloc&) {
+          return kOfxStatErrMemory;
+        } catch (...) {
+          return kOfxStatErrBadHandle;
+        }
+      }
+
+      static OfxStatus metadataSetString(OfxPropertySetHandle metadata,
+                                         const char *key,
+                                         const char *value)
+      {
+        return metadataSetValues<Property::StringValue>(metadata, key, 1, &value, "");
+      }
+
+      static OfxStatus metadataSetDouble(OfxPropertySetHandle metadata,
+                                         const char *key,
+                                         double value)
+      {
+        return metadataSetValues<Property::DoubleValue>(metadata, key, 1, &value, 0);
+      }
+
+      static OfxStatus metadataSetInt(OfxPropertySetHandle metadata,
+                                      const char *key,
+                                      int value)
+      {
+        return metadataSetValues<Property::IntValue>(metadata, key, 1, &value, 0);
+      }
+
+      static OfxStatus metadataSetStringN(OfxPropertySetHandle metadata,
+                                          const char *key,
+                                          int count,
+                                          const char *const*values)
+      {
+        return metadataSetValues<Property::StringValue>(metadata, key, count, values, "");
+      }
+
+      static OfxStatus metadataSetDoubleN(OfxPropertySetHandle metadata,
+                                          const char *key,
+                                          int count,
+                                          const double *values)
+      {
+        return metadataSetValues<Property::DoubleValue>(metadata, key, count, values, 0);
+      }
+
+      static OfxStatus metadataSetIntN(OfxPropertySetHandle metadata,
+                                       const char *key,
+                                       int count,
+                                       const int *values)
+      {
+        return metadataSetValues<Property::IntValue>(metadata, key, count, values, 0);
+      }
+
       static const struct OfxMetadataSuiteV1 gMetadataSuite = {
         clipGetMetadata,
         imageGetMetadata,
         metadataRelease,
-        metadataEnumerate
+        metadataEnumerate,
+        metadataSetString,
+        metadataSetDouble,
+        metadataSetInt,
+        metadataSetStringN,
+        metadataSetDoubleN,
+        metadataSetIntN
       };
 
 #   ifdef OFX_SUPPORTS_OPENGLRENDER

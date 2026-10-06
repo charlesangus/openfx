@@ -1771,6 +1771,16 @@ Pointer Properties
 - **Dimension**: 1
 - **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPropCudaStream`.
 
+.. _prop_OfxImageEffectPropMetadataSet:
+
+**OfxImageEffectPropMetadataSet**
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **C #define**: :c:macro:`kOfxImageEffectPropMetadataSet`
+- **Type**: pointer
+- **Dimension**: 1
+- **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPropMetadataSet`.
+
 .. _prop_OfxImageEffectPropMetalCommandQueue:
 
 **OfxImageEffectPropMetalCommandQueue**
@@ -2009,6 +2019,16 @@ String Properties
 - **Used in Property Sets**: :ref:`EffectInstance <propset_EffectInstance>` (host)
 - **Introduced in**: version 1.5
 - **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPropDisplayColourspace`.
+
+.. _prop_OfxImageEffectPropMetadataSourceClip:
+
+**OfxImageEffectPropMetadataSourceClip**
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+- **C #define**: :c:macro:`kOfxImageEffectPropMetadataSourceClip`
+- **Type**: string
+- **Dimension**: Variable (0 or more)
+- **Doc**: For detailed doc, see :c:macro:`kOfxImageEffectPropMetadataSourceClip`.
 
 .. _prop_OfxImageEffectPropOCIOConfig:
 

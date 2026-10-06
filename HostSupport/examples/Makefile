@@ -22,7 +22,7 @@ else
   EXPATFLAGS = --disable-debug
 endif
 
-INCFLAGS = -I../include -I../../include -I../$(EXPAT_INCLUDE) 
+INCFLAGS = -I../include -I../../include -I../$(EXPAT_INCLUDE)
 CXXFLAGS = $(INCFLAGS) $(OPTIMISE)
 
 HOST_DEMO_FILES = $(DST_DIR)/hostDemo.o \
@@ -30,6 +30,8 @@ HOST_DEMO_FILES = $(DST_DIR)/hostDemo.o \
 	$(DST_DIR)/hostDemoEffectInstance.o   \
 	$(DST_DIR)/hostDemoHostDescriptor.o   \
 	$(DST_DIR)/hostDemoParamInstance.o    
+
+OBJECT_FILES = $(HOST_DEMO_FILES)
 
 all : $(DST_DIR)/hostDemo $(DST_DIR)/cacheDemo
 
@@ -40,10 +42,10 @@ clean :
 
 $(OFXSLIB):
 	cd ..; make DEBUG=$(DEBUG) EXPAT_INCLUDE=$(EXPAT_INCLUDE) OBJSUF=$(OBJSUF) LIBSUF=$(LIBSUF) \
-	LIBPREFIX=$(LIBPREFIX) LIBNAME=$(LIBNAME); 
+	LIBPREFIX=$(LIBPREFIX) LIBNAME=$(LIBNAME) OPTIMISE="$(OPTIMISE)";
 
 
-$(HOST_DEMO_FILES) : $(DST_DIR)/%.o : %.cpp
+$(OBJECT_FILES) : $(DST_DIR)/%.o : %.cpp
 	mkdir -p $(DST_DIR)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 

@@ -7,7 +7,11 @@ set(PLUGINS
 	Generator
 	GPUGain
 	Invert
+	MetadataCompare
+	MetadataCopy
+	MetadataModify
 	MetadataPrint
+	MetadataTimeCode
 	MetadataView
 	MultiBundle
 	Retimer

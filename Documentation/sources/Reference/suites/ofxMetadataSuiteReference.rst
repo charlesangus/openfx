@@ -14,6 +14,10 @@ See the source at `ofxMetadata.h <https://github.com/AcademySoftwareFoundation/o
 
 .. doxygendefine:: kOfxMetadataSuite
 
+.. doxygendefine:: kOfxImageEffectPropMetadataSet
+
+.. doxygendefine:: kOfxImageEffectPropMetadataSourceClip
+
 Enums
 -----
 .. doxygenenum:: OfxMetadataValueType

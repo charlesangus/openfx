@@ -667,6 +667,29 @@ namespace OFX {
       gGetClipPreferencesOutArgProps, sizeof(gGetClipPreferencesOutArgProps)/sizeof(PropertyDescription),
       NULLPTR);
 
+    /** @brief kOfxImageEffectActionGetMetadata action's inargs properties */
+    static PropertyDescription gGetMetadataActionInArgProps[ ] =
+    {
+      PropertyDescription(kOfxPropTime,                           OFX::eDouble,  1, eDescFinished),
+      PropertyDescription(kOfxImageEffectPropMetadataSet,         OFX::ePointer, 1, eDescFinished),
+    };
+
+    /** @brief kOfxImageEffectActionGetMetadata in argument property set */
+    static PropertySetDescription gGetMetadataActionInArgPropSet(kOfxImageEffectActionGetMetadata " in argument",
+      gGetMetadataActionInArgProps, sizeof(gGetMetadataActionInArgProps)/sizeof(PropertyDescription),
+      NULLPTR);
+
+    /** @brief kOfxImageEffectActionGetMetadata action's outargs properties, less the per-clip OfxImageClipPropMetadataRetainedKeys_<clip> properties, which are named after the clips the effect describes */
+    static PropertyDescription gGetMetadataActionOutArgProps[ ] =
+    {
+      PropertyDescription(kOfxImageEffectPropMetadataSourceClip, OFX::eString, -1, eDescFinished),
+    };
+
+    /** @brief kOfxImageEffectActionGetMetadata out argument property set */
+    static PropertySetDescription gGetMetadataActionOutArgPropSet(kOfxImageEffectActionGetMetadata " out argument",
+      gGetMetadataActionOutArgProps, sizeof(gGetMetadataActionOutArgProps)/sizeof(PropertyDescription),
+      NULLPTR);
+
     /** @brief kOfxActionInstanceChanged action's inargs properties */
     static PropertyDescription gInstanceChangedInArgProps[ ] =
     {
@@ -1171,6 +1194,10 @@ namespace OFX {
       }
       else if(action == kOfxImageEffectActionGetClipPreferences) {
         gGetClipPreferencesOutArgPropSet.validate(outArgs);
+      }
+      else if(action == kOfxImageEffectActionGetMetadata) {
+        gGetMetadataActionInArgPropSet.validate(inArgs);
+        gGetMetadataActionOutArgPropSet.validate(outArgs);
       }
       else if(action == kOfxImageEffectActionIsIdentity) {
         gIsIdentityActionInArgPropSet.validate(inArgs);

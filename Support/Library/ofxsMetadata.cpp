@@ -165,11 +165,13 @@ namespace OFX {
 
   MetadataSet::MetadataSet(void)
     : _metadataHandle(0)
+    , _owned(true)
   {
   }
 
-  MetadataSet::MetadataSet(OfxPropertySetHandle handle)
+  MetadataSet::MetadataSet(OfxPropertySetHandle handle, bool owned)
     : _metadataHandle(handle)
+    , _owned(owned)
   {
     if(_metadataHandle) {
       OfxStatus stat = refreshEntries();
@@ -180,6 +182,11 @@ namespace OFX {
     }
   }
 
+  MetadataSet::MetadataSet(OfxPropertySetHandle handle)
+    : MetadataSet(handle, true)
+  {
+  }
+
   MetadataSet::~MetadataSet()
   {
     reset();
@@ -187,6 +194,7 @@ namespace OFX {
 
   MetadataSet::MetadataSet(MetadataSet &&other) noexcept
     : _metadataHandle(other._metadataHandle)
+    , _owned(other._owned)
     , _entries(std::move(other._entries))
   {
     other._metadataHandle = 0;
@@ -198,6 +206,7 @@ namespace OFX {
     if(this != &other) {
       reset();
       _metadataHandle = other._metadataHandle;
+      _owned = other._owned;
       _entries = std::move(other._entries);
       other._metadataHandle = 0;
       other._entries.clear();
@@ -237,9 +246,14 @@ namespace OFX {
     return MetadataSet(handle);
   }
 
+  MetadataSet MetadataSet::borrow(OfxPropertySetHandle handle)
+  {
+    return MetadataSet(handle, false);
+  }
+
   void MetadataSet::reset(void)
   {
-    if(_metadataHandle && gMetadataSuite) {
+    if(_metadataHandle && _owned && gMetadataSuite) {
       OfxStatus stat = gMetadataSuite->metadataRelease(_metadataHandle);
       Log::error(stat != kOfxStatOK, "Failed to release a metadata handle, host returned status %s.", mapStatusToString(stat));
     }
@@ -274,6 +288,11 @@ namespace OFX {
 
     it = _entries.find(key);
     return it != _entries.end() ? &it->second : 0;
+  }
+
+  void MetadataSet::forget(const std::string &key)
+  {
+    _entries.erase(key);
   }
 
   bool MetadataSet::has(const std::string &key) const
@@ -402,6 +421,93 @@ namespace OFX {
       result.push_back(all[i].key);
 
     return result;
+  }
+
+  MetadataSetter::MetadataSetter(OfxPropertySetHandle handle)
+    : _metadataHandle(handle)
+    , doneSomething_(false)
+    , _contents(MetadataSet::borrow(handle))
+  {
+  }
+
+  void MetadataSetter::record(const std::string &key, OfxStatus stat)
+  {
+    Log::error(stat != kOfxStatOK, "Failed to set metadata key %s, host returned status %s.", key.c_str(), mapStatusToString(stat));
+
+    if(stat == kOfxStatOK) {
+      doneSomething_ = true;
+      _contents.forget(key);
+    }
+  }
+
+  void MetadataSetter::setString(const std::string &key, const std::string &value)
+  {
+    setStringN(key, std::vector<std::string>(1, value));
+  }
+
+  void MetadataSetter::setDouble(const std::string &key, double value)
+  {
+    setDoubleN(key, std::vector<double>(1, value));
+  }
+
+  void MetadataSetter::setInt(const std::string &key, int value)
+  {
+    setIntN(key, std::vector<int>(1, value));
+  }
+
+  void MetadataSetter::setStringN(const std::string &key, const std::vector<std::string> &values)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    std::vector<const char *> raw;
+    raw.reserve(values.size());
+    for(size_t i = 0; i < values.size(); ++i)
+      raw.push_back(values[i].c_str());
+
+    record(key, gMetadataSuite->metadataSetStringN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), raw.data()));
+  }
+
+  void MetadataSetter::setDoubleN(const std::string &key, const std::vector<double> &values)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    record(key, gMetadataSuite->metadataSetDoubleN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), values.data()));
+  }
+
+  void MetadataSetter::setIntN(const std::string &key, const std::vector<int> &values)
+  {
+    if(!_metadataHandle || !gMetadataSuite)
+      return;
+
+    record(key, gMetadataSuite->metadataSetIntN(_metadataHandle, key.c_str(), static_cast<int>(values.size()), values.data()));
+  }
+
+  void MetadataSetter::copyFrom(const MetadataSet &source)
+  {
+    const std::vector<MetadataEntry> allEntries = source.entries();
+
+    for(size_t i = 0; i < allEntries.size(); ++i) {
+      const MetadataEntry &entry = allEntries[i];
+
+      switch(entry.type) {
+      case eMetadataTypeString :
+        setStringN(entry.key, source.getStringN(entry.key));
+        break;
+
+      case eMetadataTypeDouble :
+        setDoubleN(entry.key, source.getDoubleN(entry.key));
+        break;
+
+      case eMetadataTypeInt :
+        setIntN(entry.key, source.getIntN(entry.key));
+        break;
+
+      case eMetadataTypeNone :
+        break;
+      }
+    }
   }
 
 };

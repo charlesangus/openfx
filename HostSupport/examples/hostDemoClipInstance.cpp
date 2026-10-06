@@ -190,7 +190,7 @@ namespace MyHost {
 
   MyImage::~MyImage() 
   {
-    delete _data;
+    delete [] _data;
   }
 
   MyClipInstance::MyClipInstance(MyEffectInstance* effect, OFX::Host::ImageEffect::ClipDescriptor *desc)
@@ -198,6 +198,7 @@ namespace MyHost {
     , _effect(effect)
     , _name(desc->getName())
     , _outputImage(NULL)
+    , _connected(true)
   {
   }
 
@@ -275,7 +276,7 @@ namespace MyHost {
   //  Says whether the clip is actually connected at the moment.
   bool MyClipInstance::getConnected() const
   {
-    return true;
+    return _connected;
   }
   
   // Unmapped Frame Rate -

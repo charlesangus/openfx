@@ -298,7 +298,7 @@ namespace OFX {
         std::string                                   _outputFielding;  ///< set by clip prefs
         double                                        _outputFrameRate; ///< set by clip prefs
 
-      public:        
+      public:
         /// constructor based on clip descriptor
         Instance(ImageEffectPlugin* plugin,
                  Descriptor         &other, 
@@ -648,10 +648,23 @@ namespace OFX {
           return false;
         }
         
-        /// Drop the metadata cached by every clip of this effect, so that the next
-        /// ClipInstance::getMetadata() re-derives it. A host calls this when the state its
-        /// metadata comes from has changed, and on the effects downstream of this one, whose
-        /// input clips have cached what this one carried.
+        /// Derive the metadata the effect's output clip carries at the given time.
+        ///
+        /// This calls the get metadata action, then walks the list of input clip names in
+        /// kOfxImageEffectPropMetadataSourceClip in order, taking from each the keys that
+        /// clip's retained keys list selects, so that a clip later in the list overrides
+        /// an earlier one, and then folds what the effect contributed in over the top. An
+        /// empty list inherits nothing, and a name that is not an input clip is ignored.
+        /// The output clip's fetchMetadata() calls this, so the derived set lands in that
+        /// clip's per time cache and is dropped along with it.
+        ///
+        /// Throws Property::Exception carrying the action's status if the action fails.
+        virtual void getOutputMetadata(OfxTime time, Property::Set &metadata);
+
+        /// Drop the metadata cached by every clip of this effect. Called whenever a param
+        /// or an input changes, that being the state the metadata is derived from. Only
+        /// this effect's clips are dropped, so a host must also call this on the effects
+        /// downstream of it, whose input clips have cached what this one derived.
         void invalidateMetadata();
 
         /// find the best supported bit depth for the given one. Override this if you define

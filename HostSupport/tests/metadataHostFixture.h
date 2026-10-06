@@ -43,7 +43,9 @@ namespace MetadataFixture {
   const int kInputClipCount = sizeof(kInputClips) / sizeof(kInputClips[0]);
   const char kOutputClip[] = kOfxImageEffectOutputClipName;
 
-  /// the suite defines no keys, so these names are the fixture's own
+  /// the suite defines no keys, so these names are the fixture's own. The example
+  /// plugins whose defaults read or write a key the fixture publishes default to the
+  /// same name, so their contracts can run without being told it
   const char kFilePathKey[]    = "file_path";
   const char kFrameRateKey[]   = "frame_rate";
   const char kSampleTypeKey[]  = "sample_type";
@@ -58,6 +60,13 @@ namespace MetadataFixture {
   /// and a '%s' (an unsubstituted shot-name token), so it catches a plugin that passes
   /// metadata text as a printf format rather than an arg
   const char kBurnInTemplateKey[] = "burn_in_template";
+
+  /// the keys metadataPlugin retains from each of its inputs, which it lists itself;
+  /// every other key the fixture publishes is one it drops
+  const char *const kRetainedKeys[] = {
+    kFilePathKey, kFrameRateKey, kSampleTypeKey, kBitDepthKey, kTimecodeKey, kSourceFrameKey
+  };
+  const int kRetainedKeyCount = sizeof(kRetainedKeys) / sizeof(kRetainedKeys[0]);
 
   const char kSourceMovie[] = "/shots/ab_010/plate/ab_010_plate.mov";
   const char kBurnInTemplate[] = "/shots/ab_010/burnin/50%/ab_010_%s.txt";

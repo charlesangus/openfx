@@ -1,0 +1,240 @@
+// Copyright OpenFX and contributors to the OpenFX project.
+// SPDX-License-Identifier: BSD-3-Clause
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
+
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "ofxsImageEffect.h"
+#include "ofxsMetadata.h"
+
+#include "ofxsPixelCopy.H"
+
+namespace {
+
+  const char kNoteParam[]    = "note";
+  const char kModeParam[]    = "mode";
+  const char kDropKeyParam[] = "dropKey";
+
+  // the reverse DNS prefix every key this plugin contributes is namespaced under
+  const char kKeyPrefix[] = "net.sf.openfx.metadataContribute.";
+
+  // the key the harness's fixture publishes Source's rate under, so that what this
+  // plugin contributes there can be told apart from what it inherits
+  const char kFrameRateKey[] = "frame_rate";
+
+  const char kDropKeyDefault[] = "sample_type";
+
+  enum ModeEnum {
+    eModeInheritAll,
+    eModeDropOneKey,
+    eModeInheritNothing
+  };
+
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/** @brief contributes a fixed set of metadata keys to its output at every call, controls
+what it inherits from its source clip according to a mode param, and passes the image
+through untouched */
+class MetadataContributePlugin : public OFX::ImageEffect {
+protected :
+  // do not need to delete these, the ImageEffect is managing them for us
+  OFX::Clip *dstClip_;
+  OFX::Clip *srcClip_;
+
+  OFX::StringParam *note_;
+  OFX::ChoiceParam *mode_;
+  OFX::StringParam *dropKey_;
+
+public :
+  /** @brief ctor */
+  MetadataContributePlugin(OfxImageEffectHandle handle)
+    : ImageEffect(handle)
+    , dstClip_(0)
+    , srcClip_(0)
+    , note_(0)
+    , mode_(0)
+    , dropKey_(0)
+  {
+    dstClip_ = fetchClip(kOfxImageEffectOutputClipName);
+    srcClip_ = fetchClip(kOfxImageEffectSimpleSourceClipName);
+
+    note_    = fetchStringParam(kNoteParam);
+    mode_    = fetchChoiceParam(kModeParam);
+    dropKey_ = fetchStringParam(kDropKeyParam);
+  }
+
+  /* Override the render */
+  virtual void render(const OFX::RenderArguments &args);
+
+  /* Override getMetadata */
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
+};
+
+void
+MetadataContributePlugin::getMetadata(const OFX::MetadataArguments &/*args*/, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance)
+{
+  if(!OFX::getImageEffectHostDescription()->supportsMetadata)
+    return;
+
+  std::string note;
+  note_->getValue(note);
+
+  // one key through each of the six suite entry points MetadataSetter exposes,
+  // plus a framerate that disagrees with the fixture's Source so the two are
+  // distinguishable downstream
+  metadata.setString(std::string(kKeyPrefix) + "note", note);
+  metadata.setInt(std::string(kKeyPrefix) + "revision", 1);
+  metadata.setDouble(std::string(kKeyPrefix) + "quality", 0.75);
+  metadata.setStringN(std::string(kKeyPrefix) + "tags", std::vector<std::string>({"reviewed", "approved"}));
+  metadata.setIntN(std::string(kKeyPrefix) + "renderRegion", std::vector<int>({0, 0, 1280, 720}));
+  metadata.setDoubleN(std::string(kKeyPrefix) + "weights", std::vector<double>({1.0, 0.5, 0.25}));
+  metadata.setDouble(kFrameRateKey, 30.0);
+
+  // the host rejects metadataRelease on this action's writable set but still permits
+  // metadataEnumerate on it, so contents() can read back what was just written above
+  std::ostringstream contributedLog;
+  contributedLog << "contributed keys=" << metadata.contents().keys().size();
+  sendMessage(OFX::Message::eMessageLog, "", contributedLog.str());
+
+  int mode = eModeInheritAll;
+  mode_->getValue(mode);
+
+  switch(ModeEnum(mode)) {
+  case eModeDropOneKey : {
+    std::string dropKey;
+    dropKey_->getValue(dropKey);
+
+    const std::vector<std::string> retained = inheritance.getRetainedKeys(*srcClip_);
+    std::vector<std::string> kept;
+
+    for(size_t i = 0; i < retained.size(); i++) {
+      if(retained[i] != dropKey)
+        kept.push_back(retained[i]);
+    }
+
+    inheritance.setRetainedKeys(*srcClip_, kept);
+    break;
+  }
+  case eModeInheritNothing :
+    inheritance.setSourceClips(std::vector<std::string>());
+    break;
+  default :
+    // inherit all: leave outArgs untouched
+    break;
+  }
+}
+
+// the overridden render function
+void
+MetadataContributePlugin::render(const OFX::RenderArguments &args)
+{
+  std::unique_ptr<OFX::Image> dst(dstClip_->fetchImage(args.time));
+  std::unique_ptr<OFX::Image> src(srcClip_->fetchImage(args.time));
+
+  if(!dst.get() || !src.get())
+    return;
+
+  if(src->getPixelDepth() != dst->getPixelDepth()
+     || src->getPixelComponents() != dst->getPixelComponents())
+    OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
+
+  copyPixels(*src, *dst, args.renderWindow);
+}
+
+mDeclarePluginFactory(MetadataContributeExamplePluginFactory, {}, {});
+
+using namespace OFX;
+void MetadataContributeExamplePluginFactory::describe(OFX::ImageEffectDescriptor &desc)
+{
+  // basic labels
+  desc.setLabels("Metadata Contribute", "Metadata Contribute", "Metadata Contribute");
+  desc.setPluginGrouping("OFX Example (Support)");
+
+  // add the supported contexts, only filter at the moment
+  desc.addSupportedContext(eContextFilter);
+
+  // add supported pixel depths
+  desc.addSupportedBitDepth(eBitDepthUByte);
+  desc.addSupportedBitDepth(eBitDepthUShort);
+  desc.addSupportedBitDepth(eBitDepthFloat);
+
+  // set a few flags
+  desc.setSingleInstance(false);
+  desc.setHostFrameThreading(false);
+  desc.setSupportsMultiResolution(true);
+  desc.setSupportsTiles(true);
+  desc.setTemporalClipAccess(false);
+  desc.setRenderTwiceAlways(false);
+  desc.setSupportsMultipleClipPARs(false);
+}
+
+void MetadataContributeExamplePluginFactory::describeInContext(OFX::ImageEffectDescriptor &desc, OFX::ContextEnum /*context*/)
+{
+  // Source clip only in the filter context
+  // create the mandated source clip
+  ClipDescriptor *srcClip = desc.defineClip(kOfxImageEffectSimpleSourceClipName);
+  srcClip->addSupportedComponent(ePixelComponentRGBA);
+  srcClip->addSupportedComponent(ePixelComponentAlpha);
+  srcClip->setTemporalClipAccess(false);
+  srcClip->setSupportsTiles(true);
+  srcClip->setIsMask(false);
+
+  // create the mandated output clip
+  ClipDescriptor *dstClip = desc.defineClip(kOfxImageEffectOutputClipName);
+  dstClip->addSupportedComponent(ePixelComponentRGBA);
+  dstClip->addSupportedComponent(ePixelComponentAlpha);
+  dstClip->setSupportsTiles(true);
+
+  PageParamDescriptor *page = desc.definePageParam("Controls");
+
+  StringParamDescriptor *note = desc.defineStringParam(kNoteParam);
+  note->setLabels("note", "note", "note");
+  note->setHint("text as the note key");
+  note->setStringType(eStringTypeSingleLine);
+  note->setDefault("");
+  note->setAnimates(false);
+  page->addChild(*note);
+
+  ChoiceParamDescriptor *mode = desc.defineChoiceParam(kModeParam);
+  mode->setLabels("mode", "mode", "mode");
+  mode->setHint("how metadata is inherited");
+  mode->appendOption("inherit all");
+  mode->appendOption("drop one key");
+  mode->appendOption("inherit nothing");
+  mode->setDefault(eModeInheritAll);
+  mode->setAnimates(false);
+  page->addChild(*mode);
+
+  StringParamDescriptor *dropKey = desc.defineStringParam(kDropKeyParam);
+  dropKey->setLabels("drop key", "drop key", "drop key");
+  dropKey->setHint("which key to drop");
+  dropKey->setStringType(eStringTypeSingleLine);
+  dropKey->setDefault(kDropKeyDefault);
+  dropKey->setAnimates(false);
+  page->addChild(*dropKey);
+}
+
+OFX::ImageEffect* MetadataContributeExamplePluginFactory::createInstance(OfxImageEffectHandle handle, OFX::ContextEnum /*context*/)
+{
+  return new MetadataContributePlugin(handle);
+}
+
+namespace OFX
+{
+  namespace Plugin
+  {
+    void getPluginIDs(OFX::PluginFactoryArray &ids)
+    {
+      static MetadataContributeExamplePluginFactory p("net.sf.openfx.metadataContribute", 1, 0);
+      ids.push_back(&p);
+    }
+  }
+}

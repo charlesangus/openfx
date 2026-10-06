@@ -9,6 +9,7 @@
 
 #include "ofxCore.h"
 #include "ofxImageEffect.h"
+#include "ofxMessage.h"
 #include "ofxParam.h"
 #include "ofxProperty.h"
 #include "ofxMetadata.h"
@@ -23,23 +24,66 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 // A plugin that does nothing to pixels and exists only to exercise the metadata
-// suite from the plugin side of the API. At every frame it is asked to render, it
-// fetches the metadata of each of its input clips, enumerates it and reads every key
-// back, and fails the render if any of that fails.
+// action from the plugin side of the API. It composes the metadata of its two
+// input clips, in an order its 'compositionOrder' parameter selects, and retains
+// from each clip only the keys on a fixed list of its own, dropping everything else.
 //
 // It is deliberately written against the plugin facing C api alone, with no
-// knowledge of which keys its inputs carry: it reads each key back by the type the
-// host reports for it, which is what a plugin that means to use metadata it was not
-// told about has to do. It logs nothing, so the harness can hold it up as a plugin
-// that reads its clips and says nothing about them.
+// knowledge of which keys its inputs carry: it enumerates them and reads each one
+// back by the type the host reports for it, which is what a plugin that means to
+// pass metadata through has to do.
+//
+// It also writes a handful of keys of its own into the set the host hands it, which
+// the host has to put over whatever the same key inherited. One value of its
+// 'compositionOrder' parameter makes it write into everything the action can write
+// into and then report the action untrapped, which a host has to ignore in full, and
+// another makes it nominate no source clip at all.
+
+// the host composes this property's name by post pending the clip's name, and the
+// api defines the prefix in prose rather than as a macro
+static const char kRetainedKeysPropPrefix[] = "OfxImageClipPropMetadataRetainedKeys_";
 
 static const char kSourceClip[] = kOfxImageEffectSimpleSourceClipName;
 static const char kMaskClip[]   = "Mask";
+static const char kOrderParam[] = "compositionOrder";
 
-// nothing in this plugin reads its parameters: they are declared so that a host's string
-// and choice parameter instances are instantiated and can be driven
+// the value of the composition order parameter which selects the path that writes and
+// then reports the action untrapped
+static const int kOrderUntrapped = 2;
+
+// the value which selects the path nominating no source clip at all
+static const int kOrderNoSource = 3;
+
+// the keys a clip's metadata is filtered down to; the suite defines no keys, so the list
+// is this plugin's own choice, and the harness's fixture publishes under the same names
+static const char kFrameRateKey[] = "frame_rate";
+static const char *const kRetainedKeys[] = {
+  "file_path", kFrameRateKey, "sample_type", "bit_depth", "timecode", "source_frame"
+};
+static const size_t kRetainedKeyCount = sizeof(kRetainedKeys) / sizeof(kRetainedKeys[0]);
+
+// the keys the plugin writes into the set it is handed, under its own reverse DNS prefix
+// so they cannot collide with a key an input carries. The frame rate is one the
+// plugin also retains from Source, so that the host putting one over the other is
+// observable, and the last is named after the property the host reads the composition
+// order out of, which lives in the action's out args and so cannot be confused with a key
+// of that name
+static const char   kContributedNoteKey[]    = "net.sf.openfx.metadataPlugin.note";
+static const char   kContributedGainKey[]    = "net.sf.openfx.metadataPlugin.gain";
+static const char   kContributedPassesKey[]  = "net.sf.openfx.metadataPlugin.passes";
+static const char   kContributedWindowKey[]  = "net.sf.openfx.metadataPlugin.window";
+
+static const double kContributedGain         = 1.75;
+static const int    kContributedPasses       = 5;
+static const int    kContributedWindow[]     = {12, 24, 1908, 1056};
+static const double kContributedFrameRate    = 48.0;
+static const char   kContributedSourceClip[] = "contributed";
+
 static const char kNoteParam[]    = "note";
 static const char kNoteDefault[]  = "unset";
+
+// nothing in this plugin reads this one: it is declared so that a host's choice parameter
+// instance is instantiated and can be driven
 static const char kDetailParam[]  = "detail";
 static const int  kDetailDefault  = 0;
 
@@ -48,6 +92,7 @@ static const OfxImageEffectSuiteV1  *gEffectSuite = 0;
 static const OfxPropertySuiteV1     *gPropSuite = 0;
 static const OfxParameterSuiteV1    *gParamSuite = 0;
 static const OfxMetadataSuiteV1     *gMetadataSuite = 0;
+static const OfxMessageSuiteV2      *gMessageSuite = 0;
 
 struct KeyInfo {
   std::string key;
@@ -102,8 +147,21 @@ static bool readValue(OfxPropertySetHandle metadata, const char *key, OfxMetadat
   }
 }
 
-/// read every key the named clip carries at the given time
-static OfxStatus readClip(OfxImageEffectHandle effect, const char *clipName, OfxTime time)
+static bool isRetainedKey(const std::string &key)
+{
+  for(size_t i = 0; i < kRetainedKeyCount; ++i) {
+    if(key == kRetainedKeys[i])
+      return true;
+  }
+  return false;
+}
+
+/// list in outArgs the keys retained from the named clip, which are the ones on the
+/// retained list, having read every key the clip carries to check it can be
+static OfxStatus setRetainedKeys(OfxImageEffectHandle effect,
+                                 OfxPropertySetHandle outArgs,
+                                 const char *clipName,
+                                 OfxTime time)
 {
   OfxImageClipHandle clip = 0;
 
@@ -119,9 +177,25 @@ static OfxStatus readClip(OfxImageEffectHandle effect, const char *clipName, Ofx
   std::vector<KeyInfo> keys;
   OfxStatus status = gMetadataSuite->metadataEnumerate(metadata, collectKey, &keys);
 
+  std::vector<const char *> retained;
+
   for(size_t i = 0; status == kOfxStatOK && i < keys.size(); ++i) {
-    if(!readValue(metadata, keys[i].key.c_str(), keys[i].type, keys[i].dimension))
+    if(!readValue(metadata, keys[i].key.c_str(), keys[i].type, keys[i].dimension)) {
       status = kOfxStatFailed;
+      break;
+    }
+
+    if(isRetainedKey(keys[i].key))
+      retained.push_back(keys[i].key.c_str());
+  }
+
+  if(status == kOfxStatOK) {
+    const std::string propName = std::string(kRetainedKeysPropPrefix) + clipName;
+
+    status = gPropSuite->propSetStringN(outArgs,
+                                        propName.c_str(),
+                                        int(retained.size()),
+                                        retained.empty() ? 0 : &retained[0]);
   }
 
   gMetadataSuite->metadataRelease(metadata);
@@ -129,17 +203,96 @@ static OfxStatus readClip(OfxImageEffectHandle effect, const char *clipName, Ofx
   return status;
 }
 
-static OfxStatus render(OfxImageEffectHandle effect, OfxPropertySetHandle inArgs)
+static OfxStatus getMetadata(OfxImageEffectHandle effect,
+                             OfxPropertySetHandle inArgs,
+                             OfxPropertySetHandle outArgs)
 {
   OfxTime time = 0;
 
   if(gPropSuite->propGetDouble(inArgs, kOfxPropTime, 0, &time) != kOfxStatOK)
     return kOfxStatFailed;
 
-  OfxStatus status = readClip(effect, kSourceClip, time);
+  void *vended = 0;
+
+  if(gPropSuite->propGetPointer(inArgs, kOfxImageEffectPropMetadataSet, 0, &vended) != kOfxStatOK || !vended)
+    return kOfxStatFailed;
+
+  std::vector<KeyInfo> written;
+
+  if(gMetadataSuite->metadataEnumerate((OfxPropertySetHandle) vended, collectKey, &written) != kOfxStatOK)
+    return kOfxStatFailed;
+
+  // the set arrives empty, and the log line is how a host driving this plugin sees that
+  // it did
+  gMessageSuite->message(effect, kOfxMessageLog, "metadataPlugin",
+                         "metadataPlugin metadataset present keys=%d", int(written.size()));
+
+  OfxParamSetHandle paramSet = 0;
+  OfxParamHandle order = 0;
+  OfxParamHandle noteParam = 0;
+  int reversed = 0;
+  char *note = 0;
+
+  if(gEffectSuite->getParamSet(effect, &paramSet) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gParamSuite->paramGetHandle(paramSet, kOrderParam, &order, 0) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gParamSuite->paramGetValueAtTime(order, time, &reversed) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gParamSuite->paramGetHandle(paramSet, kNoteParam, &noteParam, 0) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gParamSuite->paramGetValueAtTime(noteParam, time, &note) != kOfxStatOK || !note)
+    return kOfxStatFailed;
+
+  OfxPropertySetHandle contribution = (OfxPropertySetHandle) vended;
+  const int window = int(sizeof(kContributedWindow) / sizeof(kContributedWindow[0]));
+
+  if(gMetadataSuite->metadataSetString(contribution, kContributedNoteKey, note) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetDouble(contribution, kContributedGainKey, kContributedGain) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetInt(contribution, kContributedPassesKey, kContributedPasses) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetIntN(contribution, kContributedWindowKey, window, kContributedWindow) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetDouble(contribution, kFrameRateKey, kContributedFrameRate) != kOfxStatOK)
+    return kOfxStatFailed;
+  if(gMetadataSuite->metadataSetString(contribution, kOfxImageEffectPropMetadataSourceClip,
+                                       kContributedSourceClip) != kOfxStatOK)
+    return kOfxStatFailed;
+
+  // none of what this path writes is what the host arrives at on its own: it nominates
+  // the clip the host does not default to and drops the keys retained from the one it
+  // does, on top of the keys already contributed above, and then reports the action
+  // untrapped so that every one of those writes has to be ignored
+  if(reversed == kOrderUntrapped) {
+    const char *nominated = kMaskClip;
+    const std::string retained = std::string(kRetainedKeysPropPrefix) + kSourceClip;
+
+    if(gPropSuite->propSetStringN(outArgs, kOfxImageEffectPropMetadataSourceClip, 1, &nominated) != kOfxStatOK)
+      return kOfxStatFailed;
+    if(gPropSuite->propSetStringN(outArgs, retained.c_str(), 0, 0) != kOfxStatOK)
+      return kOfxStatFailed;
+
+    return kOfxStatReplyDefault;
+  }
+
+  // nominating no clip at all leaves the output nothing to inherit, so it carries only
+  // what was contributed above
+  if(reversed == kOrderNoSource)
+    return gPropSuite->propSetStringN(outArgs, kOfxImageEffectPropMetadataSourceClip, 0, 0);
+
+  // the list is read in increasing precedence, so the clip named last wins
+  const char *sources[2];
+  sources[0] = reversed ? kMaskClip   : kSourceClip;
+  sources[1] = reversed ? kSourceClip : kMaskClip;
+
+  OfxStatus status = gPropSuite->propSetStringN(outArgs, kOfxImageEffectPropMetadataSourceClip, 2, sources);
 
   if(status == kOfxStatOK)
-    status = readClip(effect, kMaskClip, time);
+    status = setRetainedKeys(effect, outArgs, kSourceClip, time);
+  if(status == kOfxStatOK)
+    status = setRetainedKeys(effect, outArgs, kMaskClip, time);
 
   return status;
 }
@@ -151,8 +304,12 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
   gEffectSuite->clipDefine(effect, kOfxImageEffectOutputClipName, &props);
   gPropSuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
 
+  // the clips are declared in this order, so Source is the one whose metadata the
+  // host offers by default when it is connected; it is optional so that a host may
+  // leave it unconnected and the offer falls through to Mask
   gEffectSuite->clipDefine(effect, kSourceClip, &props);
   gPropSuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
+  gPropSuite->propSetInt(props, kOfxImageClipPropOptional, 0, 1);
 
   gEffectSuite->clipDefine(effect, kMaskClip, &props);
   gPropSuite->propSetString(props, kOfxImageEffectPropSupportedComponents, 0, kOfxImageComponentRGBA);
@@ -162,6 +319,16 @@ static OfxStatus describeInContext(OfxImageEffectHandle effect, OfxPropertySetHa
 
   if(gEffectSuite->getParamSet(effect, &paramSet) != kOfxStatOK)
     return kOfxStatFailed;
+  if(gParamSuite->paramDefine(paramSet, kOfxParamTypeInteger, kOrderParam, &paramProps) != kOfxStatOK)
+    return kOfxStatFailed;
+
+  gPropSuite->propSetInt(paramProps, kOfxParamPropDefault, 0, 0);
+  gPropSuite->propSetString(paramProps, kOfxPropLabel, 0, "Composition Order");
+  gPropSuite->propSetString(paramProps, kOfxParamPropHint, 0,
+                            "0 composes Mask over Source, 1 composes Source over Mask, "
+                            "2 writes and then reports the action untrapped, "
+                            "3 nominates no source clip at all");
+
   if(gParamSuite->paramDefine(paramSet, kOfxParamTypeString, kNoteParam, &paramProps) != kOfxStatOK)
     return kOfxStatFailed;
 
@@ -204,8 +371,9 @@ static OfxStatus onLoad(void)
   gPropSuite     = (const OfxPropertySuiteV1 *)    gHost->fetchSuite(gHost->host, kOfxPropertySuite, 1);
   gParamSuite    = (const OfxParameterSuiteV1 *)   gHost->fetchSuite(gHost->host, kOfxParameterSuite, 1);
   gMetadataSuite = (const OfxMetadataSuiteV1 *)    gHost->fetchSuite(gHost->host, kOfxMetadataSuite, 1);
+  gMessageSuite  = (const OfxMessageSuiteV2 *)     gHost->fetchSuite(gHost->host, kOfxMessageSuite, 2);
 
-  if(!gEffectSuite || !gPropSuite || !gParamSuite || !gMetadataSuite)
+  if(!gEffectSuite || !gPropSuite || !gParamSuite || !gMetadataSuite || !gMessageSuite)
     return kOfxStatErrMissingHostFeature;
 
   return kOfxStatOK;
@@ -214,7 +382,7 @@ static OfxStatus onLoad(void)
 static OfxStatus pluginMain(const char *action,
                             const void *handle,
                             OfxPropertySetHandle inArgs,
-                            OfxPropertySetHandle /*outArgs*/)
+                            OfxPropertySetHandle outArgs)
 {
   try {
     OfxImageEffectHandle effect = (OfxImageEffectHandle) handle;
@@ -225,8 +393,8 @@ static OfxStatus pluginMain(const char *action,
       return describe(effect);
     else if(strcmp(action, kOfxImageEffectActionDescribeInContext) == 0)
       return describeInContext(effect, inArgs);
-    else if(strcmp(action, kOfxImageEffectActionRender) == 0)
-      return render(effect, inArgs);
+    else if(strcmp(action, kOfxImageEffectActionGetMetadata) == 0)
+      return getMetadata(effect, inArgs, outArgs);
   }
   catch (const std::bad_alloc &) {
     return kOfxStatErrMemory;

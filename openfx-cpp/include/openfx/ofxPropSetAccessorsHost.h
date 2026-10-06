@@ -1058,6 +1058,34 @@ public:
 
 };
 
+// Property set accessor for: ImageEffectActionGetMetadata_InArgs
+class ImageEffectActionGetMetadata_InArgs : public PropertySetAccessor {
+public:
+    using PropertySetAccessor::PropertySetAccessor;
+
+    ImageEffectActionGetMetadata_InArgs& setTime(double value, bool error_if_missing = true) {
+        props_.set<PropId::OfxPropTime>(value, 0, error_if_missing);
+        return *this;
+    }
+
+    ImageEffectActionGetMetadata_InArgs& setMetadataSet(void* value, bool error_if_missing = true) {
+        props_.set<PropId::OfxImageEffectPropMetadataSet>(value, 0, error_if_missing);
+        return *this;
+    }
+
+};
+
+// Property set accessor for: ImageEffectActionGetMetadata_OutArgs
+class ImageEffectActionGetMetadata_OutArgs : public PropertySetAccessor {
+public:
+    using PropertySetAccessor::PropertySetAccessor;
+
+    const char* metadataSourceClip(int index = 0, bool error_if_missing = true) const {
+        return props_.get<PropId::OfxImageEffectPropMetadataSourceClip>(index, error_if_missing);
+    }
+
+};
+
 // Property set accessor for: ImageEffectActionGetOutputColourspace_InArgs
 class ImageEffectActionGetOutputColourspace_InArgs : public PropertySetAccessor {
 public:

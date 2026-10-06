@@ -1,0 +1,337 @@
+// Copyright OpenFX and contributors to the OpenFX project.
+// SPDX-License-Identifier: BSD-3-Clause
+
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
+
+#include <cmath>
+#include <iomanip>
+#include <memory>
+#include <sstream>
+#include <string>
+
+#include "ofxsImageEffect.h"
+#include "ofxsMetadata.h"
+
+#include "../include/ofxsPixelCopy.H"
+
+namespace {
+
+  const char kStartTimecodeParam[]    = "startTimecode";
+  const char kRateParam[]             = "rate";
+  const char kRateFromMetadataParam[] = "rateFromMetadata";
+  const char kStartFrameParam[]       = "startFrame";
+  const char kUseStartFrameParam[]    = "useStartFrame";
+  const char kTimecodeKeyParam[]      = "timecodeKey";
+  const char kRateKeyParam[]          = "rateKey";
+
+  /** @brief the frame the start timecode is read at when useStartFrame is off */
+  const int kFixedOrigin = 1;
+
+  /** @brief the rate the frames field counts at, which is the whole number of frames a
+  second holds */
+  int roundedRate(double rate)
+  {
+    const int rounded = int(rate + 0.5);
+
+    return rounded < 1 ? 1 : rounded;
+  }
+
+  /** @brief the four fields of HH:MM:SS:FF, any non digit separating them, all zero if
+  there are fewer than four numbers to read */
+  void parseTimecode(const std::string &text, int fields[4])
+  {
+    int read = 0;
+    size_t pos = 0;
+
+    fields[0] = fields[1] = fields[2] = fields[3] = 0;
+
+    while(pos < text.size() && read < 4) {
+      if(text[pos] < '0' || text[pos] > '9') {
+        pos++;
+        continue;
+      }
+
+      int value = 0;
+
+      while(pos < text.size() && text[pos] >= '0' && text[pos] <= '9') {
+        value = value * 10 + (text[pos] - '0');
+        pos++;
+      }
+
+      fields[read++] = value;
+    }
+
+    if(read < 4)
+      fields[0] = fields[1] = fields[2] = fields[3] = 0;
+  }
+
+  long long timecodeToFrames(const std::string &text, int rate)
+  {
+    int fields[4];
+
+    parseTimecode(text, fields);
+
+    return (((long long) fields[0] * 60 + fields[1]) * 60 + fields[2]) * rate + fields[3];
+  }
+
+  /** @brief the non drop frame HH:MM:SS:FF a whole number of frames stands for, wrapped
+  into the twenty four hours a timecode can express */
+  std::string framesToTimecode(long long frames, int rate)
+  {
+    const long long day = 24LL * 60 * 60 * rate;
+
+    frames %= day;
+
+    if(frames < 0)
+      frames += day;
+
+    const long long seconds = frames / rate;
+
+    std::ostringstream os;
+
+    os << std::setfill('0')
+       << std::setw(2) << (seconds / 3600) << ":"
+       << std::setw(2) << ((seconds / 60) % 60) << ":"
+       << std::setw(2) << (seconds % 60) << ":"
+       << std::setw(2) << (frames % rate);
+
+    return os.str();
+  }
+
+}
+
+////////////////////////////////////////////////////////////////////////////////
+/** @brief counts a non drop frame timecode on from a start code, one frame at a time, so
+that its output carries a different value at every frame, contributes the rate it counted
+at alongside it, and passes the image through untouched */
+class MetadataTimeCodePlugin : public OFX::ImageEffect {
+protected :
+  // do not need to delete these, the ImageEffect is managing them for us
+  OFX::Clip *dstClip_;
+  OFX::Clip *srcClip_;
+
+  OFX::StringParam  *startTimecode_;
+  OFX::DoubleParam  *rate_;
+  OFX::BooleanParam *rateFromMetadata_;
+  OFX::IntParam     *startFrame_;
+  OFX::BooleanParam *useStartFrame_;
+  OFX::StringParam  *timecodeKey_;
+  OFX::StringParam  *rateKey_;
+
+public :
+  /** @brief ctor */
+  MetadataTimeCodePlugin(OfxImageEffectHandle handle)
+    : ImageEffect(handle)
+    , dstClip_(0)
+    , srcClip_(0)
+    , startTimecode_(0)
+    , rate_(0)
+    , rateFromMetadata_(0)
+    , startFrame_(0)
+    , useStartFrame_(0)
+    , timecodeKey_(0)
+    , rateKey_(0)
+  {
+    dstClip_ = fetchClip(kOfxImageEffectOutputClipName);
+    srcClip_ = fetchClip(kOfxImageEffectSimpleSourceClipName);
+
+    startTimecode_    = fetchStringParam(kStartTimecodeParam);
+    rate_             = fetchDoubleParam(kRateParam);
+    rateFromMetadata_ = fetchBooleanParam(kRateFromMetadataParam);
+    startFrame_       = fetchIntParam(kStartFrameParam);
+    useStartFrame_    = fetchBooleanParam(kUseStartFrameParam);
+    timecodeKey_      = fetchStringParam(kTimecodeKeyParam);
+    rateKey_          = fetchStringParam(kRateKeyParam);
+  }
+
+  /* Override the render */
+  virtual void render(const OFX::RenderArguments &args);
+
+  /* Override getMetadata */
+  virtual void getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &inheritance);
+};
+
+// guide: begin getMetadata
+void
+MetadataTimeCodePlugin::getMetadata(const OFX::MetadataArguments &args, OFX::MetadataSetter &metadata, OFX::MetadataInheritanceSetter &/*inheritance*/)
+{
+  double rate = 0;
+  rate_->getValue(rate);
+
+  std::string timecodeKey;
+  timecodeKey_->getValue(timecodeKey);
+
+  std::string rateKey;
+  rateKey_->getValue(rateKey);
+
+  bool rateFromMetadata = false;
+  rateFromMetadata_->getValue(rateFromMetadata);
+
+  if(rateFromMetadata) {
+    const OFX::MetadataSet source = srcClip_->getMetadata(args.time);
+
+    rate = source.getDouble(rateKey, 0, rate);
+  }
+
+  // the start code is read at the same rate the frames field counts at, so a rate taken
+  // off the source moves the timecode itself rather than only the rate reported with it
+  const int counted = roundedRate(rate);
+
+  bool useStartFrame = false;
+  useStartFrame_->getValue(useStartFrame);
+
+  int startFrame = kFixedOrigin;
+  startFrame_->getValue(startFrame);
+
+  // the start code lands on absolute frame 1 unless useStartFrame moves it, so a clip
+  // or a project which begins elsewhere is still counted from frame 1
+  const double origin = useStartFrame ? double(startFrame) : double(kFixedOrigin);
+
+  std::string startTimecode;
+  startTimecode_->getValue(startTimecode);
+
+  const long long offset = (long long) std::floor(args.time - origin + 0.5);
+
+  metadata.setString(timecodeKey,
+                     framesToTimecode(timecodeToFrames(startTimecode, counted) + offset, counted));
+  metadata.setDouble(rateKey, rate);
+}
+// guide: end getMetadata
+
+// the overridden render function
+void
+MetadataTimeCodePlugin::render(const OFX::RenderArguments &args)
+{
+  std::unique_ptr<OFX::Image> dst(dstClip_->fetchImage(args.time));
+  std::unique_ptr<OFX::Image> src(srcClip_->fetchImage(args.time));
+
+  if(!dst.get() || !src.get())
+    return;
+
+  if(src->getPixelDepth() != dst->getPixelDepth()
+     || src->getPixelComponents() != dst->getPixelComponents())
+    OFX::throwSuiteStatusException(kOfxStatErrImageFormat);
+
+  copyPixels(*src, *dst, args.renderWindow);
+}
+
+mDeclarePluginFactory(MetadataTimeCodeExamplePluginFactory, {}, {});
+
+using namespace OFX;
+void MetadataTimeCodeExamplePluginFactory::describe(OFX::ImageEffectDescriptor &desc)
+{
+  // basic labels
+  desc.setLabels("Metadata Time Code", "Metadata Time Code", "Metadata Time Code");
+  desc.setPluginGrouping("OFX Example (Support)");
+
+  // add the supported contexts, only filter at the moment
+  desc.addSupportedContext(eContextFilter);
+
+  // add supported pixel depths
+  desc.addSupportedBitDepth(eBitDepthUByte);
+  desc.addSupportedBitDepth(eBitDepthUShort);
+  desc.addSupportedBitDepth(eBitDepthFloat);
+
+  // set a few flags
+  desc.setSingleInstance(false);
+  desc.setHostFrameThreading(false);
+  desc.setSupportsMultiResolution(true);
+  desc.setSupportsTiles(true);
+  desc.setTemporalClipAccess(false);
+  desc.setRenderTwiceAlways(false);
+  desc.setSupportsMultipleClipPARs(false);
+}
+
+void MetadataTimeCodeExamplePluginFactory::describeInContext(OFX::ImageEffectDescriptor &desc, OFX::ContextEnum /*context*/)
+{
+  // Source clip only in the filter context
+  // create the mandated source clip
+  ClipDescriptor *srcClip = desc.defineClip(kOfxImageEffectSimpleSourceClipName);
+  srcClip->addSupportedComponent(ePixelComponentRGBA);
+  srcClip->addSupportedComponent(ePixelComponentAlpha);
+  srcClip->setTemporalClipAccess(false);
+  srcClip->setSupportsTiles(true);
+  srcClip->setIsMask(false);
+
+  // create the mandated output clip
+  ClipDescriptor *dstClip = desc.defineClip(kOfxImageEffectOutputClipName);
+  dstClip->addSupportedComponent(ePixelComponentRGBA);
+  dstClip->addSupportedComponent(ePixelComponentAlpha);
+  dstClip->setSupportsTiles(true);
+
+  PageParamDescriptor *page = desc.definePageParam("Controls");
+
+  StringParamDescriptor *startTimecode = desc.defineStringParam(kStartTimecodeParam);
+  startTimecode->setLabels("start timecode", "start timecode", "start timecode");
+  startTimecode->setHint("non-drop-frame timecode");
+  startTimecode->setStringType(eStringTypeSingleLine);
+  startTimecode->setDefault("01:00:00:00");
+  startTimecode->setAnimates(false);
+  page->addChild(*startTimecode);
+
+  DoubleParamDescriptor *rate = desc.defineDoubleParam(kRateParam);
+  rate->setLabels("rate", "rate", "rate");
+  rate->setHint("the frame rate the count uses");
+  rate->setDefault(24);
+  rate->setRange(1, 1000);
+  rate->setDisplayRange(1, 120);
+  rate->setAnimates(false);
+  page->addChild(*rate);
+
+  BooleanParamDescriptor *rateFromMetadata = desc.defineBooleanParam(kRateFromMetadataParam);
+  rateFromMetadata->setLabels("rate from metadata", "rate from metadata", "rate from metadata");
+  rateFromMetadata->setHint("use Source's rate");
+  rateFromMetadata->setDefault(true);
+  rateFromMetadata->setAnimates(false);
+  page->addChild(*rateFromMetadata);
+
+  IntParamDescriptor *startFrame = desc.defineIntParam(kStartFrameParam);
+  startFrame->setLabels("start frame", "start frame", "start frame");
+  startFrame->setHint("frame the start code is at");
+  startFrame->setDefault(1);
+  startFrame->setAnimates(false);
+  page->addChild(*startFrame);
+
+  BooleanParamDescriptor *useStartFrame = desc.defineBooleanParam(kUseStartFrameParam);
+  useStartFrame->setLabels("use start frame", "use start frame", "use start frame");
+  useStartFrame->setHint("count from start frame");
+  useStartFrame->setDefault(false);
+  useStartFrame->setAnimates(false);
+  page->addChild(*useStartFrame);
+
+  StringParamDescriptor *timecodeKey = desc.defineStringParam(kTimecodeKeyParam);
+  timecodeKey->setLabels("timecode key", "timecode key", "timecode key");
+  timecodeKey->setHint("key the timecode is written under; only a default, set it to the key your host uses");
+  timecodeKey->setStringType(eStringTypeSingleLine);
+  timecodeKey->setDefault("timecode");
+  timecodeKey->setAnimates(false);
+  page->addChild(*timecodeKey);
+
+  StringParamDescriptor *rateKey = desc.defineStringParam(kRateKeyParam);
+  rateKey->setLabels("rate key", "rate key", "rate key");
+  rateKey->setHint("key the rate is read from and written under; only a default, set it to the key your host uses");
+  rateKey->setStringType(eStringTypeSingleLine);
+  rateKey->setDefault("frame_rate");
+  rateKey->setAnimates(false);
+  page->addChild(*rateKey);
+}
+
+OFX::ImageEffect* MetadataTimeCodeExamplePluginFactory::createInstance(OfxImageEffectHandle handle, OFX::ContextEnum /*context*/)
+{
+  return new MetadataTimeCodePlugin(handle);
+}
+
+namespace OFX
+{
+  namespace Plugin
+  {
+    void getPluginIDs(OFX::PluginFactoryArray &ids)
+    {
+      static MetadataTimeCodeExamplePluginFactory p("net.sf.openfx.metadataTimeCode", 1, 0);
+      ids.push_back(&p);
+    }
+  }
+}

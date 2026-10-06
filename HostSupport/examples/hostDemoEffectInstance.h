@@ -13,6 +13,11 @@ namespace MyHost {
                      OFX::Host::ImageEffect::Descriptor& desc,
                      const std::string& context);
 
+    /// route vmessage output into *capture instead of stdout, so a caller that
+    /// drives a render can read back what the plugin logged rather than have it
+    /// land mid-stream. NULL (the default) keeps printing straight out.
+    void setMessageCapture(std::string* capture) { _messageCapture = capture; }
+
     ////////////////////////////////////////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////////////////////
@@ -138,8 +143,10 @@ namespace MyHost {
     virtual void timeLineGotoTime(double t);
     
     /// get the first and last times available on the effect's timeline
-    virtual void timeLineGetBounds(double &t1, double &t2);    
+    virtual void timeLineGetBounds(double &t1, double &t2);
 
+  private:
+    std::string* _messageCapture;
   };
 
 }

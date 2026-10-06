@@ -460,9 +460,11 @@ namespace OFX {
       // MetadataSet
       //
 
-      MetadataSet::MetadataSet()
+      MetadataSet::MetadataSet(Access access, Owner owner)
         : Property::Set()
         , _referenceCount(1)
+        , _writable(access == eWritable)
+        , _pluginOwned(owner == ePluginOwned)
       {
       }
 
@@ -493,7 +495,7 @@ namespace OFX {
           if(_metadataCache.size() >= kMaxCachedMetadataEntries)
             invalidateMetadata();
 
-          metadata = new MetadataSet();
+          metadata = new MetadataSet(MetadataSet::eReadOnly, MetadataSet::ePluginOwned);
 
           try {
             fetchMetadata(time, *metadata);
@@ -520,10 +522,22 @@ namespace OFX {
       void ClipInstance::invalidateMetadata()
       {
         releaseMetadataCache();
+
+        // the effect's output clip holds copies of what its inputs carry, so dropping an
+        // input clip's sets has to drop the ones derived from it too. The recursion stops
+        // at the output clip, which is not an input of anything
+        if(!_isOutput && _effectInstance) {
+          ClipInstance *output = _effectInstance->getClip(kOfxImageEffectOutputClipName);
+
+          if(output)
+            output->invalidateMetadata();
+        }
       }
 
-      void ClipInstance::fetchMetadata(OfxTime, Property::Set &)
+      void ClipInstance::fetchMetadata(OfxTime time, Property::Set &metadata)
       {
+        if(_isOutput && _effectInstance)
+          _effectInstance->getOutputMetadata(time, metadata);
       }
 
       ////////////////////////////////////////////////////////////////////////////////
